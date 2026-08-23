@@ -176,6 +176,7 @@ public partial class ControlPanelWindow : Window
         AlignPanel.Visibility = Visibility.Collapsed;
         CompositePanel.Visibility = Visibility.Collapsed;
         CompactPanel.Visibility = Visibility.Collapsed;
+        AboutPanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
         HomeSettingsToggle.Visibility = Visibility.Visible;
         Width = 400;
@@ -206,6 +207,7 @@ public partial class ControlPanelWindow : Window
         AlignPanel.Visibility = Visibility.Visible;
         CompositePanel.Visibility = Visibility.Collapsed;
         CompactPanel.Visibility = Visibility.Collapsed;
+        AboutPanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Visible;
         HideHomeSettings();
         Width = 440;
@@ -225,6 +227,7 @@ public partial class ControlPanelWindow : Window
             AlignPanel.Visibility = Visibility.Collapsed;
             CompositePanel.Visibility = Visibility.Visible;
             CompactPanel.Visibility = Visibility.Collapsed;
+            AboutPanel.Visibility = Visibility.Collapsed;
             TitleBarMinimizeButton.Visibility = Visibility.Visible;
             HideHomeSettings();
             // Rescanned fresh every time this mode is entered (not cached),
@@ -359,6 +362,47 @@ public partial class ControlPanelWindow : Window
             : Visibility.Visible;
     }
 
+    private bool _aboutContentLoaded;
+
+    private void AboutButton_Click(object sender, RoutedEventArgs e) => ShowAbout();
+
+    /// <summary>LicenseText/ThirdPartyNoticesText are populated once, the
+    /// first time this opens, from LICENSE.md/THIRD-PARTY-NOTICES.md --
+    /// embedded as WPF resources (see the csproj) so they're readable from
+    /// inside the shipped exe with no network access needed, which several
+    /// of the notices in there (SIL OFL, MIT) require.</summary>
+    private void ShowAbout() => WithRedrawSuspended(() =>
+    {
+        if (!_aboutContentLoaded)
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+            AboutVersionText.Text = $"バージョン {version.Major}.{version.Minor}.{version.Build}";
+            LicenseText.Text = LoadEmbeddedText("Assets/LICENSE.md");
+            ThirdPartyNoticesText.Text = LoadEmbeddedText("Assets/THIRD-PARTY-NOTICES.md");
+            _aboutContentLoaded = true;
+        }
+
+        HomePanel.Visibility = Visibility.Collapsed;
+        AlignPanel.Visibility = Visibility.Collapsed;
+        CompositePanel.Visibility = Visibility.Collapsed;
+        CompactPanel.Visibility = Visibility.Collapsed;
+        AboutPanel.Visibility = Visibility.Visible;
+        TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
+        HideHomeSettings();
+        Width = 440;
+        Height = 640;
+        PinToRightEdge();
+    });
+
+    private static string LoadEmbeddedText(string packRelativePath)
+    {
+        var uri = new Uri($"pack://application:,,,/{packRelativePath}", UriKind.Absolute);
+        var info = Application.GetResourceStream(uri);
+        if (info is null) return "";
+        using var reader = new StreamReader(info.Stream);
+        return reader.ReadToEnd();
+    }
+
     // ---- Custom title bar: WindowStyle="None" removes the native one (it
     //      was just wasteful chrome), so dragging and closing have to be
     //      hand-rolled. Checks whether the press originated on a Button (the
@@ -488,6 +532,7 @@ public partial class ControlPanelWindow : Window
         AlignPanel.Visibility = Visibility.Collapsed;
         CompositePanel.Visibility = Visibility.Collapsed;
         CompactPanel.Visibility = Visibility.Visible;
+        AboutPanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
         HideHomeSettings();
         CompactModeText.Text = mode == PanelMode.Align ? "位置合わせモード" : "写真合成モード";

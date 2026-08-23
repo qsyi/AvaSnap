@@ -14,8 +14,9 @@
     <AssemblyName>AvaSnap</AssemblyName>
 
     <!-- Source of truth for UpdateService's version comparison against
-         GitHub release tags (tag "v1.0.1" > this = an update is offered).
-         Bump this alongside every release published to avasnap-releases. -->
+         GitHub release tags (tag "v1.0.1" > this = an update is offered),
+         and for the version number AboutPanel displays. Bump this alongside
+         every release published to qsyi/avasnap. -->
     <Version>1.0.0</Version>
 
     <!-- Distribution: single self-contained exe, no installer required -->
@@ -33,6 +34,18 @@
        separately installed on whatever machine runs it. -->
   <ItemGroup>
     <Resource Include="Fonts\ZenMaruGothic-Medium.ttf" />
+  </ItemGroup>
+
+  <!-- Embedded (not just committed to the repo) so AboutPanel can display
+       the license and third-party notices from inside the shipped exe with
+       no network access needed: several of those notices (SIL OFL, MIT)
+       require staying viewable alongside the redistributed software itself,
+       not just in the source repo. Link keeps one copy of each file at the
+       repo root (where GitHub expects LICENSE to live) instead of
+       duplicating them under this project. -->
+  <ItemGroup>
+    <Resource Include="..\..\LICENSE.md" Link="Assets\LICENSE.md" />
+    <Resource Include="..\..\THIRD-PARTY-NOTICES.md" Link="Assets\THIRD-PARTY-NOTICES.md" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ComputeSharp" Version="3.2.0" />

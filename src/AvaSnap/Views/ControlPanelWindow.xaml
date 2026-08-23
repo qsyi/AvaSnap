@@ -1089,6 +1089,10 @@
                     <Button x:Name="ResetWatchFolderButton" Content="自動検出に戻す" Style="{StaticResource BackButton}" FontSize="13"
                             Click="ResetWatchFolderButton_Click" />
                 </StackPanel>
+
+                <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,14,0,10" />
+                <Button Content="バージョン情報" Style="{StaticResource SecondaryPillButton}" FontSize="13"
+                        HorizontalAlignment="Left" Padding="14,6" Click="AboutButton_Click" />
             </StackPanel>
         </Border>
 
@@ -3218,6 +3222,43 @@
                             Padding="12,7" VerticalAlignment="Center" Click="ExpandButton_Click" />
                 </Grid>
             </Border>
+        </Grid>
+
+        <!-- バージョン情報: opened from HomeSettingsPanel's own button, not
+             part of the Home/Align/Composite work-mode rotation, so it just
+             reuses BackToHome_Click to return rather than getting its own
+             PanelMode. LicenseText/ThirdPartyNoticesText are populated in
+             code-behind (see ShowAbout) from the LICENSE.md/THIRD-PARTY-
+             NOTICES.md files embedded as WPF resources (see the csproj):
+             several of the notices in there (SIL OFL, MIT) require staying
+             viewable alongside the redistributed software itself, which a
+             read-only in-app screen satisfies even with no network access. -->
+        <Grid x:Name="AboutPanel" Grid.Row="1" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Button Grid.Row="0" Content="&#8592; ホーム" Style="{StaticResource BackButton}"
+                    HorizontalAlignment="Left" Margin="12,12,0,0" Click="BackToHome_Click" />
+
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="16,4,16,16">
+                    <TextBlock Text="AvaSnap" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}" />
+                    <TextBlock x:Name="AboutVersionText" Text="" FontSize="13"
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,20" />
+
+                    <TextBlock Text="ライセンス" Style="{StaticResource SectionHeader}" />
+                    <TextBox x:Name="LicenseText" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                             BorderThickness="0" Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}"
+                             FontSize="11" Margin="0,0,0,20" />
+
+                    <TextBlock Text="サードパーティ通知" Style="{StaticResource SectionHeader}" />
+                    <TextBox x:Name="ThirdPartyNoticesText" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                             BorderThickness="0" Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}"
+                             FontSize="11" />
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
     </AdornerDecorator>
