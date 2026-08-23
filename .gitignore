@@ -1,0 +1,11 @@
+# Build output
+bin/
+obj/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# Review screenshots (local verification artifacts, not part of the source)
+Review/

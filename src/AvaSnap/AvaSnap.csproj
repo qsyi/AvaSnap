@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Required by ComputeSharp's [GeneratedComputeShaderDescriptor]
+         source generator (see Services/GpuColorAdjustments.cs) to emit the
+         shader descriptor code it needs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>AvaSnap</RootNamespace>
+    <AssemblyName>AvaSnap</AssemblyName>
+
+    <!-- Source of truth for UpdateService's version comparison against
+         GitHub release tags (tag "v1.0.1" > this = an update is offered).
+         Bump this alongside every release published to avasnap-releases. -->
+    <Version>1.0.0</Version>
+
+    <!-- Distribution: single self-contained exe, no installer required -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Zen Maru Gothic (SIL Open Font License, free for commercial use) is
+       embedded as a WPF resource rather than relied upon as a system font.
+       PublishSingleFile ships one exe with no separate installer step, so
+       the font needs to travel inside it too, not depend on being
+       separately installed on whatever machine runs it. -->
+  <ItemGroup>
+    <Resource Include="Fonts\ZenMaruGothic-Medium.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ComputeSharp" Version="3.2.0" />
+  </ItemGroup>
+
+</Project>

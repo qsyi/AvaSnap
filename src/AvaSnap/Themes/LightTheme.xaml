@@ -1,0 +1,32 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="PrimaryBrush" Color="#4A58C4" />
+    <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#3A46A0" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#D4809A" />
+    <SolidColorBrush x:Key="AccentDarkBrush" Color="#C0607E" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#3F9142" />
+    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F1F1F8" />
+    <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFF" />
+    <!-- Text/number input fields specifically (ModernTextBox,
+         CompactComboBox), kept as a separate key from CardBackgroundBrush
+         even though they're the same color here, because DarkTheme wants
+         them visibly different (a recessed field look distinct from the
+         card it sits on), not tied together. -->
+    <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1A1A2E" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#3A3A5A" />
+    <SolidColorBrush x:Key="HairlineBrush" Color="#E0E0EC" />
+    <SolidColorBrush x:Key="PrimaryTintBrush" Color="#E4E7FA" />
+    <SolidColorBrush x:Key="PrimaryTintHoverBrush" Color="#D2D7F3" />
+    <!-- Scrollbar thumb only: HairlineBrush (used for the rest of the
+         app's hairline dividers) is too pale to read as a draggable thumb
+         at rest against the white card / light app background, so this is
+         a step darker specifically for that. -->
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#B7B7CC" />
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#9497BE" />
+    <!-- Neutral dark gray, not a saturated color: meant to read as a plain
+         photo-viewer mat (like Lightroom/Photoshop's canvas background),
+         not a colored surface competing with whatever photo is loaded,
+         kept identical between Light/Dark themes on purpose. -->
+    <SolidColorBrush x:Key="PreviewMatBrush" Color="#48484F" />
+</ResourceDictionary>

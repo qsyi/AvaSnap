@@ -1,0 +1,101 @@
+<Window x:Class="AvaSnap.Views.ScreenshotToastWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AvaSnap"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        ResizeMode="NoResize"
+        Width="380" Height="116"
+        FontFamily="pack://application:,,,/Fonts/#Zen Maru Gothic Medium"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        UseLayoutRounding="True"
+        MouseEnter="Window_MouseEnter"
+        MouseLeave="Window_MouseLeave">
+    <Window.Resources>
+        <Style x:Key="ToastPillButton" TargetType="Button">
+            <Setter Property="Background" Value="#4A58C4" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="16,6" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="12">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.88" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToastSecondaryPillButton" TargetType="Button" BasedOn="{StaticResource ToastPillButton}">
+            <Setter Property="Background" Value="#E4E7FA" />
+            <Setter Property="Foreground" Value="#4A58C4" />
+        </Style>
+        <Style x:Key="ToastCloseButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#3A3A5A" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F1F1F8" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Border Background="#FFFFFF" CornerRadius="12" BorderBrush="#E0E0EC" BorderThickness="1" Margin="8">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" Opacity="0.22" BlurRadius="16" ShadowDepth="3" Direction="270" />
+        </Border.Effect>
+        <Grid Margin="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Width="72" Height="72" CornerRadius="10" Background="#F1F1F8"
+                    VerticalAlignment="Center" ClipToBounds="True">
+                <Image x:Name="ThumbnailImage" Stretch="UniformToFill" />
+            </Border>
+
+            <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                <TextBlock Text="新しいスクリーンショット" FontSize="12" FontWeight="SemiBold" Foreground="#4A58C4" />
+                <TextBlock x:Name="FileNameText" Text="" FontSize="12" Foreground="#3A3A5A"
+                           TextTrimming="CharacterEllipsis" Margin="0,3,0,10" />
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="OpenButton" Content="合成する" HorizontalAlignment="Left"
+                            Style="{StaticResource ToastPillButton}" Click="OpenButton_Click" Margin="0,0,6,0" />
+                    <Button x:Name="OpenFolderButton" Content="フォルダを開く" HorizontalAlignment="Left"
+                            Style="{StaticResource ToastSecondaryPillButton}" Click="OpenFolderButton_Click" />
+                </StackPanel>
+            </StackPanel>
+
+            <Button Grid.Column="2" x:Name="CloseButton" Content="&#10005;" Width="22" Height="22"
+                    VerticalAlignment="Top" Style="{StaticResource ToastCloseButton}" Click="CloseButton_Click" />
+        </Grid>
+    </Border>
+</Window>

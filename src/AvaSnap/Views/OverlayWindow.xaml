@@ -1,0 +1,96 @@
+<Window x:Class="AvaSnap.Views.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AvaSnap Overlay"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize">
+    <!-- No Background here (unlike a Transparent brush, no Background at all
+         is NOT hit-testable in WPF). This Canvas spans the full virtual
+         screen, so a Transparent Background would swallow every mouse click
+         anywhere on any monitor while click-through is off, instead of only
+         over the image/handles that actually have their own content. -->
+    <Canvas x:Name="RootCanvas">
+        <!-- Unity連携ガイド: FOV/pitch/roll are read from the file Unity's
+             CameraCompositionGuideWindow editor script exports (see
+             UnityCameraGuideService), not typed in here. Purely a
+             compositional reference, never baked into anything saved, so
+             it stays visible even during click-through (no drag handle of
+             its own; Unity is what drives it). Placed BEFORE OverlayImage
+             (i.e. behind it, not dimmed/clipped in code) so wherever the
+             avatar PNG is actually opaque naturally covers the guide, and
+             wherever it's transparent the guide shows through at full
+             opacity underneath: ordinary alpha compositing does exactly
+             the "only show through transparent avatar pixels" behavior a
+             bounding-box-based clip could only approximate. -->
+        <!-- Two nested Canvases, not one: ClipToBounds/Clip on an element
+             clips its content in that element's OWN local space, which
+             RenderTransform is then applied on TOP of, so a roll-rotated
+             UnityGuideCanvas clipped to its own bounds would show a ROTATED
+             rectangle silhouette, not the true axis-aligned camera frame,
+             letting lines poke out past the frame's real edges at the
+             rotated corners (or get cut off inside them). The FIX is this
+             outer, never-rotated UnityGuideFrameClip: its own Clip/bounds
+             stay axis-aligned in screen space regardless of what the INNER
+             (rotated) UnityGuideCanvas does, so it's the one actually
+             enforcing "never draw outside the camera frame." -->
+        <Canvas x:Name="UnityGuideFrameClip" IsHitTestVisible="False" Visibility="Collapsed" ClipToBounds="True">
+            <Canvas x:Name="UnityGuideCanvas" IsHitTestVisible="False">
+                <Canvas.RenderTransform>
+                    <RotateTransform x:Name="UnityGuideRollRotate" />
+                </Canvas.RenderTransform>
+            </Canvas>
+        </Canvas>
+
+        <Image x:Name="OverlayImage"
+               Stretch="Fill"
+               RenderTransformOrigin="0.5,0.5"
+               MouseLeftButtonDown="OverlayImage_MouseLeftButtonDown"
+               MouseLeftButtonUp="OverlayImage_MouseLeftButtonUp"
+               MouseMove="OverlayImage_MouseMove">
+            <Image.RenderTransform>
+                <RotateTransform x:Name="ImageRotateTransform" />
+            </Image.RenderTransform>
+        </Image>
+
+        <!-- Resize handles: 4 corner grips only, shown while the overlay is
+             interactive (not click-through). Always scale with the aspect
+             ratio locked. Rotates together with the image via the same-angle
+             transform below, so the grips stay visually on the rotated
+             image's corners. -->
+        <Canvas x:Name="HandlesLayer" RenderTransformOrigin="0.5,0.5">
+            <Canvas.RenderTransform>
+                <RotateTransform x:Name="HandlesRotateTransform" />
+            </Canvas.RenderTransform>
+
+            <Rectangle x:Name="HandleTL" Width="10" Height="10" Fill="White" Stroke="Black" StrokeThickness="1"
+                       Cursor="SizeNWSE" Tag="TL" MouseLeftButtonDown="Handle_MouseLeftButtonDown"
+                       MouseMove="Handle_MouseMove" MouseLeftButtonUp="Handle_MouseLeftButtonUp" />
+            <Rectangle x:Name="HandleTR" Width="10" Height="10" Fill="White" Stroke="Black" StrokeThickness="1"
+                       Cursor="SizeNESW" Tag="TR" MouseLeftButtonDown="Handle_MouseLeftButtonDown"
+                       MouseMove="Handle_MouseMove" MouseLeftButtonUp="Handle_MouseLeftButtonUp" />
+            <Rectangle x:Name="HandleBL" Width="10" Height="10" Fill="White" Stroke="Black" StrokeThickness="1"
+                       Cursor="SizeNESW" Tag="BL" MouseLeftButtonDown="Handle_MouseLeftButtonDown"
+                       MouseMove="Handle_MouseMove" MouseLeftButtonUp="Handle_MouseLeftButtonUp" />
+            <Rectangle x:Name="HandleBR" Width="10" Height="10" Fill="White" Stroke="Black" StrokeThickness="1"
+                       Cursor="SizeNWSE" Tag="BR" MouseLeftButtonDown="Handle_MouseLeftButtonDown"
+                       MouseMove="Handle_MouseMove" MouseLeftButtonUp="Handle_MouseLeftButtonUp" />
+
+            <!-- Rotate gizmo: a handle above the box's top-center, connected by
+                 a thin leader line, dragged in an arc around the box's center
+                 to rotate. Offset from center (not placed exactly on it) so
+                 there's always a well-defined angle the moment you grab it:
+                 an exactly-centered handle would have no meaningful direction
+                 to measure from at the start of the drag. -->
+            <Line x:Name="RotateGizmoLine" Stroke="White" StrokeThickness="2" />
+            <!-- Width/Height bumped from 12 to 16 (see UpdateHandles' own
+                 gizmoHalf), a slightly more forgiving grab target, since
+                 12px was easy to miss at typical UI scale. -->
+            <Ellipse x:Name="RotateGizmoHandle" Width="16" Height="16" Fill="White" Stroke="Black" StrokeThickness="1"
+                     Cursor="Hand" MouseLeftButtonDown="RotateGizmo_MouseLeftButtonDown"
+                     MouseMove="RotateGizmo_MouseMove" MouseLeftButtonUp="RotateGizmo_MouseLeftButtonUp" />
+        </Canvas>
+    </Canvas>
+</Window>
