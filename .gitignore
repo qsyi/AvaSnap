@@ -9,3 +9,7 @@ obj/
 
 # Review screenshots (local verification artifacts, not part of the source)
 Review/
+
+# Internal dev notes / handoff docs (e.g. migration plans, session notes) --
+# not meant for the public repo. Put this kind of reference material here.
+notes/
