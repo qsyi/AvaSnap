@@ -1,6 +1,11 @@
 # Build output
 bin/
 obj/
+publish/
+
+# vpk pack output (Setup.exe, .nupkg, releases.win.json, etc.) -- these get
+# uploaded to GitHub Releases via `vpk upload github`, not committed here.
+Releases/
 
 # IDE
 .vs/
