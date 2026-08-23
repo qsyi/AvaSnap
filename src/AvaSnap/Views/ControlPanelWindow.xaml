@@ -1034,6 +1034,15 @@
             </Viewbox>
         </Button>
 
+        <!-- Set visible by App.xaml.cs's ShowUpdateAvailableNotification
+             (called once a background CheckForUpdatesAsync finds something
+             newer than the running build), cleared once AboutPanel's own
+             update section is opened; see AboutButton_Click. -->
+        <Border x:Name="UpdateAvailableBadge" Grid.Row="1" Width="10" Height="10" CornerRadius="5"
+                Background="{DynamicResource AccentBrush}" BorderBrush="{DynamicResource AppBackgroundBrush}" BorderThickness="2"
+                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,13,13,0"
+                IsHitTestVisible="False" Visibility="Collapsed" />
+
         <StackPanel x:Name="HomePanel" Grid.Row="1" Margin="22" VerticalAlignment="Center">
             <TextBlock Text="AvaSnap" FontSize="30" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}"
                        HorizontalAlignment="Center" Margin="0,0,0,2" />
@@ -3247,6 +3256,31 @@
                     <TextBlock Text="AvaSnap" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}" />
                     <TextBlock x:Name="AboutVersionText" Text="" FontSize="13"
                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,20" />
+
+                    <!-- Populated in code-behind (see ShowAbout/RefreshUpdateSection):
+                         UpdateVersionCombo's items are built programmatically
+                         from UpdateService.GetAvailableVersionsAsync (every
+                         published version, newest first, each ComboBoxItem's
+                         Tag holding the underlying VelopackAsset), since
+                         that list isn't known until the GitHub feed is
+                         actually read. -->
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,20">
+                        <StackPanel>
+                            <TextBlock Text="アップデート" Style="{StaticResource SectionHeader}" />
+                            <TextBlock x:Name="UpdateStatusText" Text="" FontSize="13" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10" />
+                            <Grid x:Name="UpdateVersionRow" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="UpdateVersionCombo" Style="{StaticResource CompactComboBox}"
+                                          HorizontalAlignment="Stretch" Margin="0,0,8,0" />
+                                <Button Grid.Column="1" x:Name="UpdateApplyButton" Content="適用して再起動" Style="{StaticResource PillButton}"
+                                        FontSize="13" Padding="14,7" Click="UpdateApplyButton_Click" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
 
                     <TextBlock Text="ライセンス" Style="{StaticResource SectionHeader}" />
                     <TextBox x:Name="LicenseText" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"

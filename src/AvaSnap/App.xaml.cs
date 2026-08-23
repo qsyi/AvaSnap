@@ -31,17 +31,10 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // Before anything else -- no DPI setup, no window, no GPU check: if
-        // a previous session's background check already downloaded a newer
-        // build (see UpdateService.CheckAndDownloadUpdateAsync further
-        // below), swap it in and relaunch now instead of opening this
-        // (stale) build's UI at all.
-        if (UpdateService.ApplyPendingUpdateIfAny())
-        {
-            Shutdown();
-            return;
-        }
-
+        // Handling Velopack's own special first-run/update/uninstall
+        // invocations now happens in Program.cs's VelopackApp.Build().Run()
+        // call, which runs before this Application even exists -- see its
+        // own doc comment.
         try { SetProcessDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2); } catch (EntryPointNotFoundException) { }
 
         base.OnStartup(e);
@@ -182,9 +175,21 @@ public partial class App : Application
         }
 
         // Fire-and-forget, after both windows are already up, so a slow or
-        // unreachable GitHub never delays startup. Applied on the NEXT
-        // launch, not this one -- see ApplyPendingUpdateIfAny above.
-        _ = UpdateService.CheckAndDownloadUpdateAsync();
+        // unreachable GitHub never delays startup. Only checks and (if the
+        // user picks a version in AboutPanel's update section) downloads --
+        // nothing is applied silently, per the "通知表示 -> ユーザーが選んで
+        // 適用" UX this was asked for, unlike the old hand-rolled
+        // UpdateService this replaced.
+        _ = CheckForUpdateNotificationAsync();
+    }
+
+    private async Task CheckForUpdateNotificationAsync()
+    {
+        var info = await UpdateService.CheckForUpdatesAsync();
+        if (info is not null)
+        {
+            _controlPanelWindow?.ShowUpdateAvailableNotification();
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

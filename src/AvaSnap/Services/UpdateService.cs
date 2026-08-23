@@ -1,156 +1,90 @@
-using System.Diagnostics;
-using System.IO;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Reflection;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Velopack;
+using Velopack.Logging;
+using Velopack.Sources;
 
 namespace AvaSnap.Services;
 
-/// <summary>VRCX-style background auto-update, with no server of our own:
-/// checks a PUBLIC GitHub repo's Releases API for a newer tag than the
-/// currently-running build, downloads the new exe into %AppData%\AvaSnap\
-/// Update in the background, and swaps it into place the NEXT time AvaSnap
-/// starts (see ApplyPendingUpdateIfAny). GitHub hosts the release asset and
-/// serves its Releases API for free with no auth needed -- the ONLY reason
-/// the repo has to stay public even though AvaSnap itself is sold: a
-/// private repo's Releases API requires a token, and shipping one inside
-/// every customer's copy of the app would mean shipping a secret every
-/// customer could extract. Only the built exe is uploaded to that repo,
-/// never the source.</summary>
+/// <summary>Thin wrapper around Velopack's UpdateManager, pointed at the
+/// qsyi/AvaSnap GitHub repo's Releases (public repo, no token needed -- see
+/// LICENSE.md for why the repo stays public even though the app is sold).
+/// Velopack (not a hand-rolled GitHub-API-plus-exe-swap scheme, which this
+/// file used to be) owns the actual install/update mechanics: it requires
+/// the app to be installed through its own Setup.exe into a managed
+/// %LocalAppData% folder -- see Program.cs's VelopackApp.Build().Run() call
+/// and the csproj's own doc comment on why PublishSingleFile is gone.
+///
+/// Every call here is best-effort and swallows its own exceptions:
+/// UpdateManager throws when the running exe isn't a real Velopack install
+/// (e.g. launched directly from bin/Debug during development, which is how
+/// this app is normally run and tested outside of a packaged release), and
+/// none of that should ever crash normal use of the app. Check
+/// <see cref="IsInstalled"/> first if the caller wants to distinguish "no
+/// update available" from "can't check at all".</summary>
 public static class UpdateService
 {
-    private const string RepoOwner = "qsyi";
-    private const string RepoName = "avasnap";
+    private const string RepoUrl = "https://github.com/qsyi/AvaSnap";
 
-    // Must match the exact file name attached to each GitHub Release's
-    // assets (upload the published single-file exe under this exact name).
-    private const string AssetName = "AvaSnap.exe";
+    private static readonly GithubSource _source = new(RepoUrl, accessToken: null, prerelease: false);
+    private static readonly UpdateManager _manager = new(_source);
 
-    private static readonly string UpdateDir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AvaSnap", "Update");
+    /// <summary>False when this exe isn't running from a real Velopack
+    /// install (e.g. a plain `dotnet build` + direct run during
+    /// development) -- every other member here still won't throw in that
+    /// case, but there's nothing meaningful for them to do.</summary>
+    public static bool IsInstalled => _manager.IsInstalled;
 
-    private static readonly string PendingExePath = Path.Combine(UpdateDir, AssetName);
+    /// <summary>Null when <see cref="IsInstalled"/> is false -- there's no
+    /// installed version to report in that case.</summary>
+    public static SemanticVersion? CurrentVersion => _manager.CurrentVersion;
 
-    // An unauthenticated GitHub API call is cheap, but there's no reason to
-    // make it on every single launch -- SettingsService.LastUpdateCheckUtc
-    // throttles it to roughly once a day.
-    private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(24);
-
-    private sealed class GitHubRelease
-    {
-        [JsonPropertyName("tag_name")] public string? TagName { get; set; }
-        [JsonPropertyName("assets")] public List<GitHubAsset>? Assets { get; set; }
-    }
-
-    private sealed class GitHubAsset
-    {
-        [JsonPropertyName("name")] public string? Name { get; set; }
-        [JsonPropertyName("browser_download_url")] public string? BrowserDownloadUrl { get; set; }
-        [JsonPropertyName("size")] public long Size { get; set; }
-    }
-
-    /// <summary>Called once, at the very top of App.OnStartup before
-    /// anything else (no window, no GPU check) -- if a previous background
-    /// check already downloaded a newer build, swaps it into place and
-    /// relaunches. Returns true if it did, in which case the caller should
-    /// Shutdown() immediately without doing anything else: this process is
-    /// handing off to the freshly-relaunched one. Also cleans up the
-    /// ".old" file a PRIOR swap couldn't delete (it was still the file
-    /// this exact process was running from at the time).</summary>
-    public static bool ApplyPendingUpdateIfAny()
-    {
-        string currentExe = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
-        if (string.IsNullOrEmpty(currentExe)) return false;
-
-        string oldExe = currentExe + ".old";
-        try { if (File.Exists(oldExe)) File.Delete(oldExe); } catch { /* still locked by the process that WAS running from it; next launch retries */ }
-
-        if (!File.Exists(PendingExePath)) return false;
-
-        try
-        {
-            // Renaming a running exe out from under itself is allowed on
-            // NTFS -- the process keeps executing fine via its existing
-            // open handle to the (now differently-named) file. That's what
-            // makes swapping possible with no separate updater helper
-            // process: this process finishes the swap and relaunches a NEW
-            // process pointed at the freshly-placed file, all before this
-            // one exits.
-            File.Move(currentExe, oldExe, overwrite: true);
-            File.Move(PendingExePath, currentExe, overwrite: true);
-
-            Process.Start(new ProcessStartInfo(currentExe) { UseShellExecute = true });
-            return true;
-        }
-        catch
-        {
-            // Swap failed partway through -- leave it for the next launch
-            // to sort out rather than risk starting a half-written exe.
-            return false;
-        }
-    }
-
-    /// <summary>Fire-and-forget background check -- call once per session,
-    /// after the main window is already visible, so a slow or unreachable
-    /// GitHub never delays startup. Entirely best-effort: no network, the
-    /// repo not existing yet, GitHub being down, etc. should never surface
-    /// to the user or interrupt normal use of the app.</summary>
-    public static async Task CheckAndDownloadUpdateAsync()
+    public static async Task<UpdateInfo?> CheckForUpdatesAsync()
     {
         try
         {
-            var saved = SettingsService.Load();
-            if (saved?.LastUpdateCheckUtc is { } last && DateTime.UtcNow - last < CheckInterval) return;
-
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            // GitHub's API rejects requests with no User-Agent.
-            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("AvaSnap", CurrentVersion.ToString()));
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-
-            var json = await http.GetStringAsync($"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest");
-            var release = JsonSerializer.Deserialize<GitHubRelease>(json);
-
-            SettingsService.SaveLastUpdateCheck(DateTime.UtcNow);
-
-            if (release?.TagName is null) return;
-            if (!TryParseVersion(release.TagName, out var latest)) return;
-            if (latest <= CurrentVersion) return;
-
-            var asset = release.Assets?.Find(a => a.Name == AssetName);
-            if (asset?.BrowserDownloadUrl is not { } url) return;
-
-            Directory.CreateDirectory(UpdateDir);
-            var tempPath = PendingExePath + ".part";
-            await using (var stream = await http.GetStreamAsync(url))
-            await using (var file = File.Create(tempPath))
-            {
-                await stream.CopyToAsync(file);
-            }
-            // Size check against the release asset's own reported size --
-            // a cheap sanity check that the download wasn't cut short, not
-            // a full integrity hash (the asset already travels over HTTPS
-            // straight from GitHub).
-            if (asset.Size > 0 && new FileInfo(tempPath).Length != asset.Size)
-            {
-                File.Delete(tempPath);
-                return;
-            }
-            File.Move(tempPath, PendingExePath, overwrite: true);
+            return await _manager.CheckForUpdatesAsync();
         }
         catch
         {
-            // best-effort, see doc comment above
+            return null;
         }
     }
 
-    private static Version CurrentVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0, 0);
-
-    private static bool TryParseVersion(string tag, out Version version)
+    /// <summary>Every Full-package version currently published to the
+    /// repo's release feed, newest first -- for the "過去の任意バージョン
+    /// も選んで戻せる" version picker. Not exposed by UpdateManager's own
+    /// CheckForUpdatesAsync (that only ever surfaces "latest, if newer"),
+    /// so this reads the source's release feed directly instead, per
+    /// Velopack's documented pattern for targeting a specific version.</summary>
+    public static async Task<IReadOnlyList<VelopackAsset>> GetAvailableVersionsAsync()
     {
-        var trimmed = tag.TrimStart('v', 'V');
-        return Version.TryParse(trimmed, out version!);
+        try
+        {
+            // AppId is only null when not installed (see IsInstalled) --
+            // callers are expected to check that first, same as every other
+            // member here that assumes a real install.
+            var feed = await _source.GetReleaseFeed(NullVelopackLogger.Instance, _manager.AppId!, channel: null!);
+            return feed.Assets
+                .Where(a => a.Type == VelopackAssetType.Full)
+                .OrderByDescending(a => a.Version)
+                .ToList();
+        }
+        catch
+        {
+            return Array.Empty<VelopackAsset>();
+        }
+    }
+
+    /// <summary>Downloads and installs <paramref name="target"/>, then
+    /// restarts into it. <paramref name="target"/> may be OLDER than the
+    /// currently-installed version (rolling back to a past release the
+    /// user picked) -- IsDowngrade is set accordingly so Velopack skips
+    /// delta-patching and does a full reinstall instead, same as its own
+    /// documented rollback recipe.</summary>
+    public static async Task DownloadAndApplyAsync(VelopackAsset target, Action<int>? onProgress = null)
+    {
+        bool isDowngrade = _manager.CurrentVersion is { } current && target.Version < current;
+        var info = new UpdateInfo(target, isDowngrade);
+        await _manager.DownloadUpdatesAsync(info, onProgress);
+        _manager.ApplyUpdatesAndRestart(info);
     }
 }

@@ -13,25 +13,32 @@
     <RootNamespace>AvaSnap</RootNamespace>
     <AssemblyName>AvaSnap</AssemblyName>
 
-    <!-- Source of truth for UpdateService's version comparison against
-         GitHub release tags (tag "v1.0.1" > this = an update is offered),
-         and for the version number AboutPanel displays. Bump this alongside
-         every release published to qsyi/avasnap. -->
+    <!-- Program.cs supplies its own Main (VelopackApp.Build().Run() must
+         run before WPF starts; see its own doc comment); this tells the
+         compiler to use that one instead of the one WPF's build targets
+         would otherwise auto-generate from App.xaml. -->
+    <StartupObject>AvaSnap.Program</StartupObject>
+
+    <!-- Source of truth for UpdateService's version comparison and the
+         version number AboutPanel displays. Bump this alongside every
+         release packaged with `vpk pack` for qsyi/avasnap. -->
     <Version>1.0.0</Version>
 
-    <!-- Distribution: single self-contained exe, no installer required -->
+    <!-- Distribution: Velopack-managed install (Setup.exe into a versioned
+         folder under %LocalAppData%, with in-place updates); see
+         Services/UpdateService.cs. No longer a single portable exe:
+         PublishSingleFile is incompatible with Velopack, which needs the
+         individual publish-output files to build delta packages between
+         versions. `dotnet publish` output here is an input to `vpk pack`,
+         not the distributed artifact itself. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <!-- Zen Maru Gothic (SIL Open Font License, free for commercial use) is
-       embedded as a WPF resource rather than relied upon as a system font.
-       PublishSingleFile ships one exe with no separate installer step, so
-       the font needs to travel inside it too, not depend on being
-       separately installed on whatever machine runs it. -->
+       embedded as a WPF resource rather than relied upon as a system font,
+       so it doesn't depend on being separately installed on whatever
+       machine runs the app. -->
   <ItemGroup>
     <Resource Include="Fonts\ZenMaruGothic-Medium.ttf" />
   </ItemGroup>
@@ -49,6 +56,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ComputeSharp" Version="3.2.0" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
 </Project>

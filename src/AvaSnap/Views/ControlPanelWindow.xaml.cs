@@ -382,6 +382,11 @@ public partial class ControlPanelWindow : Window
             _aboutContentLoaded = true;
         }
 
+        // Whatever badge App.xaml.cs's background check may have set is
+        // moot now that the user is looking straight at the update section
+        // this opens into (see RefreshUpdateSectionAsync below).
+        UpdateAvailableBadge.Visibility = Visibility.Collapsed;
+
         HomePanel.Visibility = Visibility.Collapsed;
         AlignPanel.Visibility = Visibility.Collapsed;
         CompositePanel.Visibility = Visibility.Collapsed;
@@ -392,7 +397,78 @@ public partial class ControlPanelWindow : Window
         Width = 440;
         Height = 640;
         PinToRightEdge();
+
+        _ = RefreshUpdateSectionAsync();
     });
+
+    /// <summary>Called from App.xaml.cs once a background CheckForUpdatesAsync
+    /// finds something newer than the running build -- just flags the gear
+    /// icon; nothing downloads until the user opens バージョン情報 and picks
+    /// a version themselves (see UpdateApplyButton_Click).</summary>
+    public void ShowUpdateAvailableNotification() => UpdateAvailableBadge.Visibility = Visibility.Visible;
+
+    /// <summary>Populates UpdateVersionCombo from every version currently
+    /// published to the repo's release feed (newest first, newest
+    /// preselected) and sets UpdateStatusText accordingly. Runs every time
+    /// AboutPanel opens (not cached like the license text) so it reflects
+    /// whatever's actually published right now, not a snapshot from
+    /// whenever the panel was last opened.</summary>
+    private async Task RefreshUpdateSectionAsync()
+    {
+        if (!UpdateService.IsInstalled)
+        {
+            UpdateStatusText.Text = "この起動方法(開発ビルドなど)ではアップデート機能を利用できません。";
+            UpdateVersionRow.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        UpdateStatusText.Text = "バージョン情報を確認しています…";
+        UpdateVersionRow.Visibility = Visibility.Collapsed;
+
+        var versions = await UpdateService.GetAvailableVersionsAsync();
+        if (versions.Count == 0)
+        {
+            UpdateStatusText.Text = "バージョン情報を取得できませんでした。ネットワーク接続を確認してください。";
+            return;
+        }
+
+        var current = UpdateService.CurrentVersion;
+        UpdateStatusText.Text = current is not null && versions[0].Version > current
+            ? "新しいバージョンがあります。"
+            : "現在のバージョンは最新です。";
+
+        UpdateVersionCombo.Items.Clear();
+        foreach (var asset in versions)
+        {
+            var label = $"v{asset.Version}" + (asset.Version == current ? "(現在)" : "");
+            UpdateVersionCombo.Items.Add(new ComboBoxItem { Content = label, Tag = asset });
+        }
+        UpdateVersionCombo.SelectedIndex = 0; // newest first, preselected as the default
+        UpdateVersionRow.Visibility = Visibility.Visible;
+    }
+
+    private async void UpdateApplyButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdateVersionCombo.SelectedItem is not ComboBoxItem { Tag: Velopack.VelopackAsset asset }) return;
+
+        UpdateApplyButton.IsEnabled = false;
+        UpdateVersionCombo.IsEnabled = false;
+        UpdateStatusText.Text = "ダウンロード中…";
+        try
+        {
+            await UpdateService.DownloadAndApplyAsync(asset, percent =>
+                Dispatcher.Invoke(() => UpdateStatusText.Text = $"ダウンロード中… {percent}%"));
+            // ApplyUpdatesAndRestart (inside DownloadAndApplyAsync) restarts
+            // the process itself -- normal execution doesn't continue past
+            // this point on success.
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"アップデートに失敗しました: {ex.Message}";
+            UpdateApplyButton.IsEnabled = true;
+            UpdateVersionCombo.IsEnabled = true;
+        }
+    }
 
     private static string LoadEmbeddedText(string packRelativePath)
     {
