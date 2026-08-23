@@ -3,11 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:AvaSnap.Converters"
         Title="AvaSnap"
+        Icon="pack://application:,,,/Assets/AppIcon.ico"
         Width="420" Height="480"
         MinWidth="360" MinHeight="380"
         WindowStartupLocation="Manual"
         WindowStyle="None"
-        ResizeMode="NoResize"
+        ResizeMode="CanResize"
+        StateChanged="Window_StateChanged"
         AllowDrop="True"
         Drop="Window_Drop"
         DragOver="Window_DragOver"
@@ -961,57 +963,122 @@
              window need to be hand-rolled here instead. Kept opaque (no
              AllowsTransparency) so the window stays hardware-accelerated,
              which only matters for Composite mode's live image preview but
-             there's no reason to pay for it everywhere. -->
-        <Grid Grid.Row="0" Height="28" Background="{DynamicResource CardBackgroundBrush}"
+             there's no reason to pay for it everywhere. Height=32 and the
+             Minimize/Maximize/Close cluster's 46px-wide buttons match the
+             standard Windows 10/11 caption bar. -->
+        <Grid Grid.Row="0" Height="32" Background="{DynamicResource CardBackgroundBrush}"
               MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-            <TextBlock Text="AvaSnap" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
-                       VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False" />
-            <!-- Dark-mode toggle: always reachable from the top-right,
-                 regardless of which mode/settings screen is open (the title
-                 bar is shared by every screen). A wide switch (not a plain
-                 icon button) so it visually reads as a toggle at a glance;
-                 the sun/moon icon riding the sliding thumb shows which mode
-                 is CURRENTLY active. -->
-            <ToggleButton x:Name="ThemeToggleButton" Style="{StaticResource ThemeSwitchToggleButton}"
-                          HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,78,0"
-                          Checked="ThemeToggleButton_Changed" Unchecked="ThemeToggleButton_Changed"
-                          ToolTip="ダークモードの切り替え" />
-            <!-- Only meaningful (and visible) while Align or Composite mode
-                 is actually open. See ShowHome/ShowAlign/ShowComposite/
-                 EnterCompact, each of which sets this alongside the panel
-                 Visibility toggles above. Moved here from each mode's own
-                 NavSegmentGroup so it's reachable the same way regardless of
-                 mode, right between the two other always-there title-bar
-                 controls. -->
-            <Button x:Name="TitleBarMinimizeButton" Style="{StaticResource TitleBarMinimizeButton}" Width="32" Height="28"
-                    HorizontalAlignment="Right" Margin="0,0,40,0" Visibility="Collapsed"
-                    Click="TitleBarMinimizeButton_Click" ToolTip="最小化">
-                <Viewbox Width="14" Height="14">
-                    <Canvas Width="24" Height="24">
-                        <!-- Lucide "minimize-2" icon (ISC license): diagonal
-                             arrows pointing inward. -->
-                        <Path Data="m14 10 7-7" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                        <Path Data="M20 10h-6V4" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                        <Path Data="m3 21 7-7" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                        <Path Data="M4 14h6v6" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                    </Canvas>
-                </Viewbox>
-            </Button>
-            <Button Style="{StaticResource TitleBarCloseButton}" Width="40" Height="28"
-                    HorizontalAlignment="Right" Click="CloseButton_Click">
-                <Viewbox Width="12" Height="12">
-                    <Canvas Width="24" Height="24">
-                        <Path Data="M18 6 6 18" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
-                        <Path Data="m6 6 12 12" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
-                    </Canvas>
-                </Viewbox>
-            </Button>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
+                <TextBlock Text="AvaSnap" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+                <TextBlock x:Name="TitleBarVersionText" Text="" FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="6,0,0,2" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
+                <!-- Collapsed until App.xaml.cs's background CheckForUpdatesAsync
+                     finds something newer than the running build (see
+                     ShowUpdateAvailableNotification): this button IS the
+                     notification (no separate badge/dot elsewhere), and stays
+                     visible across every mode since it lives in the shared
+                     title bar. Clicking it opens バージョン情報's update
+                     section and hides itself again. -->
+                <Button x:Name="TitleBarUpdateButton" Style="{StaticResource TitleBarMinimizeButton}"
+                        Padding="10,0" Margin="0,4,4,4" Visibility="Collapsed"
+                        Click="TitleBarUpdateButton_Click" ToolTip="新しいバージョンがあります">
+                    <StackPanel Orientation="Horizontal">
+                        <Viewbox Width="13" Height="13" Margin="0,0,5,0">
+                            <Canvas Width="24" Height="24">
+                                <!-- Lucide "download" icon (ISC license). -->
+                                <Path Data="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" Stroke="{DynamicResource PrimaryBrush}"
+                                      StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                <Path Data="M7 10l5 5 5-5" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                <Path Data="M12 15V3" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock Text="アップデート" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <!-- Dark-mode toggle: always reachable from the top-right,
+                     regardless of which mode/settings screen is open (the
+                     title bar is shared by every screen). A wide switch (not
+                     a plain icon button) so it visually reads as a toggle at
+                     a glance; the sun/moon icon riding the sliding thumb
+                     shows which mode is CURRENTLY active. -->
+                <ToggleButton x:Name="ThemeToggleButton" Style="{StaticResource ThemeSwitchToggleButton}"
+                              VerticalAlignment="Center" Margin="0,0,10,0"
+                              Checked="ThemeToggleButton_Changed" Unchecked="ThemeToggleButton_Changed"
+                              ToolTip="ダークモードの切り替え" />
+
+                <!-- Only meaningful (and visible) while Align or Composite mode
+                     is actually open. See ShowHome/ShowAlign/ShowComposite/
+                     EnterCompact, each of which sets this alongside the panel
+                     Visibility toggles above. Not a real OS minimize: it
+                     shrinks the window to CompactPanel's small corner widget
+                     (see EnterCompact/TitleBarMinimizeButton_Click), which is
+                     why it keeps its own dedicated icon rather than a plain
+                     "_" glyph. -->
+                <Button x:Name="TitleBarMinimizeButton" Style="{StaticResource TitleBarMinimizeButton}" Width="46" Height="32"
+                        Visibility="Collapsed" Click="TitleBarMinimizeButton_Click" ToolTip="最小化">
+                    <Viewbox Width="14" Height="14">
+                        <Canvas Width="24" Height="24">
+                            <!-- Lucide "minimize-2" icon (ISC license): diagonal
+                                 arrows pointing inward. -->
+                            <Path Data="m14 10 7-7" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                            <Path Data="M20 10h-6V4" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                            <Path Data="m3 21 7-7" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                            <Path Data="M4 14h6v6" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                        </Canvas>
+                    </Viewbox>
+                </Button>
+
+                <!-- Real maximize/restore, toggling _isMaximized (see
+                     TitleBarMaximizeButton_Click): fills/restores via
+                     manual Width/Height/Left/Top rather than WPF's own
+                     WindowState.Maximized, consistent with how every mode
+                     already manages its own size/position by hand (see
+                     WithRedrawSuspended/PinToRightEdge) instead of relying
+                     on native window chrome, and sidesteps the classic WPF
+                     WindowStyle=None + WindowState=Maximized bug where the
+                     window overlaps the taskbar. Hidden in Compact mode
+                     (ExpandButton already covers "make it bigger again"
+                     there); see EnterCompact. -->
+                <Button x:Name="TitleBarMaximizeButton" Style="{StaticResource TitleBarMinimizeButton}" Width="46" Height="32"
+                        Click="TitleBarMaximizeButton_Click" ToolTip="最大化">
+                    <Grid>
+                        <Viewbox x:Name="MaximizeIcon" Width="12" Height="12">
+                            <Rectangle Width="20" Height="20" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" />
+                        </Viewbox>
+                        <Viewbox x:Name="RestoreIcon" Width="13" Height="13" Visibility="Collapsed">
+                            <Canvas Width="24" Height="24">
+                                <Rectangle Canvas.Left="6" Canvas.Top="0" Width="18" Height="18"
+                                           Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" />
+                                <Rectangle Canvas.Left="0" Canvas.Top="6" Width="18" Height="18"
+                                           Fill="{DynamicResource CardBackgroundBrush}"
+                                           Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" />
+                            </Canvas>
+                        </Viewbox>
+                    </Grid>
+                </Button>
+
+                <Button Style="{StaticResource TitleBarCloseButton}" Width="46" Height="32" Click="CloseButton_Click">
+                    <Viewbox Width="12" Height="12">
+                        <Canvas Width="24" Height="24">
+                            <Path Data="M18 6 6 18" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Path Data="m6 6 12 12" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Canvas>
+                    </Viewbox>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <!-- Home: mode picker. The settings icon sits in its own corner of
@@ -1034,14 +1101,6 @@
             </Viewbox>
         </Button>
 
-        <!-- Set visible by App.xaml.cs's ShowUpdateAvailableNotification
-             (called once a background CheckForUpdatesAsync finds something
-             newer than the running build), cleared once AboutPanel's own
-             update section is opened; see AboutButton_Click. -->
-        <Border x:Name="UpdateAvailableBadge" Grid.Row="1" Width="10" Height="10" CornerRadius="5"
-                Background="{DynamicResource AccentBrush}" BorderBrush="{DynamicResource AppBackgroundBrush}" BorderThickness="2"
-                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,13,13,0"
-                IsHitTestVisible="False" Visibility="Collapsed" />
 
         <StackPanel x:Name="HomePanel" Grid.Row="1" Margin="22" VerticalAlignment="Center">
             <TextBlock Text="AvaSnap" FontSize="30" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}"
@@ -1100,8 +1159,24 @@
                 </StackPanel>
 
                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,14,0,10" />
-                <Button Content="バージョン情報" Style="{StaticResource SecondaryPillButton}" FontSize="13"
-                        HorizontalAlignment="Left" Padding="14,6" Click="AboutButton_Click" />
+                <Button Style="{StaticResource SecondaryPillButton}" FontSize="13"
+                        HorizontalAlignment="Left" Padding="14,6" Margin="0,0,0,8" Click="AboutButton_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Lucide "info" icon (ISC license). -->
+                        <Viewbox Width="13" Height="13" Margin="0,0,6,0">
+                            <Canvas Width="24" Height="24">
+                                <Ellipse Canvas.Left="2" Canvas.Top="2" Width="20" Height="20"
+                                         Stroke="White" StrokeThickness="2" />
+                                <Path Data="M12 16v-4" Stroke="White" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                <Ellipse Canvas.Left="11" Canvas.Top="7.5" Width="2" Height="2" Fill="White" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock Text="バージョン情報" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Content="ライセンス" Style="{StaticResource BackButton}" FontSize="13"
+                        HorizontalAlignment="Left" Click="LicenseButton_Click" />
             </StackPanel>
         </Border>
 
@@ -3233,15 +3308,15 @@
             </Border>
         </Grid>
 
-        <!-- バージョン情報: opened from HomeSettingsPanel's own button, not
-             part of the Home/Align/Composite work-mode rotation, so it just
+        <!-- バージョン情報: opened from HomeSettingsPanel's own button, or
+             from TitleBarUpdateButton when an update is available, not part
+             of the Home/Align/Composite work-mode rotation, so it just
              reuses BackToHome_Click to return rather than getting its own
-             PanelMode. LicenseText/ThirdPartyNoticesText are populated in
-             code-behind (see ShowAbout) from the LICENSE.md/THIRD-PARTY-
-             NOTICES.md files embedded as WPF resources (see the csproj):
-             several of the notices in there (SIL OFL, MIT) require staying
-             viewable alongside the redistributed software itself, which a
-             read-only in-app screen satisfies even with no network access. -->
+             PanelMode. PatchNotesText is populated in code-behind (see
+             ShowAbout) from PATCHNOTES.md, embedded as a WPF resource (see
+             the csproj) so it's readable with no network access. License/
+             third-party notices live in the separate LicensePanel instead
+             (see below); see LicenseButton_Click. -->
         <Grid x:Name="AboutPanel" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -3282,6 +3357,29 @@
                         </StackPanel>
                     </Border>
 
+                    <TextBlock Text="パッチノート" Style="{StaticResource SectionHeader}" />
+                    <TextBox x:Name="PatchNotesText" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                             BorderThickness="0" Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}"
+                             FontSize="11" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ライセンス: LICENSE.md/THIRD-PARTY-NOTICES.md, split out of
+             AboutPanel into their own screen (same rationale as
+             AboutPanel's own doc comment: embedded WPF resources, no
+             network access needed). -->
+        <Grid x:Name="LicensePanel" Grid.Row="1" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Button Grid.Row="0" Content="&#8592; ホーム" Style="{StaticResource BackButton}"
+                    HorizontalAlignment="Left" Margin="12,12,0,0" Click="BackToHome_Click" />
+
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="16,4,16,16">
                     <TextBlock Text="ライセンス" Style="{StaticResource SectionHeader}" />
                     <TextBox x:Name="LicenseText" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
                              BorderThickness="0" Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}"

@@ -69,6 +69,9 @@ public partial class ControlPanelWindow : Window
         _defaultMinWidth = MinWidth;
         _defaultMinHeight = MinHeight;
 
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+        TitleBarVersionText.Text = $"v{version.Major}.{version.Minor}.{version.Build}";
+
         Left = SystemParameters.WorkArea.Right - Width - 20;
         Top = 40;
 
@@ -177,7 +180,9 @@ public partial class ControlPanelWindow : Window
         CompositePanel.Visibility = Visibility.Collapsed;
         CompactPanel.Visibility = Visibility.Collapsed;
         AboutPanel.Visibility = Visibility.Collapsed;
+        LicensePanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
+        TitleBarMaximizeButton.Visibility = Visibility.Visible;
         HomeSettingsToggle.Visibility = Visibility.Visible;
         Width = 400;
         Height = HomeHeight;
@@ -208,7 +213,9 @@ public partial class ControlPanelWindow : Window
         CompositePanel.Visibility = Visibility.Collapsed;
         CompactPanel.Visibility = Visibility.Collapsed;
         AboutPanel.Visibility = Visibility.Collapsed;
+        LicensePanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Visible;
+        TitleBarMaximizeButton.Visibility = Visibility.Visible;
         HideHomeSettings();
         Width = 440;
         Height = 880;
@@ -228,7 +235,9 @@ public partial class ControlPanelWindow : Window
             CompositePanel.Visibility = Visibility.Visible;
             CompactPanel.Visibility = Visibility.Collapsed;
             AboutPanel.Visibility = Visibility.Collapsed;
+            LicensePanel.Visibility = Visibility.Collapsed;
             TitleBarMinimizeButton.Visibility = Visibility.Visible;
+            TitleBarMaximizeButton.Visibility = Visibility.Visible;
             HideHomeSettings();
             // Rescanned fresh every time this mode is entered (not cached),
             // so it always reflects whatever's actually in the watch folder
@@ -363,36 +372,40 @@ public partial class ControlPanelWindow : Window
     }
 
     private bool _aboutContentLoaded;
+    private bool _licenseContentLoaded;
 
     private void AboutButton_Click(object sender, RoutedEventArgs e) => ShowAbout();
+    private void LicenseButton_Click(object sender, RoutedEventArgs e) => ShowLicense();
+    private void TitleBarUpdateButton_Click(object sender, RoutedEventArgs e) => ShowAbout();
 
-    /// <summary>LicenseText/ThirdPartyNoticesText are populated once, the
-    /// first time this opens, from LICENSE.md/THIRD-PARTY-NOTICES.md --
-    /// embedded as WPF resources (see the csproj) so they're readable from
-    /// inside the shipped exe with no network access needed, which several
-    /// of the notices in there (SIL OFL, MIT) require.</summary>
+    /// <summary>PatchNotesText is populated once, the first time this opens,
+    /// from PATCHNOTES.md -- embedded as a WPF resource (see the csproj) so
+    /// it's readable from inside the shipped exe with no network access
+    /// needed. License/third-party notices live in the separate
+    /// LicensePanel instead (see ShowLicense).</summary>
     private void ShowAbout() => WithRedrawSuspended(() =>
     {
         if (!_aboutContentLoaded)
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
             AboutVersionText.Text = $"バージョン {version.Major}.{version.Minor}.{version.Build}";
-            LicenseText.Text = LoadEmbeddedText("Assets/LICENSE.md");
-            ThirdPartyNoticesText.Text = LoadEmbeddedText("Assets/THIRD-PARTY-NOTICES.md");
+            PatchNotesText.Text = LoadEmbeddedText("Assets/PATCHNOTES.md");
             _aboutContentLoaded = true;
         }
 
-        // Whatever badge App.xaml.cs's background check may have set is
-        // moot now that the user is looking straight at the update section
-        // this opens into (see RefreshUpdateSectionAsync below).
-        UpdateAvailableBadge.Visibility = Visibility.Collapsed;
+        // The title-bar update button IS the notification (see
+        // ShowUpdateAvailableNotification) -- moot now that the user is
+        // looking straight at the update section this opens into.
+        TitleBarUpdateButton.Visibility = Visibility.Collapsed;
 
         HomePanel.Visibility = Visibility.Collapsed;
         AlignPanel.Visibility = Visibility.Collapsed;
         CompositePanel.Visibility = Visibility.Collapsed;
         CompactPanel.Visibility = Visibility.Collapsed;
         AboutPanel.Visibility = Visibility.Visible;
+        LicensePanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
+        TitleBarMaximizeButton.Visibility = Visibility.Visible;
         HideHomeSettings();
         Width = 440;
         Height = 640;
@@ -401,11 +414,220 @@ public partial class ControlPanelWindow : Window
         _ = RefreshUpdateSectionAsync();
     });
 
+    /// <summary>LicenseText/ThirdPartyNoticesText are populated once, the
+    /// first time this opens, from LICENSE.md/THIRD-PARTY-NOTICES.md --
+    /// embedded as WPF resources (see the csproj) so they're readable from
+    /// inside the shipped exe with no network access needed, which several
+    /// of the notices in there (SIL OFL, MIT) require.</summary>
+    private void ShowLicense() => WithRedrawSuspended(() =>
+    {
+        if (!_licenseContentLoaded)
+        {
+            LicenseText.Text = LoadEmbeddedText("Assets/LICENSE.md");
+            ThirdPartyNoticesText.Text = LoadEmbeddedText("Assets/THIRD-PARTY-NOTICES.md");
+            _licenseContentLoaded = true;
+        }
+
+        HomePanel.Visibility = Visibility.Collapsed;
+        AlignPanel.Visibility = Visibility.Collapsed;
+        CompositePanel.Visibility = Visibility.Collapsed;
+        CompactPanel.Visibility = Visibility.Collapsed;
+        AboutPanel.Visibility = Visibility.Collapsed;
+        LicensePanel.Visibility = Visibility.Visible;
+        TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
+        TitleBarMaximizeButton.Visibility = Visibility.Visible;
+        HideHomeSettings();
+        Width = 440;
+        Height = 640;
+        PinToRightEdge();
+    });
+
     /// <summary>Called from App.xaml.cs once a background CheckForUpdatesAsync
-    /// finds something newer than the running build -- just flags the gear
-    /// icon; nothing downloads until the user opens バージョン情報 and picks
-    /// a version themselves (see UpdateApplyButton_Click).</summary>
-    public void ShowUpdateAvailableNotification() => UpdateAvailableBadge.Visibility = Visibility.Visible;
+    /// finds something newer than the running build. This button IS the
+    /// notification (no separate badge elsewhere) -- nothing downloads
+    /// until the user clicks it, opens バージョン情報, and picks a version
+    /// themselves (see UpdateApplyButton_Click).</summary>
+    public void ShowUpdateAvailableNotification() => TitleBarUpdateButton.Visibility = Visibility.Visible;
+
+    /// <summary>Real WindowState.Maximized (not a hand-rolled fill-the-
+    /// workarea substitute) specifically so two pieces of native behavior
+    /// come for free: dragging the title bar of a maximized window
+    /// restores it and keeps following the cursor (built into DragMove(),
+    /// which TitleBar_MouseLeftButtonDown already calls), and edge-drag
+    /// resizing (ResizeMode="CanResize"). RestoreBounds tracks the pre-
+    /// maximize size/position automatically -- no manual bookkeeping
+    /// needed here, unlike an earlier version of this that faked
+    /// maximizing via manual Width/Height/Left/Top.</summary>
+    private void TitleBarMaximizeButton_Click(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    /// <summary>Keeps the maximize button's icon in sync regardless of HOW
+    /// WindowState changed -- the button above, double-clicking the title
+    /// bar (not currently wired, but this covers it if that's ever added),
+    /// Aero Snap, or the taskbar's own right-click menu.</summary>
+    private void Window_StateChanged(object sender, EventArgs e)
+    {
+        bool maximized = WindowState == WindowState.Maximized;
+        MaximizeIcon.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
+        RestoreIcon.Visibility = maximized ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // ---- WindowStyle="None" + WindowState="Maximized" has a well-known
+    //      WPF bug: without this hook, a maximized borderless window
+    //      expands to the monitor's FULL bounds (covering the taskbar)
+    //      instead of just its work area. Intercepting WM_GETMINMAXINFO and
+    //      filling in the actual work-area bounds ourselves is the standard
+    //      fix -- see OnSourceInitialized, which installs this hook once
+    //      the window's Win32 handle exists (too early in the constructor). ----
+
+    private const int WM_GETMINMAXINFO = 0x0024;
+    private const int MONITOR_DEFAULTTONEAREST = 0x00000002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X; public int Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public POINT ptReserved;
+        public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorRECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public MonitorRECT rcMonitor;
+        public MonitorRECT rcWork;
+        public int dwFlags;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr handle, int flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        if (PresentationSource.FromVisual(this) is HwndSource hwndSource)
+        {
+            hwndSource.AddHook(WindowProc);
+        }
+    }
+
+    // WM_NCCALCSIZE: ResizeMode="CanResize" reserves a thin non-client
+    // border even with WindowStyle="None" -- DWM paints its own default
+    // (white) background into that sliver since none of our WPF content
+    // renders there, which is what showed up as a hairline at the top
+    // edge. Treating the whole window as client area (no border reserved)
+    // removes it, but ALSO removes the OS's own edge-hit-testing that
+    // "no border" area would otherwise still provide for drag-to-resize --
+    // see WM_NCHITTEST below, which is what actually restores that.
+    private const int WM_NCCALCSIZE = 0x0083;
+
+    // WM_NCACTIVATE: DWM's default handling repaints a non-client border
+    // on activate/deactivate (e.g. switching back from another window) even
+    // though WM_NCCALCSIZE above already claims there's no non-client area
+    // -- that's the white flash reported when refocusing this window.
+    // Returning TRUE and marking the message handled (instead of letting
+    // DefWindowProc run) skips that default repaint entirely.
+    private const int WM_NCACTIVATE = 0x0086;
+
+    // WM_NCHITTEST: with WM_NCCALCSIZE above claiming zero non-client area,
+    // Windows has nothing left to classify as a resize edge, so dragging
+    // near the window's border stopped resizing it. Classifying the outer
+    // few pixels as HTLEFT/HTRIGHT/HTTOP/HTBOTTOM/corners ourselves (pure
+    // hit-testing, no visible border reserved) hands that back to the OS's
+    // own native resize-drag loop, exactly like a normal window's border.
+    private const int WM_NCHITTEST = 0x0084;
+    private const int HTCLIENT = 1;
+    private const int HTLEFT = 10;
+    private const int HTRIGHT = 11;
+    private const int HTTOP = 12;
+    private const int HTTOPLEFT = 13;
+    private const int HTTOPRIGHT = 14;
+    private const int HTBOTTOM = 15;
+    private const int HTBOTTOMLEFT = 16;
+    private const int HTBOTTOMRIGHT = 17;
+    private const int ResizeGripThickness = 6;
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out MonitorRECT lpRect);
+
+    private static IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_NCHITTEST)
+        {
+            long l = lParam.ToInt64();
+            int x = unchecked((short)(l & 0xFFFF));
+            int y = unchecked((short)((l >> 16) & 0xFFFF));
+            GetWindowRect(hwnd, out var rect);
+
+            bool onLeft = x < rect.Left + ResizeGripThickness;
+            bool onRight = x >= rect.Right - ResizeGripThickness;
+            bool onTop = y < rect.Top + ResizeGripThickness;
+            bool onBottom = y >= rect.Bottom - ResizeGripThickness;
+
+            int hit = (onTop, onBottom, onLeft, onRight) switch
+            {
+                (true, _, true, _) => HTTOPLEFT,
+                (true, _, _, true) => HTTOPRIGHT,
+                (_, true, true, _) => HTBOTTOMLEFT,
+                (_, true, _, true) => HTBOTTOMRIGHT,
+                (true, _, _, _) => HTTOP,
+                (_, true, _, _) => HTBOTTOM,
+                (_, _, true, _) => HTLEFT,
+                (_, _, _, true) => HTRIGHT,
+                _ => HTCLIENT,
+            };
+            if (hit != HTCLIENT)
+            {
+                handled = true;
+                return new IntPtr(hit);
+            }
+            // Not on an edge -- fall through to default handling (HTCLIENT),
+            // which leaves the title bar's own DragMove()-based dragging and
+            // every button's own click handling untouched.
+            return IntPtr.Zero;
+        }
+        if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero)
+        {
+            handled = true;
+            return IntPtr.Zero;
+        }
+        if (msg == WM_NCACTIVATE)
+        {
+            handled = true;
+            return new IntPtr(1);
+        }
+        if (msg == WM_GETMINMAXINFO)
+        {
+            var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+            var monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (monitor != IntPtr.Zero)
+            {
+                var monitorInfo = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+                GetMonitorInfo(monitor, ref monitorInfo);
+                var work = monitorInfo.rcWork;
+                var bounds = monitorInfo.rcMonitor;
+                mmi.ptMaxPosition.X = Math.Abs(work.Left - bounds.Left);
+                mmi.ptMaxPosition.Y = Math.Abs(work.Top - bounds.Top);
+                mmi.ptMaxSize.X = Math.Abs(work.Right - work.Left);
+                mmi.ptMaxSize.Y = Math.Abs(work.Bottom - work.Top);
+            }
+            Marshal.StructureToPtr(mmi, lParam, true);
+            handled = true;
+        }
+        return IntPtr.Zero;
+    }
 
     /// <summary>Populates UpdateVersionCombo from every version currently
     /// published to the repo's release feed (newest first, newest
@@ -600,6 +822,8 @@ public partial class ControlPanelWindow : Window
 
     private void EnterCompact(PanelMode mode) => WithRedrawSuspended(() =>
     {
+        // A tiny corner widget should never be shown maximized.
+        WindowState = WindowState.Normal;
         _preCompactMode = mode;
         _preCompactLeft = Left;
         _preCompactTop = Top;
@@ -609,14 +833,22 @@ public partial class ControlPanelWindow : Window
         CompositePanel.Visibility = Visibility.Collapsed;
         CompactPanel.Visibility = Visibility.Visible;
         AboutPanel.Visibility = Visibility.Collapsed;
+        LicensePanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
+        // Compact mode has its own "make it bigger again" mechanism
+        // (ExpandButton), so the maximize button would be redundant here.
+        TitleBarMaximizeButton.Visibility = Visibility.Collapsed;
         HideHomeSettings();
         CompactModeText.Text = mode == PanelMode.Align ? "位置合わせモード" : "写真合成モード";
 
         MinWidth = 260;
-        MinHeight = 100;
+        // +4 vs this panel's original budget: the title bar grew 28->32px
+        // when it was resized to match Windows' standard caption height,
+        // which otherwise ate straight into CompactPanel's already-tight
+        // content row and squished its button/text.
+        MinHeight = 104;
         Width = 300;
-        Height = 112;
+        Height = 116;
         PinToRightEdge();
         Top = 20;
 

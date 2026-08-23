@@ -33,6 +33,11 @@
          not the distributed artifact itself. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
+
+    <!-- The exe's own file icon (Explorer, taskbar when not running,
+         shortcuts). Pass the same file to vpk pack's icon option when
+         packaging a release so Setup.exe/the installed shortcuts match too. -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Zen Maru Gothic (SIL Open Font License, free for commercial use) is
@@ -41,18 +46,23 @@
        machine runs the app. -->
   <ItemGroup>
     <Resource Include="Fonts\ZenMaruGothic-Medium.ttf" />
+    <!-- Also embedded as a WPF resource (separately from ApplicationIcon
+         above) so Window.Icon can reference it via pack:// for the
+         runtime title-bar/taskbar/alt-tab icon while the app is running. -->
+    <Resource Include="Assets\AppIcon.ico" />
   </ItemGroup>
 
-  <!-- Embedded (not just committed to the repo) so AboutPanel can display
-       the license and third-party notices from inside the shipped exe with
-       no network access needed: several of those notices (SIL OFL, MIT)
-       require staying viewable alongside the redistributed software itself,
-       not just in the source repo. Link keeps one copy of each file at the
-       repo root (where GitHub expects LICENSE to live) instead of
-       duplicating them under this project. -->
+  <!-- Embedded (not just committed to the repo) so LicensePanel/AboutPanel
+       can display these from inside the shipped exe with no network access
+       needed: several of the notices in THIRD-PARTY-NOTICES.md (SIL OFL,
+       MIT) require staying viewable alongside the redistributed software
+       itself, not just in the source repo. Link keeps one copy of each
+       file at the repo root instead of duplicating them under this
+       project. -->
   <ItemGroup>
     <Resource Include="..\..\LICENSE.md" Link="Assets\LICENSE.md" />
     <Resource Include="..\..\THIRD-PARTY-NOTICES.md" Link="Assets\THIRD-PARTY-NOTICES.md" />
+    <Resource Include="..\..\PATCHNOTES.md" Link="Assets\PATCHNOTES.md" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ComputeSharp" Version="3.2.0" />
