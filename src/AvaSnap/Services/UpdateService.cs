@@ -5,20 +5,23 @@ using Velopack.Sources;
 namespace AvaSnap.Services;
 
 /// <summary>Thin wrapper around Velopack's UpdateManager, pointed at
-/// qsyi-dist/avasnap -- a SEPARATE, unlinked GitHub org used only to host
-/// release binaries (Setup.exe/.nupkg), not the qsyi/AvaSnap source repo.
-/// Deliberately split so a public repo full of build artifacts isn't
-/// sitting one click away from qsyi/AvaSnap's README or the qsyi profile's
-/// own repository list -- GitHub always lists an account's public repos on
-/// its profile, so keeping the binaries under a different account is what
-/// actually keeps them from being casually stumbled into (a public repo's
-/// release assets are never access-controlled either way; the repo itself
-/// still needs to be public since GithubSource needs no token). This
-/// raises the bar against casual discovery only: this repo's URL is still
-/// embedded as a plain string in every shipped copy of the app, so anyone
-/// motivated enough to inspect that copy can always find it -- true for
-/// any app that self-updates from a public/unauthenticated feed, not
-/// specific to Velopack or GitHub.
+/// qsyi-dist/as-rel -- a SEPARATE, unlinked GitHub org+repo used only to
+/// host release binaries (Setup.exe/.nupkg), not the qsyi/AvaSnap source
+/// repo. Deliberately split (different account, name unrelated to
+/// "AvaSnap") so a public repo full of build artifacts isn't sitting one
+/// click away from qsyi/AvaSnap's README, the qsyi profile's own
+/// repository list, or a GitHub/web search for "AvaSnap" -- released
+/// asset FILE NAMES matter here too, which is why `vpk pack` is run with
+/// --packId as-rel (this same unrelated name) and --packTitle "AvaSnap"
+/// kept separately, so installed copies still display/register normally
+/// for legitimate users. A public repo's release assets are never
+/// access-controlled either way (the repo itself still has to be public
+/// since GithubSource needs no token), so none of this actually prevents
+/// access -- it only raises the bar against CASUAL discovery. This repo's
+/// URL is still embedded as a plain string in every shipped copy of the
+/// app, so anyone motivated enough to inspect that copy can always find
+/// it -- true for any app that self-updates from a public/unauthenticated
+/// feed, not specific to Velopack or GitHub.
 ///
 /// Velopack (not a hand-rolled GitHub-API-plus-exe-swap scheme, which this
 /// file used to be) owns the actual install/update mechanics: it requires
@@ -35,7 +38,7 @@ namespace AvaSnap.Services;
 /// update available" from "can't check at all".</summary>
 public static class UpdateService
 {
-    private const string RepoUrl = "https://github.com/qsyi-dist/avasnap";
+    private const string RepoUrl = "https://github.com/qsyi-dist/as-rel";
 
     private static readonly GithubSource _source = new(RepoUrl, accessToken: null, prerelease: false);
     private static readonly UpdateManager _manager = new(_source);
