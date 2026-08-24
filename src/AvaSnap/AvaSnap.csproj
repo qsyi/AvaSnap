@@ -21,8 +21,8 @@
 
     <!-- Source of truth for UpdateService's version comparison and the
          version number AboutPanel displays. Bump this alongside every
-         release packaged with `vpk pack` for qsyi/avasnap. -->
-    <Version>0.1.0</Version>
+         release packaged with vpk pack for qsyi-dist/as-rel. -->
+    <Version>0.1.1</Version>
 
     <!-- Distribution: Velopack-managed install (Setup.exe into a versioned
          folder under %LocalAppData%, with in-place updates); see
