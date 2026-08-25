@@ -2019,6 +2019,29 @@
                                              ToolTip="縦の比率"
                                              TextChanged="CanvasAspectCustomRatio_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
+                                <!-- 背景写真そのものを90°ずつ回転(幅と高さが入れ替わる)。
+                                     縦横を間違えて撮ったスクリーンショットの向きを直す用途。
+                                     アバターの回転(_compositeRotationのフリー角度)とは別物。
+                                     回すとアバター配置・デカール位置は新しい写真の向きに
+                                     合わせて初期化し直される(RotatePhotoButton_Click)。 -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="写真の向き" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="背景写真を90°ずつ回転します" />
+                                    <Button Grid.Column="2" x:Name="RotatePhotoButton" Style="{StaticResource RotateIconButton}"
+                                            Click="RotatePhotoButton_Click" ToolTip="背景写真を90°回転します">
+                                        <Viewbox Width="13" Height="13">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M21 3v5h-5" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                </Grid>
                                 <!-- Persistent alternative to dragging 切り抜き幅/位置X/Y:
                                      while on, the crop boundary (dim+outline+corner
                                      handles) stays visible on the preview and can be

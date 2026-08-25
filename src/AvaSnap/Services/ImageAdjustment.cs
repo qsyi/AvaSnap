@@ -88,6 +88,35 @@ public static class ImageAdjustment
         return new PixelBuffer(newPixels, newWidth, newHeight, newStride);
     }
 
+    /// <summary>Rotates the whole photo 90° clockwise, swapping width/height
+    /// -- used by the 配置 card's photo rotate button (each press turns the
+    /// background image another quarter turn). Source pixel (x, y) lands at
+    /// (H-1-y, x) in the rotated (H x W) buffer.</summary>
+    public static PixelBuffer RotateClockwise90(PixelBuffer source)
+    {
+        int width = source.Width, height = source.Height;
+        int newWidth = height, newHeight = width;
+        int newStride = newWidth * 4;
+        var dst = new byte[newStride * newHeight];
+
+        Parallel.For(0, height, y =>
+        {
+            int srcRowBase = y * source.Stride;
+            int dstX = newWidth - 1 - y;
+            for (int x = 0; x < width; x++)
+            {
+                int srcIndex = srcRowBase + x * 4;
+                int dstIndex = x * newStride + dstX * 4;
+                dst[dstIndex] = source.Pixels[srcIndex];
+                dst[dstIndex + 1] = source.Pixels[srcIndex + 1];
+                dst[dstIndex + 2] = source.Pixels[srcIndex + 2];
+                dst[dstIndex + 3] = source.Pixels[srcIndex + 3];
+            }
+        });
+
+        return new PixelBuffer(dst, newWidth, newHeight, newStride);
+    }
+
     /// <summary>Edge-blur stage only (the expensive part): softens the
     /// cutout's silhouette. Split out from color adjustment so a caller that
     /// caches the result only needs to redo this when the blur radius itself

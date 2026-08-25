@@ -2840,6 +2840,27 @@ public partial class ControlPanelWindow : Window
         return true;
     }
 
+    /// <summary>配置カードの回転ボタン -- 押すたびに背景写真を90°ずつ回転
+    /// (幅と高さが入れ替わる)。アバター配置・デカール位置は回転前の写真の
+    /// 画素座標系のままでは意味を失うので、新しい写真を読み込んだ時
+    /// (TryLoadPhotoPixels)と同じ理由で初期化し直す。</summary>
+    private void RotatePhotoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_photoPixelBuffer is not { } photo) return;
+        _photoPixelBuffer = ImageAdjustment.RotateClockwise90(photo);
+        ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
+        _compositePlacementInitialized = false;
+        _decalLayerOrder.RemoveAll(l => l is not null);
+        ExitDecalPlacementMode();
+        RebuildDecalStrip();
+        // SizePreviewToImage() isn't called here directly -- RenderCompositePreview
+        // (triggered below) calls it itself once the re-render actually lands a
+        // new PreviewImage.Source with the swapped width/height, same as every
+        // other handler that just calls ScheduleCompositeRender() and lets the
+        // completed render resize the preview border.
+        ScheduleCompositeRender();
+    }
+
     /// <summary>Loads a photo (from the manual picker or a screenshot-watcher
     /// toast click) and brings the control panel to the front -- a toast is
     /// deliberately non-activating (see <see cref="ScreenshotToastWindow"/>),
