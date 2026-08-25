@@ -379,6 +379,23 @@ public partial class ControlPanelWindow : Window
     private void LicenseButton_Click(object sender, RoutedEventArgs e) => ShowLicense();
     private void TitleBarUpdateButton_Click(object sender, RoutedEventArgs e) => ShowAbout();
 
+    private const string FeedbackFormUrl =
+        "https://docs.google.com/forms/d/e/1FAIpQLSfHQFGMUtwCCMca225BGKxqHQY5_mbW58dzVLEOiurkNq3xxA/viewform?usp=publish-editor";
+
+    /// <summary>ブラウザでGoogleフォームを開くだけ -- アプリ側は何も収集/
+    /// 送信しない。</summary>
+    private void FeedbackButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(FeedbackFormUrl) { UseShellExecute = true });
+        }
+        catch (Win32Exception)
+        {
+            // Default browser failed to launch; nothing more to do.
+        }
+    }
+
     /// <summary>PatchNotesText is populated once, the first time this opens,
     /// from PATCHNOTES.md -- embedded as a WPF resource (see the csproj) so
     /// it's readable from inside the shipped exe with no network access

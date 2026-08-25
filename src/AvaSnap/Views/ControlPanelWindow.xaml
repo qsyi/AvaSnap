@@ -1214,6 +1214,23 @@
                 </Button>
                 <Button Content="ライセンス" Style="{StaticResource BackButton}" FontSize="13"
                         HorizontalAlignment="Left" Click="LicenseButton_Click" />
+
+                <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,10,0,10" />
+                <!-- ユーザー提供のGoogleフォームへの外部リンク。ブラウザで
+                     開くだけで、アプリ内には何も保存/送信しない。 -->
+                <Button Style="{StaticResource SecondaryPillButton}" FontSize="13"
+                        HorizontalAlignment="Left" Padding="14,6" Click="FeedbackButton_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Lucide "message-square" icon (ISC license). -->
+                        <Viewbox Width="13" Height="13" Margin="0,0,6,0">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                                      Stroke="White" StrokeThickness="2" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock Text="ご意見・改善要望" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Border>
 
