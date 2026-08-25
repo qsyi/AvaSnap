@@ -89,7 +89,7 @@ public partial class ControlPanelWindow : Window
         // subscription needed over there any more.
         _unityCameraGuide.DataUpdated += data =>
         {
-            UpdateUnityConnectionStatus(hasFetched: true);
+            ShowGuideFetchedNotification();
             _state.GuideManualFov = data.Fov;
             _state.GuideManualPitch = data.Pitch;
             _state.GuideManualRoll = data.Roll;
@@ -97,7 +97,6 @@ public partial class ControlPanelWindow : Window
             RefreshGuideManualDisplay();
             _suppressEvents = false;
         };
-        UpdateUnityConnectionStatus(hasFetched: false);
 
         _state.PropertyChanged += (_, e) => { RefreshFromState(e.PropertyName); ScheduleCompositeRender(); };
         RefreshFromState();
@@ -1547,25 +1546,30 @@ public partial class ControlPanelWindow : Window
         }
     }
 
-    /// <summary>取得ボタン(RequestGuideButton_Click)を押すたびにUnityへ
-    /// リクエストを送るだけの単発フェッチなので、もう「今まさに繋がって
-    /// いるか」を表す継続的な状態はない -- このAvaSnap起動中に一度でも
-    /// 取得できたかどうかの2択で十分(時刻までは表示しない)。</summary>
-    private void UpdateUnityConnectionStatus(bool hasFetched)
+    /// <summary>UnityCameraGuideService.DataUpdatedが発火するたび(＝取得
+    /// ボタンへの応答がUnityから届くたび)に「取得しました」を数秒表示して
+    /// 消える一時通知 -- ShowUndoRedoReactionと同じ
+    /// フェードイン/ホールド/フェードアウトのキーフレームパターン。継続的な
+    /// 接続状態表示ではないので、押していない間は常にCollapsed。</summary>
+    private void ShowGuideFetchedNotification()
     {
-        var (text, background, foreground) = hasFetched
-            ? ("Unity: 取得済み", "PrimaryTintBrush", "PrimaryBrush")
-            : ("Unity: 未取得", "HairlineBrush", "TextSecondaryBrush");
-        UnityConnectionText.Text = text;
-        UnityConnectionBadge.Background = (Brush)FindResource(background);
-        UnityConnectionText.Foreground = (Brush)FindResource(foreground);
+        UnityConnectionBadge.Visibility = Visibility.Visible;
+
+        var keyFrames = new DoubleAnimationUsingKeyFrames();
+        keyFrames.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0))));
+        keyFrames.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(2000))));
+        keyFrames.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(2500))));
+        keyFrames.Completed += (_, _) => UnityConnectionBadge.Visibility = Visibility.Collapsed;
+        UnityConnectionBadge.BeginAnimation(OpacityProperty, keyFrames);
     }
 
     /// <summary>「取得」ボタン: UnityのCameraCompositionGuideExporterへ
     /// スナップショットをリクエストする(設定不要、Unityを開いてさえいれば
     /// バックグラウンドで自動応答)。送りっぱなし(応答を待たない) --
-    /// Unity Editorが起動していなければ何も起きず、UnityConnectionText
-    /// はそのまま(未取得のまま)。</summary>
+    /// Unity Editorが起動していなければ何も起きず、何も表示は変わらない
+    /// (取得できた時だけShowGuideFetchedNotificationが一時通知を出す)。
+    /// Unity Editorがフォーカスを失っていると応答が遅れることがあるため、
+    /// XAML側に常時表示のヒントテキストを置いてある。</summary>
     private void RequestGuideButton_Click(object sender, RoutedEventArgs e) => _unityCameraGuide.RequestUpdate();
 
     private void GuideVisibleToggle_Changed(object sender, RoutedEventArgs e)

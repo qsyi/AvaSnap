@@ -1396,10 +1396,10 @@
                              Pitch/Rollが唯一の値で、常に手入力可能(取得ボタンで
                              Unityから取得した値もここへ直接書き込まれるだけで、
                              手入力と取得を切り替えるモードは無い)。
-                             UnityConnectionBadge/Textは
-                             UnityCameraGuideService.DataUpdatedを見て、
-                             直近でUnity側から値を取得できたか(表示設定に
-                             関係なく)を示すだけのステータス表示。 -->
+                             UnityConnectionBadge/Textは常時ステータス表示では
+                             なく、UnityCameraGuideService.DataUpdatedが発火
+                             した時だけ「取得しました」を数秒表示して消える
+                             一時的な通知(ShowGuideFetchedNotification)。 -->
                         <Border Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
                             <StackPanel>
                                 <Grid Margin="0,0,0,4">
@@ -1412,9 +1412,10 @@
                                         <TextBlock Text="FOVガイド" Style="{StaticResource SectionHeader}"
                                                    Margin="0" VerticalAlignment="Center" />
                                         <Border x:Name="UnityConnectionBadge" CornerRadius="8" Padding="6,2" Margin="8,0,0,0"
-                                                VerticalAlignment="Center" Background="{DynamicResource HairlineBrush}">
-                                            <TextBlock x:Name="UnityConnectionText" Text="Unity: 未接続" FontSize="11"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                VerticalAlignment="Center" Background="{DynamicResource PrimaryTintBrush}"
+                                                Visibility="Collapsed">
+                                            <TextBlock x:Name="UnityConnectionText" Text="取得しました" FontSize="11"
+                                                       Foreground="{DynamicResource PrimaryBrush}" />
                                         </Border>
                                         <!-- UnityCameraGuideService.FilePathをエクスプローラーで
                                              選択表示する。ファイルが実在するか/更新日時を直接
@@ -1450,7 +1451,7 @@
                                                    Margin="0,0,4,0" VerticalAlignment="Center" Opacity="0.7" />
                                         <Button x:Name="RequestGuideButton" Style="{StaticResource RotateIconButton}"
                                                 Margin="6,0,0,0" Click="RequestGuideButton_Click"
-                                                ToolTip="Unityから今すぐ取得(常時追従ではなく単発リクエストです)">
+                                                ToolTip="Unityからfovを取得">
                                             <Viewbox Width="13" Height="13">
                                                 <Canvas Width="24" Height="24">
                                                     <!-- Lucide "refresh-cw" icon (ISC license). -->
@@ -1469,6 +1470,14 @@
                                         </Button>
                                     </StackPanel>
                                 </Grid>
+                                <!-- Unity EditorはOSフォーカスを失うとEditorApplication.update
+                                     の頻度を大きく落とすため、取得ボタンを押した直後(Unity側が
+                                     非フォーカス)は反映が遅れることがある。Unity側の仕様で
+                                     こちらの実装では解消できないため、常時表示のヒントとして
+                                     明示しておく。 -->
+                                <TextBlock Text="取得ボタンを押してUnityをフォーカスすると反映されます" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap" Margin="0,0,0,6" />
                                 <Grid Margin="0,4,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
