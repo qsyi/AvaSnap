@@ -20,18 +20,13 @@ public partial class OverlayWindow : Window
     private double _dragStartX, _dragStartY;
 
     private readonly VrChatOscListener _oscListener;
-    private readonly UnityCameraGuideService _unityCameraGuide;
-    private UnityCameraGuideData? _unityGuideData;
 
-    public OverlayWindow(OverlayState state, UndoManager undo, VrChatOscListener oscListener, UnityCameraGuideService unityCameraGuide)
+    public OverlayWindow(OverlayState state, UndoManager undo, VrChatOscListener oscListener)
     {
         InitializeComponent();
         _state = state;
         _undo = undo;
         _oscListener = oscListener;
-        _unityCameraGuide = unityCameraGuide;
-        _unityCameraGuide.DataUpdated += OnUnityGuideDataUpdated;
-        _unityCameraGuide.BecameStale += OnUnityGuideBecameStale;
 
         // Cover the full virtual screen (all monitors) at its true origin, so
         // Canvas coordinates line up 1:1 with screen coordinates regardless of
@@ -326,19 +321,20 @@ public partial class OverlayWindow : Window
     public ImageAdjustment.PixelBuffer? OriginalPixelBuffer => _originalPixelBuffer;
 
     /// <summary>Guide-relevant OverlayState properties -- the only ones
-    /// UpdateGuide's inputs actually depend on (fov/pitch/roll come from
-    /// either the manual sliders or Unity's live data, gated by
-    /// GuideVisible/GuideSyncWithUnity; the guide's own client-rect/roll
-    /// inputs come from elsewhere and already call UpdateGuide directly, see
-    /// FollowTick/OnUnityGuideDataUpdated). Every OTHER property (position,
-    /// size, rotation, opacity, all the look-adjustment sliders) has no
-    /// effect on the guide at all, so rebuilding its ~20 Line shapes from
-    /// scratch on every one of THOSE changes (which is what an unconditional
-    /// UpdateGuide() call here used to do, on every single slider tick) was
-    /// pure waste.</summary>
+    /// UpdateGuide's inputs actually depend on (fov/pitch/roll come straight
+    /// from GuideManualFov/Pitch/Roll -- a successful Unity fetch just
+    /// writes into these same three fields, see ControlPanelWindow's
+    /// UnityCameraGuideService.DataUpdated handler -- gated by GuideVisible;
+    /// the guide's own client-rect/roll inputs come from elsewhere and
+    /// already call UpdateGuide directly, see FollowTick). Every OTHER
+    /// property (position, size, rotation, opacity, all the look-adjustment
+    /// sliders) has no effect on the guide at all, so rebuilding its ~20
+    /// Line shapes from scratch on every one of THOSE changes (which is what
+    /// an unconditional UpdateGuide() call here used to do, on every single
+    /// slider tick) was pure waste.</summary>
     private static readonly HashSet<string?> GuideRelevantPropertyNames = new()
     {
-        nameof(OverlayState.GuideVisible), nameof(OverlayState.GuideSyncWithUnity),
+        nameof(OverlayState.GuideVisible),
         nameof(OverlayState.GuideManualFov), nameof(OverlayState.GuideManualPitch), nameof(OverlayState.GuideManualRoll),
     };
 
@@ -398,33 +394,15 @@ public partial class OverlayWindow : Window
         Canvas.SetTop(handle, y);
     }
 
-    // ---- Unity連携ガイド: FOV/pitch/roll come from either
-    //      UnityCameraGuideService's live data (_state.GuideSyncWithUnity)
-    //      or the control panel's manual sliders (_state.GuideManualFov/
-    //      Pitch/Roll), independently of whether the guide is even shown
-    //      (_state.GuideVisible). ----
-
-    private void OnUnityGuideDataUpdated(UnityCameraGuideData data)
-    {
-        Dispatcher.BeginInvoke(() =>
-        {
-            _unityGuideData = data;
-            UpdateGuide();
-        });
-    }
-
-    /// <summary>Deliberately does NOT clear _unityGuideData -- staleness
-    /// just means Unity isn't currently focused/exporting (see the simple
-    /// isApplicationActive gate on the Unity side), which is the NORMAL
-    /// state during most actual shooting (you're looking at VRChat/AvaSnap,
-    /// not Unity, while composing). The guide should freeze on the last
-    /// known angle through that, not vanish -- it only used to null this
-    /// out, which made 同期 effectively show nothing the moment you looked
-    /// away from Unity to check it.</summary>
-    private void OnUnityGuideBecameStale()
-    {
-        Dispatcher.BeginInvoke(UpdateGuide);
-    }
+    // ---- Unity連携ガイド: FOV/pitch/roll come from _state.GuideManualFov/
+    //      Pitch/Roll alone -- a successful Unity fetch (see
+    //      ControlPanelWindow's UnityCameraGuideService.DataUpdated handler)
+    //      writes into these same three fields directly, same as typing a
+    //      value in by hand, so this window doesn't need its own separate
+    //      subscription to UnityCameraGuideService at all; the usual
+    //      _state.PropertyChanged -> UpdateGuide path (see
+    //      GuideRelevantPropertyNames) already covers it. Independent of
+    //      whether the guide is even shown (_state.GuideVisible). ----
 
     /// <summary>Redraws the Unity連携ガイド onto the followed VRChat window's
     /// client rect: a horizon line placed via the active fov/pitch/roll
@@ -434,38 +412,17 @@ public partial class OverlayWindow : Window
     /// in a RotateTransform around the vanishing point (see
     /// UnityGuideRollRotate/RenderTransformOrigin below) instead of
     /// rotating each line's endpoints by hand -- WPF already does that
-    /// perfectly well, and it's the exact same visual effect either way.
-    /// When synced but Unity hasn't exported anything (yet, or not
-    /// recently -- see UnityCameraGuideService's staleness check), there's
-    /// simply nothing to draw, so the guide hides rather than falling back
-    /// to the manual values behind its own toggle's back.</summary>
+    /// perfectly well, and it's the exact same visual effect either way.</summary>
     private void UpdateGuide()
     {
-        double fov, pitch, roll;
         if (!_state.GuideVisible)
         {
             UnityGuideFrameClip.Visibility = Visibility.Collapsed;
             return;
         }
-        if (_state.GuideSyncWithUnity && _unityGuideData is { } data)
-        {
-            fov = data.Fov;
-            pitch = data.Pitch;
-            roll = data.Roll;
-        }
-        else
-        {
-            // Also covers "synced but Unity has never exported anything
-            // this session" (_unityGuideData still null) -- showing nothing
-            // there was more confusing than useful (表示 turned ON with no
-            // visible result at all, no feedback that anything's wrong).
-            // Falling back to the manual values means 表示=ON always shows
-            // SOMETHING; the FOVガイド card's Unity連携状況 badge (未接続)
-            // is what actually communicates "these aren't live" now.
-            fov = _state.GuideManualFov;
-            pitch = _state.GuideManualPitch;
-            roll = _state.GuideManualRoll;
-        }
+        double fov = _state.GuideManualFov;
+        double pitch = _state.GuideManualPitch;
+        double roll = _state.GuideManualRoll;
 
         if (_lastKnownClientRect is not { Width: > 0, Height: > 0 } clientRect)
         {

@@ -846,6 +846,8 @@ public static class ImageAdjustment
         double lightLeakAngle = 225, double lightLeakDistance = 1.0,
         byte lightLeakColorB = 60, byte lightLeakColorG = 160, byte lightLeakColorR = 255,
         double toneGradientAmount = 0, double toneGradientRotation = 0,
+        byte toneGradientLightR = 255, byte toneGradientLightG = 255, byte toneGradientLightB = 255,
+        byte toneGradientDarkR = 0, byte toneGradientDarkG = 0, byte toneGradientDarkB = 0,
         double dropShadowAmount = 0, double dropShadowDirection = 0, double dropShadowDistance = 0, double dropShadowBlur = 0,
         byte dropShadowColorB = 0, byte dropShadowColorG = 0, byte dropShadowColorR = 0, double dropShadowScale = 1.0,
         bool dropShadowTone = false, double dropShadowDotSize = 8, DropShadowBlendMode dropShadowBlendMode = DropShadowBlendMode.Multiply)
@@ -880,6 +882,8 @@ public static class ImageAdjustment
             glowAmount, glowScale,
             lightLeakAmount, lightLeakAngle, lightLeakDistance, lightLeakColorB, lightLeakColorG, lightLeakColorR,
             toneGradientAmount, toneGradientRotation,
+            toneGradientLightR, toneGradientLightG, toneGradientLightB,
+            toneGradientDarkR, toneGradientDarkG, toneGradientDarkB,
             chromaticAberrationAmount, colorBleedAmount, vhsScale,
             scanlineAmount,
             vignetteAmount,
@@ -900,35 +904,54 @@ public static class ImageAdjustment
     /// along whichever axis has slack -- 50 = centered). Whichever dimension
     /// the target ratio is narrower than the source keeps its full extent;
     /// the other gets trimmed. <paramref name="aspectRatio"/> null (or &lt;=0)
-    /// means "no crop", returning <paramref name="source"/> unchanged.</summary>
-    public static WriteableBitmap CropToAspect(WriteableBitmap source, double? aspectRatio, double offsetXPercent, double offsetYPercent, double widthPercent = 100)
+    /// means 自由 (free): no ratio to lock to, so <paramref name="widthPercent"/>/
+    /// <paramref name="heightPercent"/> each shrink their own axis
+    /// independently against the FULL source dimensions instead of both
+    /// deriving from one ratio-fit box.</summary>
+    public static WriteableBitmap CropToAspect(WriteableBitmap source, double? aspectRatio, double offsetXPercent, double offsetYPercent, double widthPercent = 100, double heightPercent = 100)
     {
-        if (aspectRatio is not { } ratio || ratio <= 0) return source;
         int srcWidth = source.PixelWidth, srcHeight = source.PixelHeight;
         if (srcWidth <= 0 || srcHeight <= 0) return source;
-        double srcRatio = (double)srcWidth / srcHeight;
 
         int maxCropWidth, maxCropHeight;
-        if (ratio > srcRatio)
+        double heightZoomPercent;
+        if (aspectRatio is { } ratio && ratio > 0)
         {
-            maxCropWidth = srcWidth;
-            maxCropHeight = Math.Max(1, (int)Math.Round(srcWidth / ratio));
+            double srcRatio = (double)srcWidth / srcHeight;
+            if (ratio > srcRatio)
+            {
+                maxCropWidth = srcWidth;
+                maxCropHeight = Math.Max(1, (int)Math.Round(srcWidth / ratio));
+            }
+            else
+            {
+                maxCropHeight = srcHeight;
+                maxCropWidth = Math.Max(1, (int)Math.Round(srcHeight * ratio));
+            }
+            maxCropWidth = Math.Min(maxCropWidth, srcWidth);
+            maxCropHeight = Math.Min(maxCropHeight, srcHeight);
+            // Fixed-ratio mode: the SAME zoom factor scales both axes (each
+            // already ratio-fit above), so the ratio stays locked at any
+            // zoom level -- widthPercent alone drives both.
+            heightZoomPercent = widthPercent;
         }
         else
         {
+            // 自由 (free): each axis's own 100% is the full source extent,
+            // and the two knobs are independent -- no ratio to preserve.
+            maxCropWidth = srcWidth;
             maxCropHeight = srcHeight;
-            maxCropWidth = Math.Max(1, (int)Math.Round(srcHeight * ratio));
+            heightZoomPercent = heightPercent;
         }
-        maxCropWidth = Math.Min(maxCropWidth, srcWidth);
-        maxCropHeight = Math.Min(maxCropHeight, srcHeight);
 
-        // widthPercent shrinks the crop box below its ratio-maximal size
-        // (100 = today's default, the largest box of that ratio that fits
-        // in the photo) without changing the ratio itself -- a zoom-in-place
-        // knob layered on top of the aspect-ratio pick.
-        double zoom = Math.Clamp(widthPercent, 1, 100) / 100.0;
-        int cropWidth = Math.Max(1, (int)Math.Round(maxCropWidth * zoom));
-        int cropHeight = Math.Max(1, (int)Math.Round(maxCropHeight * zoom));
+        // widthPercent/heightPercent shrink the crop box below its 100%
+        // size (the ratio-maximal box in fixed mode, the full photo in 自由
+        // mode) -- a zoom-in-place knob layered on top of the aspect-ratio
+        // pick.
+        double widthZoom = Math.Clamp(widthPercent, 1, 100) / 100.0;
+        double heightZoom = Math.Clamp(heightZoomPercent, 1, 100) / 100.0;
+        int cropWidth = Math.Max(1, (int)Math.Round(maxCropWidth * widthZoom));
+        int cropHeight = Math.Max(1, (int)Math.Round(maxCropHeight * heightZoom));
         if (cropWidth == srcWidth && cropHeight == srcHeight) return source;
 
         int maxLeft = srcWidth - cropWidth;

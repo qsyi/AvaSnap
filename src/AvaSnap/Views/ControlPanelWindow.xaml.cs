@@ -37,10 +37,12 @@ public sealed record CompositeSnapshot(
     double ClarityAmount, double LightLeakAmount, double LightLeakAngle, double LightLeakDistance,
     byte LightLeakColorB, byte LightLeakColorG, byte LightLeakColorR,
     double ToneGradientAmount, double ToneGradientRotation,
+    byte ToneGradientLightR, byte ToneGradientLightG, byte ToneGradientLightB,
+    byte ToneGradientDarkR, byte ToneGradientDarkG, byte ToneGradientDarkB,
     double DropShadowAmount, double DropShadowDirection, double DropShadowDistance, double DropShadowBlur,
     byte DropShadowColorB, byte DropShadowColorG, byte DropShadowColorR,
-    bool DropShadowTone, double DropShadowDotSize, ImageAdjustment.DropShadowBlendMode DropShadowBlendMode,
-    double? CanvasAspectRatio, double CanvasCropOffsetX, double CanvasCropOffsetY, double CanvasCropWidthPercent,
+    ImageAdjustment.DropShadowBlendMode DropShadowBlendMode,
+    double? CanvasAspectRatio, double CanvasCropOffsetX, double CanvasCropOffsetY, double CanvasCropWidthPercent, double CanvasCropHeightPercent,
     double CompositePlaceX, double CompositePlaceY, double CompositePlaceWidth, double CompositePlaceHeight,
     double CompositeRotation);
 
@@ -75,27 +77,27 @@ public partial class ControlPanelWindow : Window
         Left = SystemParameters.WorkArea.Right - Width - 20;
         Top = 40;
 
-        // FOVガイドの「Unity連携状況」表示: DataUpdated/BecameStale both
-        // fire on UnityCameraGuideService's own thread context via its
+        // FOVガイドの「Unity連携状況」表示: DataUpdated fires on
+        // UnityCameraGuideService's own thread context via its
         // Dispatcher.BeginInvoke calls, so no extra marshaling needed here.
-        // Three states, not two -- 撮影中はUnityからフォーカスを外している
-        // ことがほとんどなので、一度も繋がったことがない(未接続、要調査)と
-        // 繋がった実績はあるが今はフォーカス外で止まっている(一時停止中、
-        // 正常な状態)を見分けられるようにする。
+        // Unity is request-driven (see RequestGuideButton_Click/
+        // UnityCameraGuideService.RequestUpdate); no more "同期" toggle --
+        // a successful fetch just writes into GuideManualFov/Pitch/Roll
+        // directly, the same as typing a value in by hand. OverlayWindow
+        // picks this up on its own via _state.PropertyChanged, same as
+        // every other OverlayState field; no separate DataUpdated
+        // subscription needed over there any more.
         _unityCameraGuide.DataUpdated += data =>
         {
-            _hasEverConnectedToUnity = true;
-            _lastUnityGuideData = data;
-            UpdateUnityConnectionStatus(UnityConnectionState.Live);
-            // Only while synced -- while OFF, these fields are the saved
-            // manual values, not a live readout, and shouldn't jump around
-            // just because Unity happens to still be sending in the
-            // background (see GuideSyncToggle_Changed's own restore-on-OFF).
-            if (_state.GuideSyncWithUnity) DisplaySyncedGuideValues(data);
+            UpdateUnityConnectionStatus(hasFetched: true);
+            _state.GuideManualFov = data.Fov;
+            _state.GuideManualPitch = data.Pitch;
+            _state.GuideManualRoll = data.Roll;
+            _suppressEvents = true;
+            RefreshGuideManualDisplay();
+            _suppressEvents = false;
         };
-        _unityCameraGuide.BecameStale += () =>
-            UpdateUnityConnectionStatus(_hasEverConnectedToUnity ? UnityConnectionState.Paused : UnityConnectionState.NeverConnected);
-        UpdateUnityConnectionStatus(UnityConnectionState.NeverConnected);
+        UpdateUnityConnectionStatus(hasFetched: false);
 
         _state.PropertyChanged += (_, e) => { RefreshFromState(e.PropertyName); ScheduleCompositeRender(); };
         RefreshFromState();
@@ -892,6 +894,13 @@ public partial class ControlPanelWindow : Window
 
     private void ControlPanelWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _colorPickTarget != ColorPickTarget.None)
+        {
+            BeginColorPick(_colorPickTarget);
+            e.Handled = true;
+            return;
+        }
+
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         if (!ctrl) return;
 
@@ -961,13 +970,14 @@ public partial class ControlPanelWindow : Window
 
     private List<(Func<OverlaySnapshot, object?> Key, FrameworkElement Row)> BuildOverlayFlashTable() => new()
     {
-        (s => s.X, XSlider),
-        (s => s.Y, YSlider),
-        // No slider for these two (WidthBox/HeightBox only) -- FlashRow
-        // accepts any FrameworkElement, not just Slider, for exactly this.
-        (s => s.Width, WidthBox),
-        (s => s.Height, HeightBox),
-        (s => s.RotationDegrees, RotationSlider),
+        // No X/Y/Width/Height/RotationDegrees rows left in Align mode at all
+        // (see this panel's own XAML comment on their removal -- OverlayWindow's
+        // own drag handles are the only UI for these now) and no other row in
+        // this card is a FlashRow-compatible anchor for them (FlashRow needs
+        // anchor.Parent to be the Grid row itself, and ImageVisibleToggle's
+        // parent is an inner StackPanel, not that Grid), so these five simply
+        // aren't flashed on undo/redo any more -- the live overlay window
+        // visibly jumping to the restored position is its own feedback.
         (s => s.Opacity, OpacitySlider),
         (s => s.EdgeBlurRadius, CompositeEdgeBlurSlider),
         // Brightness..Blacks only have a slider on the Composite side now
@@ -1018,26 +1028,22 @@ public partial class ControlPanelWindow : Window
         (s => s.ClarityAmount, ClaritySlider),
         (s => (s.LightLeakAmount, s.LightLeakAngle, s.LightLeakDistance, s.LightLeakColorB, s.LightLeakColorG, s.LightLeakColorR), LightLeakSlider),
         (s => s.ToneGradientAmount, ToneGradientSlider),
-        (s => s.ToneGradientRotation, ToneGradientDial),
+        (s => s.ToneGradientRotation, ToneGradientDirectionSlider),
         (s => s.DropShadowAmount, DropShadowSlider),
-        (s => s.DropShadowDirection, DropShadowDial),
+        (s => s.DropShadowDirection, DropShadowDirectionSlider),
         (s => s.DropShadowDistance, DropShadowDistanceSlider),
         (s => s.DropShadowBlur, DropShadowBlurSlider),
         (s => (s.DropShadowColorB, s.DropShadowColorG, s.DropShadowColorR), DropShadowColorButton),
-        (s => s.DropShadowTone, DropShadowToneToggle),
-        (s => s.DropShadowDotSize, DropShadowDotSizeSlider),
         (s => s.DropShadowBlendMode, DropShadowBlendModeCombo),
+        // No dedicated crop-width/position row anymore (see 切り抜き幅/位置X/Y's
+        // own removal comment elsewhere -- the interactive 切り抜きモード drag
+        // replaced them), so those two undo-tracked properties have no
+        // FlashRow-compatible anchor left; simply not flashed on undo/redo.
         (s => s.CanvasAspectRatio, CanvasAspectCombo),
-        (s => s.CanvasCropWidthPercent, CanvasCropWidthSlider),
-        (s => s.CanvasCropOffsetX, CanvasCropXSlider),
-        (s => s.CanvasCropOffsetY, CanvasCropYSlider),
-        (s => s.CompositePlaceX, CompositeXSlider),
-        (s => s.CompositePlaceY, CompositeYSlider),
-        // No dedicated height slider (width/height stay aspect-locked --
-        // see WidthBox/HeightBox's own comment on that elsewhere), so a
-        // height-only change flashes the width row instead of nothing.
-        (s => (s.CompositePlaceWidth, s.CompositePlaceHeight), CompositeWidthSlider),
-        (s => s.CompositeRotation, CompositeRotationSlider),
+        // No dedicated X/Y/幅/回転 rows anymore either (see
+        // AvatarPlacementModeToggle_Changed's own removal comment) -- all 5
+        // properties instead flash the toggle's own row as one group.
+        (s => (s.CompositePlaceX, s.CompositePlaceY, s.CompositePlaceWidth, s.CompositePlaceHeight, s.CompositeRotation), AvatarPlacementModeToggle),
     };
 
     private void OnUndoRedoApplied(bool isRedo, OverlaySnapshot before, OverlaySnapshot after, object? extraBefore, object? extraAfter)
@@ -1102,40 +1108,6 @@ public partial class ControlPanelWindow : Window
         UndoRedoReactionBadge.BeginAnimation(OpacityProperty, keyFrames);
     }
 
-    /// <summary>The reference point that X/Y are displayed and edited as a
-    /// signed offset from: the VRChat client area's center, since that's what
-    /// the overlay is actually being aligned to (stable across the window
-    /// moving around the screen). Prefers the overlay window's already-cached
-    /// client rect (updated by its own WinEventHook-driven follow logic) over a
-    /// fresh FindVRChatWindow() scan -- this runs on every _state property
-    /// change, so during a live window drag (many changes a second) a fresh
-    /// EnumWindows-based lookup each time backs up the UI thread badly enough
-    /// to make the overlay visibly lag/jump. Falls back to a fresh lookup, then
-    /// the virtual screen's center, when nothing is currently attached.</summary>
-    private System.Windows.Point GetPositionReferenceCenter()
-    {
-        if (_overlayWindow.FollowedClientRect is { Width: > 0, Height: > 0 } cached)
-        {
-            return new System.Windows.Point(cached.Left + cached.Width / 2.0, cached.Top + cached.Height / 2.0);
-        }
-
-        var hwnd = VRChatWindowService.FindVRChatWindow();
-        if (hwnd is not null)
-        {
-            var rect = VRChatWindowService.GetClientRectOnScreen(hwnd.Value);
-            if (rect is { Width: > 0, Height: > 0 } r)
-            {
-                return new System.Windows.Point(r.Left + r.Width / 2.0, r.Top + r.Height / 2.0);
-            }
-        }
-        return new System.Windows.Point(
-            SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth / 2.0,
-            SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight / 2.0);
-    }
-
-    private static string FormatSigned(double v) =>
-        (v >= 0 ? "+" : "") + v.ToString("F0", CultureInfo.InvariantCulture);
-
     /// <summary>Which OverlayState properties each RefreshFromState section
     /// below actually depends on -- gates that section instead of running
     /// unconditionally on every single _state change (position/size/
@@ -1154,7 +1126,7 @@ public partial class ControlPanelWindow : Window
 
     private static readonly HashSet<string?> GuideRefreshPropertyNames = new()
     {
-        nameof(OverlayState.GuideVisible), nameof(OverlayState.GuideSyncWithUnity),
+        nameof(OverlayState.GuideVisible),
     };
 
     private static readonly HashSet<string?> LookRefreshPropertyNames = new()
@@ -1174,19 +1146,9 @@ public partial class ControlPanelWindow : Window
 
             if (all || PositionRefreshPropertyNames.Contains(changedProperty))
             {
-                var center = GetPositionReferenceCenter();
-                double overlayCenterX = _state.X + _state.Width / 2;
-                double overlayCenterY = _state.Y + _state.Height / 2;
-                double offsetX = overlayCenterX - center.X;
-                double offsetY = overlayCenterY - center.Y;
-                XBox.Text = FormatSigned(offsetX);
-                YBox.Text = FormatSigned(offsetY);
-                XSlider.Value = offsetX;
-                YSlider.Value = offsetY;
-                WidthBox.Text = _state.Width.ToString("F0", CultureInfo.InvariantCulture);
-                HeightBox.Text = _state.Height.ToString("F0", CultureInfo.InvariantCulture);
-                RotationBox.Text = _state.RotationDegrees.ToString("F1", CultureInfo.InvariantCulture);
-                RotationSlider.Value = _state.RotationDegrees;
+                // No X/Y/幅/高さ/回転(度) fields left to sync here at all (see
+                // this panel's own XAML comment on their removal) -- only
+                // 不透明度/表示 still have Align-mode UI of their own.
                 double opacityPercent = _state.Opacity * 100;
                 OpacityBox.Text = opacityPercent.ToString("F0", CultureInfo.InvariantCulture);
                 OpacitySlider.Value = opacityPercent;
@@ -1196,17 +1158,7 @@ public partial class ControlPanelWindow : Window
             if (all || GuideRefreshPropertyNames.Contains(changedProperty))
             {
                 GuideVisibleToggle.IsChecked = _state.GuideVisible;
-                GuideSyncToggle.IsChecked = _state.GuideSyncWithUnity;
-                // While synced, re-show the last LIVE values here too, not
-                // the saved manual ones, or toggling something as unrelated
-                // as 表示 would flash the FOV/pitch/roll fields back to the
-                // manual preset (default FOV 60) for a moment until the
-                // next DataUpdated tick corrected it.
-                if (_state.GuideSyncWithUnity && _lastUnityGuideData is { } liveGuideForRefresh)
-                    SetGuideFovPitchRollDisplay(liveGuideForRefresh.Fov, liveGuideForRefresh.Pitch, liveGuideForRefresh.Roll);
-                else
-                    RefreshGuideManualDisplay();
-                UpdateGuideSlidersEnabled();
+                RefreshGuideManualDisplay();
             }
 
             if (all || changedProperty == nameof(OverlayState.ImagePath))
@@ -1252,6 +1204,7 @@ public partial class ControlPanelWindow : Window
                 CompositeColorTintStrengthBox.Text = _state.ColorTintStrength.ToString("F0", CultureInfo.InvariantCulture);
                 CompositeColorTintStrengthSlider.Value = _state.ColorTintStrength;
                 CompositeColorTintSwatch.Background = new SolidColorBrush(Color.FromRgb(_state.ColorTintR, _state.ColorTintG, _state.ColorTintB));
+                CompositeColorTintHexBox.Text = ToHexColor(_state.ColorTintR, _state.ColorTintG, _state.ColorTintB);
             }
         }
         finally
@@ -1516,68 +1469,6 @@ public partial class ControlPanelWindow : Window
     private static bool TryParse(string text, out double value) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 
-    private void XBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (TryParse(XBox.Text, out var offsetX))
-        {
-            var center = GetPositionReferenceCenter();
-            _state.X = center.X + offsetX - _state.Width / 2;
-        }
-    }
-
-    private void YBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (TryParse(YBox.Text, out var offsetY))
-        {
-            var center = GetPositionReferenceCenter();
-            _state.Y = center.Y + offsetY - _state.Height / 2;
-        }
-    }
-
-    /// <summary>Both fields keep the loaded PNG's native aspect ratio, same as
-    /// dragging a corner handle already does -- typing just a new Width (or
-    /// Height) used to leave the other dimension untouched and visibly
-    /// distort the image, in both Align's live preview and the Composite
-    /// preview (they share this same _state). Keeps the box's center fixed
-    /// while resizing, like the corner-handle drag and the on-load fit do.</summary>
-    private void WidthBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (!TryParse(WidthBox.Text, out var v) || v <= 0) return;
-        double centerX = _state.X + _state.Width / 2;
-        double centerY = _state.Y + _state.Height / 2;
-        _state.Width = v;
-        if (_overlayWindow.ImageNativeSize is { Width: > 0, Height: > 0 } native)
-        {
-            _state.Height = v / (native.Width / native.Height);
-        }
-        _state.X = centerX - _state.Width / 2;
-        _state.Y = centerY - _state.Height / 2;
-    }
-
-    private void HeightBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (!TryParse(HeightBox.Text, out var v) || v <= 0) return;
-        double centerX = _state.X + _state.Width / 2;
-        double centerY = _state.Y + _state.Height / 2;
-        _state.Height = v;
-        if (_overlayWindow.ImageNativeSize is { Width: > 0, Height: > 0 } native)
-        {
-            _state.Width = v * (native.Width / native.Height);
-        }
-        _state.X = centerX - _state.Width / 2;
-        _state.Y = centerY - _state.Height / 2;
-    }
-
-    private void RotationBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (TryParse(RotationBox.Text, out var v)) _state.RotationDegrees = v;
-    }
-
     private void OpacityBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
         if (_suppressEvents) return;
@@ -1596,47 +1487,6 @@ public partial class ControlPanelWindow : Window
             if (Math.Abs(value - target) <= tolerance) return target;
         }
         return value;
-    }
-
-    private void XSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        double snapped = SoftSnap(XSlider.Value, 15, 0);
-        if (snapped != XSlider.Value)
-        {
-            _suppressEvents = true;
-            XSlider.Value = snapped;
-            _suppressEvents = false;
-        }
-        var center = GetPositionReferenceCenter();
-        _state.X = center.X + snapped - _state.Width / 2;
-    }
-
-    private void YSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        double snapped = SoftSnap(YSlider.Value, 15, 0);
-        if (snapped != YSlider.Value)
-        {
-            _suppressEvents = true;
-            YSlider.Value = snapped;
-            _suppressEvents = false;
-        }
-        var center = GetPositionReferenceCenter();
-        _state.Y = center.Y + snapped - _state.Height / 2;
-    }
-
-    private void RotationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        double snapped = SoftSnap(RotationSlider.Value, 5, -180, -90, 0, 90, 180);
-        if (snapped != RotationSlider.Value)
-        {
-            _suppressEvents = true;
-            RotationSlider.Value = snapped;
-            _suppressEvents = false;
-        }
-        _state.RotationDegrees = snapped;
     }
 
     private void OpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1697,26 +1547,25 @@ public partial class ControlPanelWindow : Window
         }
     }
 
-    private bool _hasEverConnectedToUnity;
-
-    private enum UnityConnectionState { NeverConnected, Paused, Live }
-
-    private void UpdateUnityConnectionStatus(UnityConnectionState state)
+    /// <summary>取得ボタン(RequestGuideButton_Click)を押すたびにUnityへ
+    /// リクエストを送るだけの単発フェッチなので、もう「今まさに繋がって
+    /// いるか」を表す継続的な状態はない -- このAvaSnap起動中に一度でも
+    /// 取得できたかどうかの2択で十分(時刻までは表示しない)。</summary>
+    private void UpdateUnityConnectionStatus(bool hasFetched)
     {
-        var (text, background, foreground) = state switch
-        {
-            UnityConnectionState.Live => ("Unity: 接続中", "PrimaryTintBrush", "PrimaryBrush"),
-            // 一度は値を受け取ったが今は更新が止まっている状態 -- 撮影中に
-            // Unityからフォーカスを外すとこうなるのが普通なので、未接続と
-            // 同じ「切れている」トーンではなく、薄いPrimaryTintで「休止中」
-            // だと分かるようにする。
-            UnityConnectionState.Paused => ("Unity: 一時停止中", "PrimaryTintBrush", "TextSecondaryBrush"),
-            _ => ("Unity: 未接続", "HairlineBrush", "TextSecondaryBrush"),
-        };
+        var (text, background, foreground) = hasFetched
+            ? ("Unity: 取得済み", "PrimaryTintBrush", "PrimaryBrush")
+            : ("Unity: 未取得", "HairlineBrush", "TextSecondaryBrush");
         UnityConnectionText.Text = text;
         UnityConnectionBadge.Background = (Brush)FindResource(background);
         UnityConnectionText.Foreground = (Brush)FindResource(foreground);
     }
+
+    /// <summary>「取得」ボタン: UnityのCameraCompositionGuideWindowへ
+    /// スナップショットをリクエストする。送りっぱなし(応答を待たない) --
+    /// Unity側が開いていない/応答オフなら何も起きず、UnityConnectionText
+    /// はそのまま(前回取得時刻のまま、または未接続のまま)。</summary>
+    private void RequestGuideButton_Click(object sender, RoutedEventArgs e) => _unityCameraGuide.RequestUpdate();
 
     private void GuideVisibleToggle_Changed(object sender, RoutedEventArgs e)
     {
@@ -1724,40 +1573,13 @@ public partial class ControlPanelWindow : Window
         _state.GuideVisible = GuideVisibleToggle.IsChecked == true;
     }
 
-    /// <summary>The most recent DataUpdated payload, kept regardless of
-    /// GuideSyncWithUnity -- lets GuideSyncToggle_Changed continue manual
-    /// editing from wherever Unity's live feed last left off when 同期 is
-    /// switched off, instead of snapping back to whatever the manual
-    /// sliders were saved at before sync was last turned on.</summary>
-    private UnityCameraGuideData? _lastUnityGuideData;
-
-    private void GuideSyncToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        _state.GuideSyncWithUnity = GuideSyncToggle.IsChecked == true;
-        UpdateGuideSlidersEnabled();
-        if (!_state.GuideSyncWithUnity && _lastUnityGuideData is { } last)
-        {
-            _state.GuideManualFov = last.Fov;
-            _state.GuideManualPitch = last.Pitch;
-            _state.GuideManualRoll = last.Roll;
-        }
-        // Runs either way: if there's no _lastUnityGuideData yet, this just
-        // re-syncs the display from whatever _state.GuideManual* already
-        // was (the sliders were showing Unity's live numbers a moment ago,
-        // see DisplaySyncedGuideValues, which never touched _state itself).
-        _suppressEvents = true;
-        RefreshGuideManualDisplay();
-        _suppressEvents = false;
-    }
-
-    /// <summary>The raw display write, no _suppressEvents management of its
-    /// own -- every caller is already inside a _suppressEvents=true scope
-    /// of its own (RefreshFromState's, DisplaySyncedGuideValues', or
-    /// GuideSyncToggle_Changed's), and this used to manage the flag itself
-    /// too, which broke when called from INSIDE RefreshFromState's own
-    /// scope: setting _suppressEvents=false partway through RefreshFromState
-    /// let its later lines' handlers fire early.</summary>
+    /// <summary>No _suppressEvents management of its own -- every caller is
+    /// already inside a _suppressEvents=true scope of its own
+    /// (RefreshFromState's, or the constructor's DataUpdated handler), and
+    /// this used to manage the flag itself too, which broke when called
+    /// from INSIDE RefreshFromState's own scope: setting _suppressEvents=
+    /// false partway through RefreshFromState let its later lines' handlers
+    /// fire early.</summary>
     private void SetGuideFovPitchRollDisplay(double fov, double pitch, double roll)
     {
         GuideFovBox.Text = fov.ToString("F0", CultureInfo.InvariantCulture);
@@ -1770,33 +1592,6 @@ public partial class ControlPanelWindow : Window
 
     private void RefreshGuideManualDisplay() =>
         SetGuideFovPitchRollDisplay(_state.GuideManualFov, _state.GuideManualPitch, _state.GuideManualRoll);
-
-    /// <summary>Shows Unity's live fov/pitch/roll in the (grayed-out while
-    /// synced) sliders/boxes -- purely a readout, doesn't touch
-    /// _state.GuideManual* at all, so the saved manual values are still
-    /// there untouched whenever 同期 gets switched off again.</summary>
-    private void DisplaySyncedGuideValues(UnityCameraGuideData data)
-    {
-        _suppressEvents = true;
-        SetGuideFovPitchRollDisplay(data.Fov, data.Pitch, data.Roll);
-        _suppressEvents = false;
-    }
-
-    /// <summary>Grayed out while synced with Unity -- the manual values are
-    /// still there underneath (see _state.GuideManualFov/Pitch/Roll) and
-    /// keep whatever they were last set to, just not editable/relevant
-    /// until 同期 is switched off.</summary>
-    private void UpdateGuideSlidersEnabled()
-    {
-        bool manual = !_state.GuideSyncWithUnity;
-        GuideFovSlider.IsEnabled = manual;
-        GuideFovBox.IsEnabled = manual;
-        GuidePitchSlider.IsEnabled = manual;
-        GuidePitchBox.IsEnabled = manual;
-        GuideRollSlider.IsEnabled = manual;
-        GuideRollBox.IsEnabled = manual;
-        GuideSyncHintText.Visibility = manual ? Visibility.Collapsed : Visibility.Visible;
-    }
 
     private void GuideFovBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -2226,6 +2021,21 @@ public partial class ControlPanelWindow : Window
     /// the dot points toward bright, not dark.</summary>
     private double _toneGradientRotation = 180;
 
+    /// <summary>The gradient's two endpoint colors -- white/black by
+    /// default (matching GpuToneGradient.TryDetectColors' own no-GPU
+    /// fallback), user-editable via 明色/暗色, and refreshed from the
+    /// current photo on demand by the 自動判定 button (ToneGradientAutoDetectButton_Click)
+    /// rather than recomputed on every render like before.</summary>
+    private byte _toneGradientLightR = 255, _toneGradientLightG = 255, _toneGradientLightB = 255;
+    private byte _toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB;
+
+    /// <summary>Last meaningfully-picked hue/saturation for each of the two
+    /// gradient colors' own wheel popups -- same caching reason as
+    /// _dropShadowHue/_dropShadowSat (see SyncColorPickerUI's own comment):
+    /// RGB alone can't represent hue at saturation 0.</summary>
+    private double _toneGradientLightHue, _toneGradientLightSat;
+    private double _toneGradientDarkHue, _toneGradientDarkSat;
+
     /// <summary>0..100, 0 = off. Duplicates the avatar's own silhouette,
     /// offset/blurred/tinted -- see ImageAdjustment.ApplyDropShadow. Only
     /// has any effect with an avatar loaded (needs its shape to duplicate),
@@ -2243,16 +2053,6 @@ public partial class ControlPanelWindow : Window
 
     /// <summary>Defaults to black, the conventional drop shadow color.</summary>
     private byte _dropShadowColorB, _dropShadowColorG, _dropShadowColorR;
-
-    /// <summary>Manga screentone ("漫画トーン") style: renders the shadow as
-    /// a grid of round dots whose SIZE carries the density instead of a
-    /// smooth blur -- see ImageAdjustment.ApplyHalftoneDots. Off by default
-    /// (plain blurred shadow, the original look).</summary>
-    private bool _dropShadowTone;
-
-    /// <summary>Halftone cell size in full-resolution photo pixels, only
-    /// meaningful while _dropShadowTone is on.</summary>
-    private double _dropShadowDotSize = 8;
 
     /// <summary>How the shadow color combines with the photo underneath --
     /// see ImageAdjustment.DropShadowBlendMode's own doc comment. Multiply
@@ -2550,14 +2350,6 @@ public partial class ControlPanelWindow : Window
     private double _compositePlaceX, _compositePlaceY, _compositePlaceWidth, _compositePlaceHeight;
     private double _compositeRotation;
 
-    /// <summary>The avatar's own auto-fit width in full-resolution photo
-    /// pixels, captured once by InitializeCompositePlacementIfNeeded (either
-    /// branch) and never touched again until the next 位置をリセット --
-    /// CompositeWidthSlider/Box display and accept a PERCENTAGE of this
-    /// value (100% = the size the avatar started at), not raw pixels, so
-    /// "100%" always means "back to how it first fit" regardless of the
-    /// photo's own resolution.</summary>
-    private double _compositeDefaultWidth = 1;
     private bool _compositePlacementInitialized;
 
     /// <summary>null = no crop (saved image stays the photo's own size,
@@ -2575,20 +2367,29 @@ public partial class ControlPanelWindow : Window
     /// today's default: the largest box of <see cref="_canvasAspectRatio"/>
     /// that fits in the photo). Values below 100 shrink the crop box without
     /// changing the ratio -- a zoom-in-place knob layered on the aspect-ratio
-    /// pick, which also gives the position sliders slack on BOTH axes even
+    /// pick, which also gives the crop position slack on BOTH axes even
     /// when the ratio alone would otherwise pin one axis to the photo's own
     /// full extent.</summary>
     private double _canvasCropWidthPercent = 100;
 
-    /// <summary>True only while 切り抜き幅/位置X/Y is actively being dragged --
-    /// see CanvasCropSliderMouseDown/Up and UpdateCanvasCropBoundary. While
+    /// <summary>10..100, same idea as _canvasCropWidthPercent's own zoom-in-
+    /// place knob, but only meaningful in 自由 (free) mode -- i.e. when
+    /// _canvasAspectRatio is null. In every fixed-ratio mode the ratio ties
+    /// height to width, so _canvasCropWidthPercent alone drives both; 自由
+    /// has no ratio to tie them together, so height needs its own
+    /// independent knob.</summary>
+    private double _canvasCropHeightPercent = 100;
+
+    /// <summary>True while 切り抜きモード is toggled on, keeping the crop
+    /// boundary + corner handles up on the preview to drag directly. While
     /// true, RenderCompositePreview skips the final crop step and shows the
     /// FULL uncropped composite instead, with UpdateCanvasCropBoundary
     /// dimming the part that would be thrown away -- the standard photo-
     /// editor crop-tool convention, so it's clear how much of the photo the
     /// current crop keeps without having to guess from the already-cropped
-    /// result alone.</summary>
-    private bool _isCropAdjusting;
+    /// result alone. See CropModeToggle_Changed, CanvasCropHandle_*,
+    /// CanvasCropBoundary_*.</summary>
+    private bool _isCropModeActive;
 
     private ImageAdjustment.ColorAdjustments PhotoAdjustments => new(
         _photoBrightness, _photoContrast, _photoSaturation,
@@ -2850,10 +2651,12 @@ public partial class ControlPanelWindow : Window
         _clarityAmount, _lightLeakAmount, _lightLeakAngle, _lightLeakDistance,
         _lightLeakColorB, _lightLeakColorG, _lightLeakColorR,
         _toneGradientAmount, _toneGradientRotation,
+        _toneGradientLightR, _toneGradientLightG, _toneGradientLightB,
+        _toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB,
         _dropShadowAmount, _dropShadowDirection, _dropShadowDistance, _dropShadowBlur,
         _dropShadowColorB, _dropShadowColorG, _dropShadowColorR,
-        _dropShadowTone, _dropShadowDotSize, _dropShadowBlendMode,
-        _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent,
+        _dropShadowBlendMode,
+        _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent, _canvasCropHeightPercent,
         _compositePlaceX, _compositePlaceY, _compositePlaceWidth, _compositePlaceHeight,
         _compositeRotation);
 
@@ -2894,6 +2697,12 @@ public partial class ControlPanelWindow : Window
         _lightLeakColorR = s.LightLeakColorR;
         _toneGradientAmount = s.ToneGradientAmount;
         _toneGradientRotation = s.ToneGradientRotation;
+        _toneGradientLightR = s.ToneGradientLightR;
+        _toneGradientLightG = s.ToneGradientLightG;
+        _toneGradientLightB = s.ToneGradientLightB;
+        _toneGradientDarkR = s.ToneGradientDarkR;
+        _toneGradientDarkG = s.ToneGradientDarkG;
+        _toneGradientDarkB = s.ToneGradientDarkB;
         _dropShadowAmount = s.DropShadowAmount;
         _dropShadowDirection = s.DropShadowDirection;
         _dropShadowDistance = s.DropShadowDistance;
@@ -2901,13 +2710,12 @@ public partial class ControlPanelWindow : Window
         _dropShadowColorB = s.DropShadowColorB;
         _dropShadowColorG = s.DropShadowColorG;
         _dropShadowColorR = s.DropShadowColorR;
-        _dropShadowTone = s.DropShadowTone;
-        _dropShadowDotSize = s.DropShadowDotSize;
         _dropShadowBlendMode = s.DropShadowBlendMode;
         _canvasAspectRatio = s.CanvasAspectRatio;
         _canvasCropOffsetX = s.CanvasCropOffsetX;
         _canvasCropOffsetY = s.CanvasCropOffsetY;
         _canvasCropWidthPercent = s.CanvasCropWidthPercent;
+        _canvasCropHeightPercent = s.CanvasCropHeightPercent;
         _compositePlaceX = s.CompositePlaceX;
         _compositePlaceY = s.CompositePlaceY;
         _compositePlaceWidth = s.CompositePlaceWidth;
@@ -3065,41 +2873,17 @@ public partial class ControlPanelWindow : Window
             _compositePlaceX = (photoBuffer.Width - _compositePlaceWidth) / 2;
             _compositePlaceY = (photoBuffer.Height - _compositePlaceHeight) / 2;
         }
-        _compositeDefaultWidth = _compositePlaceWidth;
         _compositeRotation = _state.RotationDegrees;
         RefreshCompositePlacementUI();
     }
 
+    /// <summary>No X/Y/幅/回転(度) UI left to sync here at all (see
+    /// AvatarPlacementModeToggle_Changed's own removal comment) -- this now
+    /// just re-derives the on-preview highlight/handles from
+    /// _compositePlaceX/Y/Width/Height/_compositeRotation, alongside
+    /// RefreshCanvasAspectUI for the same panel's crop controls.</summary>
     private void RefreshCompositePlacementUI()
     {
-        _suppressEvents = true;
-        if (_photoPixelBuffer is { } photo)
-        {
-            CompositeXSlider.Minimum = -photo.Width;
-            CompositeXSlider.Maximum = photo.Width;
-            CompositeYSlider.Minimum = -photo.Height;
-            CompositeYSlider.Maximum = photo.Height;
-            CompositeWidthSlider.Minimum = 0;
-            CompositeWidthSlider.Maximum = 200;
-
-            double centerX = photo.Width / 2.0;
-            double centerY = photo.Height / 2.0;
-            double offsetX = _compositePlaceX + _compositePlaceWidth / 2 - centerX;
-            double offsetY = _compositePlaceY + _compositePlaceHeight / 2 - centerY;
-            CompositeXBox.Text = FormatSigned(offsetX);
-            CompositeXSlider.Value = offsetX;
-            CompositeYBox.Text = FormatSigned(offsetY);
-            CompositeYSlider.Value = offsetY;
-            // 幅 is shown/entered as a PERCENTAGE of _compositeDefaultWidth
-            // (100% = the avatar's own auto-fit size), not raw pixels -- see
-            // _compositeDefaultWidth's own doc comment.
-            double widthPercent = _compositePlaceWidth / _compositeDefaultWidth * 100.0;
-            CompositeWidthBox.Text = widthPercent.ToString("F0", CultureInfo.InvariantCulture);
-            CompositeWidthSlider.Value = widthPercent;
-        }
-        CompositeRotationBox.Text = _compositeRotation.ToString("F1", CultureInfo.InvariantCulture);
-        CompositeRotationSlider.Value = _compositeRotation;
-        _suppressEvents = false;
         RefreshCanvasAspectUI();
         UpdateAvatarPlacementHighlight();
     }
@@ -3121,40 +2905,29 @@ public partial class ControlPanelWindow : Window
             _ => 5, // カスタム -- any ratio that doesn't match one of the five presets
         };
         CanvasAspectCombo.SelectedIndex = index;
-        // Only shown/populated for カスタム -- see CanvasAspectCustomBox's own
-        // XAML comment on why this reads _canvasAspectRatio directly rather
-        // than needing its own persisted state.
-        CanvasAspectCustomBox.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
+        // Only shown/populated for カスタム -- see CanvasAspectCustomRow's own
+        // XAML comment on why these two boxes read _canvasAspectRatio directly
+        // rather than needing their own persisted state. RefreshCanvasAspectUI
+        // is called constantly for reasons that have nothing to do with these
+        // two boxes specifically (e.g. every CanvasCropHandle_MouseMove tick
+        // while dragging a crop corner), so it must NOT blindly stomp
+        // whatever the user actually typed (e.g. "3"/"4") back to a derived
+        // "0.75"/"1" on every one of those calls -- only rewrite when the
+        // boxes' own current text no longer reduces to the same ratio
+        // (undo/redo, a preset pick, or a fresh custom-ratio load).
+        CanvasAspectCustomRow.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
         if (index == 5 && _canvasAspectRatio is { } customRatio)
         {
-            CanvasAspectCustomBox.Text = customRatio.ToString("0.###", CultureInfo.InvariantCulture);
+            bool displayedMatches = TryParse(CanvasAspectCustomWidthBox.Text, out var dw) && dw > 0
+                && TryParse(CanvasAspectCustomHeightBox.Text, out var dh) && dh > 0
+                && Math.Abs(dw / dh - customRatio) < 0.0005;
+            if (!displayedMatches)
+            {
+                CanvasAspectCustomWidthBox.Text = customRatio.ToString("0.###", CultureInfo.InvariantCulture);
+                CanvasAspectCustomHeightBox.Text = "1";
+            }
         }
-        CanvasCropWidthSlider.Value = _canvasCropWidthPercent;
-        CanvasCropXSlider.Value = _canvasCropOffsetX;
-        CanvasCropYSlider.Value = _canvasCropOffsetY;
         _suppressEvents = false;
-    }
-
-    private void CanvasCropWidthSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        _canvasCropWidthPercent = CanvasCropWidthSlider.Value;
-        ScheduleCompositeRender();
-    }
-
-    private void CanvasCropSliderMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        PhotoColorSliderMouseDown(sender, e);
-        _isCropAdjusting = true;
-        ScheduleCompositeRender();
-    }
-
-    private void CanvasCropSliderMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        _isCropAdjusting = false;
-        CanvasCropDimOverlay.Visibility = Visibility.Collapsed;
-        CanvasCropBoundaryOutline.Visibility = Visibility.Collapsed;
-        PhotoColorSliderMouseUp(sender, e);
     }
 
     private void CanvasAspectCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -3167,41 +2940,305 @@ public partial class ControlPanelWindow : Window
             // Keeps whatever ratio is already active (falling back to 1:1
             // only the first time, when there was no ratio at all) instead
             // of resetting it -- picking カスタム right after already being
-            // on 4:5, say, should just let the box show/refine 0.8, not
+            // on 4:5, say, should just let the boxes show/refine 0.8:1, not
             // silently jump to some other starting value.
             _canvasAspectRatio ??= 1.0;
             _suppressEvents = true;
-            CanvasAspectCustomBox.Visibility = Visibility.Visible;
-            CanvasAspectCustomBox.Text = _canvasAspectRatio.Value.ToString("0.###", CultureInfo.InvariantCulture);
+            CanvasAspectCustomRow.Visibility = Visibility.Visible;
+            CanvasAspectCustomWidthBox.Text = _canvasAspectRatio.Value.ToString("0.###", CultureInfo.InvariantCulture);
+            CanvasAspectCustomHeightBox.Text = "1";
             _suppressEvents = false;
             ScheduleCompositeRender();
             return;
         }
-        CanvasAspectCustomBox.Visibility = Visibility.Collapsed;
+        CanvasAspectCustomRow.Visibility = Visibility.Collapsed;
         _canvasAspectRatio = tag == "original" ? null : double.Parse(tag, CultureInfo.InvariantCulture);
         ScheduleCompositeRender();
     }
 
-    private void CanvasAspectCustomBox_TextChanged(object sender, TextChangedEventArgs e)
+    /// <summary>Shared by both CanvasAspectCustomWidthBox and
+    /// CanvasAspectCustomHeightBox (sender-based, like the PNG-look handlers
+    /// elsewhere in this file): _canvasAspectRatio is just their quotient,
+    /// recomputed from whichever two numbers are currently in the boxes
+    /// every time either one changes.</summary>
+    private void CanvasAspectCustomRatio_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressEvents) return;
-        if (!TryParse(CanvasAspectCustomBox.Text, out var v) || v <= 0) return;
-        _canvasAspectRatio = v;
+        if (!TryParse(CanvasAspectCustomWidthBox.Text, out var w) || w <= 0) return;
+        if (!TryParse(CanvasAspectCustomHeightBox.Text, out var h) || h <= 0) return;
+        _canvasAspectRatio = w / h;
         ScheduleCompositeRender();
     }
 
-    private void CanvasCropXSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void CropModeToggle_Changed(object sender, RoutedEventArgs e)
     {
-        if (_suppressEvents) return;
-        _canvasCropOffsetX = CanvasCropXSlider.Value;
+        bool turningOn = CropModeToggle.IsChecked == true && !_isCropModeActive;
+        _isCropModeActive = CropModeToggle.IsChecked == true;
+        // Captured on the OFF->ON transition only, so a キャンセル click (see
+        // PreviewModeCancelButton_Click) can restore exactly what was there
+        // right before this particular session of dragging started.
+        if (turningOn) _cropModeEntrySnapshot = CaptureCompositeSnapshot();
+        // Mutually exclusive with アバター配置モード -- both want the
+        // preview's own click-drag gestures to themselves; see
+        // AvatarPlacementModeToggle_Changed's matching check.
+        if (_isCropModeActive && _isAvatarPlacementModeActive)
+        {
+            AvatarPlacementModeToggle.IsChecked = false;
+        }
+        ScheduleCompositeRender();
+        // Also update immediately rather than waiting for the (debounced)
+        // render to come back around to its own UpdateCanvasCropBoundary
+        // call -- toggling should show/hide the boundary+handles the
+        // instant it's clicked, not after a render-cycle delay.
+        UpdateCanvasCropBoundary();
+
+        CropModeLabel.Foreground = _isCropModeActive
+            ? (Brush)FindResource("PrimaryBrush")
+            : (Brush)FindResource("TextSecondaryBrush");
+        CropModeLabel.FontWeight = _isCropModeActive ? FontWeights.SemiBold : FontWeights.Normal;
+        // Avatar placement (X/Y/幅/回転) edits alongside a crop drag would
+        // be confusing -- see CompositePlacementControlsPanel's own XAML
+        // comment -- so the whole group is disabled instead of left
+        // interactive but misleading.
+        CompositePlacementControlsPanel.IsEnabled = !_isCropModeActive;
+        RefreshSliderLockState();
+    }
+
+    /// <summary>No more X/Y/幅/回転(度) sliders at all in Composite mode's
+    /// 配置 panel -- this toggle plus direct drag on the preview fully
+    /// replaces them (matching how Align mode's own placement always
+    /// worked, via OverlayWindow's handle/gizmo drag on the live VRChat
+    /// overlay), so there's nothing left to gray out here besides itself.</summary>
+    private void AvatarPlacementModeToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        bool turningOn = AvatarPlacementModeToggle.IsChecked == true && !_isAvatarPlacementModeActive;
+        _isAvatarPlacementModeActive = AvatarPlacementModeToggle.IsChecked == true;
+        // Captured on the OFF->ON transition only, so a キャンセル click (see
+        // PreviewModeCancelButton_Click) can restore exactly what was there
+        // right before this particular session of dragging started.
+        if (turningOn) _avatarPlacementModeEntrySnapshot = CaptureCompositeSnapshot();
+        // Mutually exclusive with 切り抜きモード; see CropModeToggle_Changed's
+        // matching check.
+        if (_isAvatarPlacementModeActive && _isCropModeActive)
+        {
+            CropModeToggle.IsChecked = false;
+        }
+
+        AvatarPlacementModeLabel.Foreground = _isAvatarPlacementModeActive
+            ? (Brush)FindResource("PrimaryBrush")
+            : (Brush)FindResource("TextSecondaryBrush");
+        AvatarPlacementModeLabel.FontWeight = _isAvatarPlacementModeActive ? FontWeights.SemiBold : FontWeights.Normal;
+        // Switches the preview between the cropped/full-photo view (see
+        // RenderCompositePreview's own cropAdjusting local); scheduled, not
+        // instant, but UpdateAvatarPlacementHighlight below still repositions
+        // the handles/highlight against GetDisplayedCropRect's new answer
+        // immediately, so they don't lag a render cycle behind the toggle.
+        ScheduleCompositeRender();
+        UpdateAvatarPlacementHighlight();
+        RefreshSliderLockState();
+    }
+
+    /// <summary>Common choke point for every "preview interaction mode"
+    /// that wants exclusive ownership of the preview's own drag gestures
+    /// (currently 切り抜きモード and アバター配置モード) -- graying out
+    /// every look/finishing-effect slider on the right and showing
+    /// SliderLockNotice while ANY of them is active, so editing a slider
+    /// mid-drag can't be confused with what the drag itself is doing (see
+    /// SliderLockNotice's own XAML comment). Called from each mode's own
+    /// _Changed handler after it updates its own _is*ModeActive flag; a
+    /// future mode just needs to OR its own flag into `locked` below and
+    /// call this same method, not duplicate the IsEnabled/Visibility wiring
+    /// itself.</summary>
+    private void RefreshSliderLockState()
+    {
+        bool locked = _isCropModeActive || _isAvatarPlacementModeActive;
+        CompositeCardsScrollViewer.IsEnabled = !locked;
+        SliderLockNotice.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
+        PreviewModeConfirmBar.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Snapshot taken the moment each mode's toggle flips OFF->ON
+    /// (see CropModeToggle_Changed/AvatarPlacementModeToggle_Changed), so
+    /// PreviewModeCancelButton_Click can restore exactly what was there
+    /// before that particular editing session, not just undo one step.</summary>
+    private CompositeSnapshot? _cropModeEntrySnapshot;
+    private CompositeSnapshot? _avatarPlacementModeEntrySnapshot;
+
+    /// <summary>確定: keeps whatever's currently set and just leaves the
+    /// active mode, the same as clicking its own toggle off directly. Only
+    /// one of the two modes can be active at a time (see the mutual-
+    /// exclusion checks in each mode's own _Changed handler), so checking
+    /// both here and acting on whichever is active is simpler than routing
+    /// through a caller-specified mode.</summary>
+    private void PreviewModeConfirmButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isCropModeActive) CropModeToggle.IsChecked = false;
+        else if (_isAvatarPlacementModeActive) AvatarPlacementModeToggle.IsChecked = false;
+    }
+
+    /// <summary>キャンセル: restores the snapshot captured when the active
+    /// mode was turned on (see _cropModeEntrySnapshot/
+    /// _avatarPlacementModeEntrySnapshot) as one atomic undo step -- reusing
+    /// ApplyCompositeSnapshot (normally the undo manager's own replay
+    /// callback, see its ApplyExtra wiring) rather than duplicating its
+    /// field-by-field restore -- then leaves the mode the same way 確定
+    /// does.</summary>
+    private void PreviewModeCancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        var snapshot = _isCropModeActive ? _cropModeEntrySnapshot
+            : _isAvatarPlacementModeActive ? _avatarPlacementModeEntrySnapshot
+            : null;
+        if (snapshot is { } snap)
+        {
+            _undo.BeginChange();
+            ApplyCompositeSnapshot(snap);
+            _undo.CommitChange();
+        }
+        if (_isCropModeActive) CropModeToggle.IsChecked = false;
+        else if (_isAvatarPlacementModeActive) AvatarPlacementModeToggle.IsChecked = false;
+    }
+
+    // ---- 切り抜きモード: drag the crop boundary directly on the preview
+    //      instead of the 切り抜き幅/位置X/Y sliders. Two drag kinds share
+    //      the same CanvasCropBoundaryOutline/handle elements: dragging a
+    //      corner resizes (aspect ratio locked, anchored on the opposite
+    //      corner); dragging the body moves it. Both work in PHOTO-pixel
+    //      space via PreviewBorder.Width/photo.Width, matching
+    //      UpdateCanvasCropBoundary's own scale -- while either drag is
+    //      live, RenderCompositePreview shows the FULL uncropped photo (see
+    //      the cropAdjusting local it reads), so PreviewBorder really does
+    //      map 1:1 to the photo's own full extent for the duration. ----
+
+    private enum CropHandleCorner { TopLeft, TopRight, BottomLeft, BottomRight }
+
+    private bool _isDraggingCropHandle;
+    private CropHandleCorner _cropDragHandle;
+    private Point _cropDragStartMouse;
+    private double _cropDragStartWidthPercent, _cropDragStartHeightPercent, _cropDragStartOffsetX, _cropDragStartOffsetY;
+
+    private void CanvasCropHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_photoPixelBuffer is null) return;
+        var element = (FrameworkElement)sender;
+        _cropDragHandle = Enum.Parse<CropHandleCorner>((string)element.Tag);
+        _isDraggingCropHandle = true;
+        _cropDragStartMouse = e.GetPosition(PreviewBorder);
+        _cropDragStartWidthPercent = _canvasCropWidthPercent;
+        _cropDragStartHeightPercent = _canvasCropHeightPercent;
+        _cropDragStartOffsetX = _canvasCropOffsetX;
+        _cropDragStartOffsetY = _canvasCropOffsetY;
+        element.CaptureMouse();
+        e.Handled = true;
+    }
+
+    /// <summary>In a fixed-ratio mode, only the drag's horizontal component
+    /// drives resizing -- width alone already determines height (see
+    /// GetCanvasCropRect), so a second independent input from the vertical
+    /// component would be redundant, not additive. In 自由 (free) mode
+    /// (_canvasAspectRatio null) there's no ratio tying the two together, so
+    /// dx and dy each drive their own axis independently instead. Either
+    /// way, anchors on whichever corner is diagonally OPPOSITE the one being
+    /// dragged: that corner's own photo-pixel position is held fixed by
+    /// re-deriving _canvasCropOffsetX/Y from it after the resize, the
+    /// standard crop-tool convention.</summary>
+    private void CanvasCropHandle_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingCropHandle || _photoPixelBuffer is not { } photo) return;
+        var (maxCropWidth, maxCropHeight) = GetMaxCropSize(photo.Width, photo.Height);
+        if (maxCropWidth <= 0 || maxCropHeight <= 0) return;
+        bool isFree = _canvasAspectRatio is null;
+
+        double scale = PreviewBorder.Width / photo.Width;
+        var current = e.GetPosition(PreviewBorder);
+        double dx = (current.X - _cropDragStartMouse.X) / scale;
+        double dy = (current.Y - _cropDragStartMouse.Y) / scale;
+
+        bool right = _cropDragHandle is CropHandleCorner.TopRight or CropHandleCorner.BottomRight;
+        bool bottom = _cropDragHandle is CropHandleCorner.BottomLeft or CropHandleCorner.BottomRight;
+        double deltaWidth = right ? dx : -dx;
+        double deltaHeight = bottom ? dy : -dy;
+
+        double startCropWidth = maxCropWidth * _cropDragStartWidthPercent / 100.0;
+        double startCropHeight = isFree
+            ? maxCropHeight * _cropDragStartHeightPercent / 100.0
+            : maxCropHeight * _cropDragStartWidthPercent / 100.0;
+        double newCropWidth = Math.Clamp(startCropWidth + deltaWidth, maxCropWidth * 0.10, maxCropWidth);
+        double newCropHeight = isFree
+            ? Math.Clamp(startCropHeight + deltaHeight, maxCropHeight * 0.10, maxCropHeight)
+            : newCropWidth * maxCropHeight / maxCropWidth;
+        double newWidthPercent = newCropWidth / maxCropWidth * 100.0;
+        double newHeightPercent = newCropHeight / maxCropHeight * 100.0;
+
+        double startMaxLeft = photo.Width - startCropWidth;
+        double startMaxTop = photo.Height - startCropHeight;
+        double startLeft = startMaxLeft > 0 ? startMaxLeft * Math.Clamp(_cropDragStartOffsetX, 0, 100) / 100.0 : 0;
+        double startTop = startMaxTop > 0 ? startMaxTop * Math.Clamp(_cropDragStartOffsetY, 0, 100) / 100.0 : 0;
+
+        double anchorX = right ? startLeft : startLeft + startCropWidth;
+        double anchorY = bottom ? startTop : startTop + startCropHeight;
+        double newLeft = right ? anchorX : anchorX - newCropWidth;
+        double newTop = bottom ? anchorY : anchorY - newCropHeight;
+
+        double newMaxLeft = photo.Width - newCropWidth;
+        double newMaxTop = photo.Height - newCropHeight;
+        _canvasCropWidthPercent = newWidthPercent;
+        if (isFree) _canvasCropHeightPercent = newHeightPercent;
+        _canvasCropOffsetX = newMaxLeft > 0 ? Math.Clamp(newLeft / newMaxLeft * 100.0, 0, 100) : 50;
+        _canvasCropOffsetY = newMaxTop > 0 ? Math.Clamp(newTop / newMaxTop * 100.0, 0, 100) : 50;
+
+        RefreshCanvasAspectUI();
         ScheduleCompositeRender();
     }
 
-    private void CanvasCropYSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void CanvasCropHandle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (_suppressEvents) return;
-        _canvasCropOffsetY = CanvasCropYSlider.Value;
+        _isDraggingCropHandle = false;
+        ((UIElement)sender).ReleaseMouseCapture();
+    }
+
+    private bool _isDraggingCropBody;
+    private Point _cropBodyDragStartMouse;
+    private double _cropBodyDragStartOffsetX, _cropBodyDragStartOffsetY;
+
+    private void CanvasCropBoundary_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_photoPixelBuffer is null) return;
+        _isDraggingCropBody = true;
+        _cropBodyDragStartMouse = e.GetPosition(PreviewBorder);
+        _cropBodyDragStartOffsetX = _canvasCropOffsetX;
+        _cropBodyDragStartOffsetY = _canvasCropOffsetY;
+        CanvasCropBoundaryOutline.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void CanvasCropBoundary_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingCropBody || _photoPixelBuffer is not { } photo) return;
+        var (maxCropWidth, maxCropHeight) = GetMaxCropSize(photo.Width, photo.Height);
+        double cropWidth = maxCropWidth * _canvasCropWidthPercent / 100.0;
+        double cropHeight = maxCropHeight * (_canvasAspectRatio is null ? _canvasCropHeightPercent : _canvasCropWidthPercent) / 100.0;
+        double maxLeft = photo.Width - cropWidth;
+        double maxTop = photo.Height - cropHeight;
+
+        double scale = PreviewBorder.Width / photo.Width;
+        var current = e.GetPosition(PreviewBorder);
+        double dx = (current.X - _cropBodyDragStartMouse.X) / scale;
+        double dy = (current.Y - _cropBodyDragStartMouse.Y) / scale;
+
+        double startLeft = maxLeft > 0 ? maxLeft * Math.Clamp(_cropBodyDragStartOffsetX, 0, 100) / 100.0 : 0;
+        double startTop = maxTop > 0 ? maxTop * Math.Clamp(_cropBodyDragStartOffsetY, 0, 100) / 100.0 : 0;
+
+        _canvasCropOffsetX = maxLeft > 0 ? Math.Clamp((startLeft + dx) / maxLeft * 100.0, 0, 100) : 50;
+        _canvasCropOffsetY = maxTop > 0 ? Math.Clamp((startTop + dy) / maxTop * 100.0, 0, 100) : 50;
+
+        RefreshCanvasAspectUI();
         ScheduleCompositeRender();
+    }
+
+    private void CanvasCropBoundary_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingCropBody = false;
+        CanvasCropBoundaryOutline.ReleaseMouseCapture();
     }
 
     /// <summary>Single choke point for cropping a finished composite to
@@ -3210,109 +3247,7 @@ public partial class ControlPanelWindow : Window
     /// saved, or compared, so the crop stays consistent no matter which
     /// path built the bitmap.</summary>
     private WriteableBitmap ApplyCanvasCrop(WriteableBitmap composite) =>
-        ImageAdjustment.CropToAspect(composite, _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent);
-
-    private void CompositeXBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (_photoPixelBuffer is not { } photo) return;
-        if (!TryParse(CompositeXBox.Text, out var offsetX)) return;
-        _compositePlaceX = photo.Width / 2.0 + offsetX - _compositePlaceWidth / 2;
-        _suppressEvents = true;
-        CompositeXSlider.Value = offsetX;
-        _suppressEvents = false;
-        ScheduleCompositeRender();
-    }
-
-    private void CompositeXSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        if (_photoPixelBuffer is not { } photo) return;
-        double rounded = Math.Round(SoftSnap(CompositeXSlider.Value, 15, 0));
-        _suppressEvents = true;
-        CompositeXSlider.Value = rounded;
-        CompositeXBox.Text = FormatSigned(rounded);
-        _suppressEvents = false;
-        _compositePlaceX = photo.Width / 2.0 + rounded - _compositePlaceWidth / 2;
-        ScheduleCompositeRender();
-    }
-
-    private void CompositeYBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (_photoPixelBuffer is not { } photo) return;
-        if (!TryParse(CompositeYBox.Text, out var offsetY)) return;
-        _compositePlaceY = photo.Height / 2.0 + offsetY - _compositePlaceHeight / 2;
-        _suppressEvents = true;
-        CompositeYSlider.Value = offsetY;
-        _suppressEvents = false;
-        ScheduleCompositeRender();
-    }
-
-    private void CompositeYSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        if (_photoPixelBuffer is not { } photo) return;
-        double rounded = Math.Round(SoftSnap(CompositeYSlider.Value, 15, 0));
-        _suppressEvents = true;
-        CompositeYSlider.Value = rounded;
-        CompositeYBox.Text = FormatSigned(rounded);
-        _suppressEvents = false;
-        _compositePlaceY = photo.Height / 2.0 + rounded - _compositePlaceHeight / 2;
-        ScheduleCompositeRender();
-    }
-
-    private void CompositeWidthBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        // No upper cap here (unlike the slider's own 0..200 range) -- typing
-        // a value past 200% is the whole point of also having a text box,
-        // see _compositeDefaultWidth's own doc comment.
-        if (!TryParse(CompositeWidthBox.Text, out var percent) || percent <= 0) return;
-        ApplyCompositeWidth(percent / 100.0 * _compositeDefaultWidth);
-    }
-
-    private void CompositeWidthSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        double snapped = SoftSnap(CompositeWidthSlider.Value, 3, 100);
-        if (snapped != CompositeWidthSlider.Value)
-        {
-            _suppressEvents = true;
-            CompositeWidthSlider.Value = snapped;
-            _suppressEvents = false;
-        }
-        // Floored at 1 (not 0, even though the slider's own Minimum is 0):
-        // dragging all the way to the slider's own left edge would otherwise
-        // leave _compositePlaceWidth completely unchanged while the thumb
-        // itself visually sits at 0, a stuck-looking dead zone.
-        double percent = Math.Max(1, Math.Round(CompositeWidthSlider.Value));
-        ApplyCompositeWidth(percent / 100.0 * _compositeDefaultWidth);
-    }
-
-    /// <summary>Keeps the avatar's own aspect ratio locked, same as Align
-    /// mode's WidthBox_TextChanged does -- resizes around the placement's
-    /// current center so it doesn't visibly jump. <paramref name="newWidth"/>
-    /// is in full-resolution photo pixels (the actual placement's own unit);
-    /// callers convert from the UI's displayed percentage via
-    /// _compositeDefaultWidth before calling this.</summary>
-    private void ApplyCompositeWidth(double newWidth)
-    {
-        double centerX = _compositePlaceX + _compositePlaceWidth / 2;
-        double centerY = _compositePlaceY + _compositePlaceHeight / 2;
-        double aspect = _compositePlaceWidth / _compositePlaceHeight;
-        double newHeight = newWidth / aspect;
-        _compositePlaceWidth = newWidth;
-        _compositePlaceHeight = newHeight;
-        _compositePlaceX = centerX - newWidth / 2;
-        _compositePlaceY = centerY - newHeight / 2;
-        _suppressEvents = true;
-        double widthPercent = newWidth / _compositeDefaultWidth * 100.0;
-        CompositeWidthSlider.Value = widthPercent;
-        CompositeWidthBox.Text = widthPercent.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
-        ScheduleCompositeRender();
-    }
+        ImageAdjustment.CropToAspect(composite, _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent, _canvasCropHeightPercent);
 
     private void ResetCompositePlacementButton_Click(object sender, RoutedEventArgs e)
     {
@@ -3547,7 +3482,13 @@ public partial class ControlPanelWindow : Window
         }
 
         bool dragging = _isCompositeDragging;
-        bool cropAdjusting = _isCropAdjusting;
+        // Also skips the final crop while アバター配置モード is on, not just
+        // during 切り抜きモード itself: otherwise positioning/resizing the
+        // avatar near or past the crop's own edge would show it clipped away
+        // by a crop that hasn't even been committed to yet -- see
+        // GetDisplayedCropRect, which every avatar coordinate conversion
+        // must agree with this flag on.
+        bool cropAdjusting = _isCropModeActive || _isAvatarPlacementModeActive;
 
         if (overlaySource is null)
         {
@@ -3582,8 +3523,10 @@ public partial class ControlPanelWindow : Window
                         clarityAmount: snap.ClarityAmount, clarityScale: photoOnlyScale,
                         lightLeakAmount: snap.LightLeakAmount, lightLeakAngle: snap.LightLeakAngle, lightLeakDistance: snap.LightLeakDistance,
                         lightLeakColorB: snap.LightLeakColorB, lightLeakColorG: snap.LightLeakColorG, lightLeakColorR: snap.LightLeakColorR,
-                        toneGradientAmount: snap.ToneGradientAmount, toneGradientRotation: snap.ToneGradientRotation);
-                    return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, snap.CanvasAspectRatio, snap.CanvasCropOffsetX, snap.CanvasCropOffsetY, snap.CanvasCropWidthPercent);
+                        toneGradientAmount: snap.ToneGradientAmount, toneGradientRotation: snap.ToneGradientRotation,
+                        toneGradientLightR: snap.ToneGradientLightR, toneGradientLightG: snap.ToneGradientLightG, toneGradientLightB: snap.ToneGradientLightB,
+                        toneGradientDarkR: snap.ToneGradientDarkR, toneGradientDarkG: snap.ToneGradientDarkG, toneGradientDarkB: snap.ToneGradientDarkB);
+                    return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, snap.CanvasAspectRatio, snap.CanvasCropOffsetX, snap.CanvasCropOffsetY, snap.CanvasCropWidthPercent, snap.CanvasCropHeightPercent);
                 });
             }
             finally
@@ -3700,10 +3643,13 @@ public partial class ControlPanelWindow : Window
                     fullSnap.ClarityAmount, previewScale, fullSnap.LightLeakAmount, fullSnap.LightLeakAngle, fullSnap.LightLeakDistance,
                     fullSnap.LightLeakColorB, fullSnap.LightLeakColorG, fullSnap.LightLeakColorR,
                     fullSnap.ToneGradientAmount, fullSnap.ToneGradientRotation,
+                    fullSnap.ToneGradientLightR, fullSnap.ToneGradientLightG, fullSnap.ToneGradientLightB,
+                    fullSnap.ToneGradientDarkR, fullSnap.ToneGradientDarkG, fullSnap.ToneGradientDarkB,
                     fullSnap.DropShadowAmount, fullSnap.DropShadowDirection, fullSnap.DropShadowDistance, fullSnap.DropShadowBlur,
                     fullSnap.DropShadowColorB, fullSnap.DropShadowColorG, fullSnap.DropShadowColorR, previewScale,
-                    fullSnap.DropShadowTone, fullSnap.DropShadowDotSize, fullSnap.DropShadowBlendMode);
-                return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, fullSnap.CanvasAspectRatio, fullSnap.CanvasCropOffsetX, fullSnap.CanvasCropOffsetY, fullSnap.CanvasCropWidthPercent);
+                    // トーン風(ハーフトーン)UIは削除済み: 常時オフのプレーンな影のみ。
+                    false, 8, fullSnap.DropShadowBlendMode);
+                return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, fullSnap.CanvasAspectRatio, fullSnap.CanvasCropOffsetX, fullSnap.CanvasCropOffsetY, fullSnap.CanvasCropWidthPercent, fullSnap.CanvasCropHeightPercent);
             });
         }
         finally
@@ -3826,11 +3772,21 @@ public partial class ControlPanelWindow : Window
         return result;
     }
 
-    // ---- Shift+drag directly on the preview moves the avatar (same
-    //      _compositePlaceX/Y the 配置 card's X/Y sliders edit), with a
-    //      highlighted rect tracing its current placement while Shift is
-    //      held -- see PreviewImage_MouseLeftButtonDown/Window_PreviewKeyDown
-    //      below. ----
+    // ---- Shift+drag (or, persistently, アバター配置モード) directly on the
+    //      preview moves the avatar (_compositePlaceX/Y -- there's no
+    //      longer a slider UI for these at all, see
+    //      AvatarPlacementModeToggle_Changed's own removal comment), with a
+    //      highlighted rect + resize/rotate handles tracing its current
+    //      placement while either is active -- see
+    //      PreviewImage_MouseLeftButtonDown/Window_PreviewKeyDown below. ----
+
+    /// <summary>Persistent alternative to holding Shift: while on, the
+    /// avatar's bounding box + corner handles + rotate gizmo stay up and
+    /// dragging anywhere on the preview moves the avatar without needing
+    /// Shift at all. Mutually exclusive with _isCropModeActive -- see
+    /// AvatarPlacementModeToggle_Changed/CropModeToggle_Changed, both of
+    /// which turn the other off.</summary>
+    private bool _isAvatarPlacementModeActive;
 
     private bool _isDraggingAvatarPlacement;
     private System.Windows.Point _avatarDragStartMouse;
@@ -3844,15 +3800,56 @@ public partial class ControlPanelWindow : Window
     /// Height are defined in PRE-crop photo-pixel space -- converting
     /// between screen position and placement coordinates has to account for
     /// the crop offset, or the highlight/drag would drift from the actual
-    /// avatar the moment a canvas aspect ratio is active. Returns the full
-    /// photo rect (0,0,width,height) when no crop is active
-    /// (_canvasAspectRatio is null), which also makes the crop-left/top
-    /// subtraction below a no-op in the common case.</summary>
+    /// avatar the moment a canvas aspect ratio is active. _canvasAspectRatio
+    /// null means 自由 (free): still an active crop, just with
+    /// _canvasCropWidthPercent/_canvasCropHeightPercent shrinking each axis
+    /// independently against the full photo instead of both deriving from
+    /// one ratio-fit box (see GetMaxCropSize).</summary>
     private (double Left, double Top, double Width, double Height) GetCanvasCropRect(int photoWidth, int photoHeight)
+    {
+        if (photoWidth <= 0 || photoHeight <= 0) return (0, 0, photoWidth, photoHeight);
+
+        var (maxCropWidth, maxCropHeight) = GetMaxCropSize(photoWidth, photoHeight);
+        double widthZoom = Math.Clamp(_canvasCropWidthPercent, 1, 100) / 100.0;
+        double heightZoom = _canvasAspectRatio is null ? Math.Clamp(_canvasCropHeightPercent, 1, 100) / 100.0 : widthZoom;
+        double cropWidth = Math.Max(1, Math.Round(maxCropWidth * widthZoom));
+        double cropHeight = Math.Max(1, Math.Round(maxCropHeight * heightZoom));
+        double maxLeft = photoWidth - cropWidth;
+        double maxTop = photoHeight - cropHeight;
+        double left = Math.Round(maxLeft * Math.Clamp(_canvasCropOffsetX, 0, 100) / 100.0);
+        double top = Math.Round(maxTop * Math.Clamp(_canvasCropOffsetY, 0, 100) / 100.0);
+        return (left, top, cropWidth, cropHeight);
+    }
+
+    /// <summary>What every avatar-placement screen&lt;-&gt;photo coordinate
+    /// conversion should treat "the area PreviewBorder currently displays"
+    /// as: the real canvas crop normally, but the FULL uncropped photo while
+    /// either 切り抜きモード or アバター配置モード is active. Must always
+    /// agree with RenderCompositePreview's own `cropAdjusting` local (see its
+    /// definition), which renders the full uncropped composite during either
+    /// of those exact same two modes -- otherwise the avatar highlight/
+    /// handles/gizmo would be positioned against a crop rect PreviewBorder
+    /// isn't actually showing, clipping them out of view the moment the
+    /// avatar is placed outside the (still-uncommitted) crop bounds. Unlike
+    /// GetCanvasCropRect's other few callers (UpdateCanvasCropBoundary, the
+    /// crop-handle drag handlers), which draw/adjust the crop boundary
+    /// itself and so need the TRUE rect regardless of which mode is
+    /// active.</summary>
+    private (double Left, double Top, double Width, double Height) GetDisplayedCropRect(int photoWidth, int photoHeight) =>
+        _isCropModeActive || _isAvatarPlacementModeActive ? (0, 0, photoWidth, photoHeight) : GetCanvasCropRect(photoWidth, photoHeight);
+
+    /// <summary>The largest box of _canvasAspectRatio's ratio that fits
+    /// inside the photo (100% zoom) -- factored out of GetCanvasCropRect so
+    /// the interactive corner-handle drag (CanvasCropHandle_MouseMove) can
+    /// reuse the exact same ratio-fitting math instead of re-deriving it.
+    /// Returns the full photo size in 自由 (free) mode (_canvasAspectRatio
+    /// null) -- the 100% baseline each axis's own independent zoom knob
+    /// then shrinks from.</summary>
+    private (double MaxWidth, double MaxHeight) GetMaxCropSize(int photoWidth, int photoHeight)
     {
         if (_canvasAspectRatio is not { } ratio || ratio <= 0 || photoWidth <= 0 || photoHeight <= 0)
         {
-            return (0, 0, photoWidth, photoHeight);
+            return (photoWidth, photoHeight);
         }
         double srcRatio = (double)photoWidth / photoHeight;
         double maxCropWidth, maxCropHeight;
@@ -3868,65 +3865,256 @@ public partial class ControlPanelWindow : Window
         }
         maxCropWidth = Math.Min(maxCropWidth, photoWidth);
         maxCropHeight = Math.Min(maxCropHeight, photoHeight);
-        double zoom = Math.Clamp(_canvasCropWidthPercent, 1, 100) / 100.0;
-        double cropWidth = Math.Max(1, Math.Round(maxCropWidth * zoom));
-        double cropHeight = Math.Max(1, Math.Round(maxCropHeight * zoom));
-        double maxLeft = photoWidth - cropWidth;
-        double maxTop = photoHeight - cropHeight;
-        double left = Math.Round(maxLeft * Math.Clamp(_canvasCropOffsetX, 0, 100) / 100.0);
-        double top = Math.Round(maxTop * Math.Clamp(_canvasCropOffsetY, 0, 100) / 100.0);
-        return (left, top, cropWidth, cropHeight);
+        return (maxCropWidth, maxCropHeight);
     }
 
-    /// <summary>Shows/hides and positions AvatarPlacementHighlight -- visible
-    /// only while Shift is held, Composite mode is actually the open panel,
-    /// and an avatar is loaded (nothing to highlight otherwise). Called from
-    /// Window_PreviewKeyDown/Up (so it reacts the instant Shift is pressed/
-    /// released, not just on the next mouse move), RefreshCompositePlacementUI
-    /// (so it stays in sync when placement changes via the 配置 sliders
-    /// while Shift happens to be held), and PreviewImage_MouseMove during an
-    /// active Shift-drag.</summary>
+    private const double AvatarHandleSize = 10;
+    private const double AvatarRotateGizmoOffset = 24;
+    private const double AvatarRotateGizmoSize = 16;
+
+    /// <summary>Shows/hides and positions AvatarPlacementHighlight (and, only
+    /// while アバター配置モード is on -- a quick Shift-drag is for
+    /// repositioning, not fiddly resize/rotate work -- the corner handles +
+    /// rotate gizmo too) -- visible while Shift is held OR
+    /// _isAvatarPlacementModeActive, Composite mode is actually the open
+    /// panel, and an avatar is loaded (nothing to highlight otherwise).
+    /// Called from Window_PreviewKeyDown/Up (so it reacts the instant Shift
+    /// is pressed/released, not just on the next mouse move),
+    /// AvatarPlacementModeToggle_Changed, RefreshCompositePlacementUI (so it
+    /// stays in sync when placement changes while either is active), and
+    /// PreviewImage_MouseMove/AvatarHandle_MouseMove/AvatarRotateGizmo_MouseMove
+    /// during an active drag.</summary>
     private void UpdateAvatarPlacementHighlight()
     {
         bool shiftHeld = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         bool hasAvatar = !_compositeSkipAvatar && _overlayWindow.AdjustedPngSource is not null;
-        if (!shiftHeld || !hasAvatar || CompositePanel.Visibility != Visibility.Visible
+        if ((!shiftHeld && !_isAvatarPlacementModeActive) || !hasAvatar || CompositePanel.Visibility != Visibility.Visible
             || _photoPixelBuffer is not { } photo || double.IsNaN(PreviewBorder.Width) || PreviewBorder.Width <= 0)
         {
             AvatarPlacementHighlight.Visibility = Visibility.Collapsed;
+            AvatarHandlesLayer.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var crop = GetCanvasCropRect(photo.Width, photo.Height);
+        var crop = GetDisplayedCropRect(photo.Width, photo.Height);
         double scale = PreviewBorder.Width / crop.Width;
 
         double width = _compositePlaceWidth * scale;
         double height = _compositePlaceHeight * scale;
+        double marginX = (_compositePlaceX - crop.Left) * scale;
+        double marginY = (_compositePlaceY - crop.Top) * scale;
         AvatarPlacementHighlight.Width = width;
         AvatarPlacementHighlight.Height = height;
-        AvatarPlacementHighlight.Margin = new Thickness((_compositePlaceX - crop.Left) * scale, (_compositePlaceY - crop.Top) * scale, 0, 0);
+        AvatarPlacementHighlight.Margin = new Thickness(marginX, marginY, 0, 0);
         AvatarPlacementHighlightRotate.CenterX = width / 2;
         AvatarPlacementHighlightRotate.CenterY = height / 2;
         AvatarPlacementHighlightRotate.Angle = _compositeRotation;
         AvatarPlacementHighlight.Visibility = Visibility.Visible;
+
+        if (!_isAvatarPlacementModeActive)
+        {
+            AvatarHandlesLayer.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // AvatarHandlesLayer's own PARENT is a plain Grid, not a Canvas, so
+        // Canvas.SetLeft/Top on the layer itself would be silently ignored
+        // by layout (that attached property only does anything when the
+        // immediate parent is a Canvas) -- Margin is what actually moves it
+        // within a Grid cell, matching AvatarPlacementHighlight's own
+        // Margin-based positioning above. The handles' OWN positions within
+        // this layer (PlaceAvatarHandle below) are correct as Canvas.Left/
+        // Top, since this layer itself IS a Canvas for its children.
+        AvatarHandlesLayer.Margin = new Thickness(marginX, marginY, 0, 0);
+        AvatarHandlesLayer.Width = width;
+        AvatarHandlesLayer.Height = height;
+        AvatarHandlesRotateTransform.Angle = _compositeRotation;
+
+        double half = AvatarHandleSize / 2;
+        PlaceAvatarHandle(AvatarHandleTL, -half, -half);
+        PlaceAvatarHandle(AvatarHandleTR, width - half, -half);
+        PlaceAvatarHandle(AvatarHandleBL, -half, height - half);
+        PlaceAvatarHandle(AvatarHandleBR, width - half, height - half);
+
+        double gizmoHalf = AvatarRotateGizmoSize / 2;
+        double gizmoCenterY = -AvatarRotateGizmoOffset;
+        AvatarRotateGizmoLine.X1 = width / 2;
+        AvatarRotateGizmoLine.Y1 = 0;
+        AvatarRotateGizmoLine.X2 = width / 2;
+        AvatarRotateGizmoLine.Y2 = gizmoCenterY + gizmoHalf;
+        PlaceAvatarHandle(AvatarRotateGizmoHandle, width / 2 - gizmoHalf, gizmoCenterY - gizmoHalf);
+
+        AvatarHandlesLayer.Visibility = Visibility.Visible;
     }
 
-    /// <summary>Shows/hides and positions the crop-boundary dim+outline
-    /// overlay -- visible only while <see cref="_isCropAdjusting"/> (see its
-    /// own doc comment). PreviewImage.Source itself switches to the
-    /// UNCROPPED composite for the same duration (RenderCompositePreview
-    /// skips ApplyCanvasCrop while adjusting), so PreviewBorder.Width maps
-    /// to the FULL photo's width here, not crop-space -- the opposite of
-    /// GetCanvasCropRect's other callers (UpdateAvatarPlacementHighlight,
-    /// the Shift-drag handler), which is why the scale below reads
-    /// photo.Width, not crop.Width.</summary>
+    private static void PlaceAvatarHandle(UIElement handle, double x, double y)
+    {
+        Canvas.SetLeft(handle, x);
+        Canvas.SetTop(handle, y);
+    }
+
+    // ---- アバター配置モード: 4 corner resize handles (aspect ratio locked,
+    //      rotation-aware) + a rotate gizmo, mirroring OverlayWindow's own
+    //      Align-mode handle system (Handle_MouseMove/RotateGizmo_MouseMove)
+    //      but working in PreviewBorder-scaled, crop-aware coordinates
+    //      instead of 1:1 screen pixels, since Composite mode's preview is a
+    //      scaled-down view of the photo rather than a true full-screen
+    //      overlay. Reuses CropHandleCorner (TopLeft/TopRight/BottomLeft/
+    //      BottomRight) -- same 4 corners, no need for a second enum. ----
+
+    private bool _isDraggingAvatarHandle;
+    private CropHandleCorner _avatarDragHandle;
+    private Point _avatarHandleDragStartMouse;
+    private double _avatarHandleStartX, _avatarHandleStartY, _avatarHandleStartWidth, _avatarHandleStartHeight;
+
+    private void AvatarHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_photoPixelBuffer is null) return;
+        var element = (FrameworkElement)sender;
+        _avatarDragHandle = Enum.Parse<CropHandleCorner>((string)element.Tag);
+        _isDraggingAvatarHandle = true;
+        _avatarHandleDragStartMouse = e.GetPosition(PreviewBorder);
+        _avatarHandleStartX = _compositePlaceX;
+        _avatarHandleStartY = _compositePlaceY;
+        _avatarHandleStartWidth = _compositePlaceWidth;
+        _avatarHandleStartHeight = _compositePlaceHeight;
+        _undo.BeginChange();
+        element.CaptureMouse();
+        e.Handled = true;
+    }
+
+    /// <summary>Locked-aspect corner resize, rotation-aware: the screen-space
+    /// drag delta is un-rotated into the avatar's own local axes first (same
+    /// technique as OverlayWindow's Handle_MouseMove), then projected onto
+    /// the dragged corner's own diagonal for a single continuous scale
+    /// factor -- avoids the width-vs-height flip-flop a naive per-axis
+    /// comparison has near the diagonal, the natural drag direction for a
+    /// corner.</summary>
+    private void AvatarHandle_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingAvatarHandle || _photoPixelBuffer is not { } photo) return;
+        var crop = GetDisplayedCropRect(photo.Width, photo.Height);
+        double scale = PreviewBorder.Width / crop.Width * _previewZoom;
+        if (scale <= 0) return;
+
+        var current = e.GetPosition(PreviewBorder);
+        double screenDx = (current.X - _avatarHandleDragStartMouse.X) / scale;
+        double screenDy = (current.Y - _avatarHandleDragStartMouse.Y) / scale;
+
+        double rad = -_compositeRotation * Math.PI / 180.0;
+        double cos = Math.Cos(rad), sin = Math.Sin(rad);
+        double localDx = screenDx * cos - screenDy * sin;
+        double localDy = screenDx * sin + screenDy * cos;
+
+        bool left = _avatarDragHandle is CropHandleCorner.TopLeft or CropHandleCorner.BottomLeft;
+        bool top = _avatarDragHandle is CropHandleCorner.TopLeft or CropHandleCorner.TopRight;
+
+        double halfW0 = _avatarHandleStartWidth / 2;
+        double halfH0 = _avatarHandleStartHeight / 2;
+        double cornerDist0 = Math.Sqrt(halfW0 * halfW0 + halfH0 * halfH0);
+        if (cornerDist0 <= 0) return;
+
+        double dirX = (left ? -halfW0 : halfW0) / cornerDist0;
+        double dirY = (top ? -halfH0 : halfH0) / cornerDist0;
+        double projected = localDx * dirX + localDy * dirY;
+
+        double dragScale = (cornerDist0 + projected) / cornerDist0;
+        if (dragScale <= 0) return; // dragged past center; ignore rather than invert
+
+        // Lock to the loaded PNG's own native aspect ratio when available --
+        // more robust than the box's current W/H, which could have drifted
+        // from the image's true ratio (rounding, or an earlier manual edit).
+        double aspect = _overlayWindow.ImageNativeSize is { Width: > 0, Height: > 0 } native
+            ? native.Width / native.Height
+            : _avatarHandleStartWidth / _avatarHandleStartHeight;
+
+        double newWidth = _avatarHandleStartWidth * dragScale;
+        double newHeight = newWidth / aspect;
+        if (newWidth < 20 || newHeight < 20) return;
+
+        double centerX = _avatarHandleStartX + _avatarHandleStartWidth / 2;
+        double centerY = _avatarHandleStartY + _avatarHandleStartHeight / 2;
+        _compositePlaceWidth = newWidth;
+        _compositePlaceHeight = newHeight;
+        _compositePlaceX = centerX - newWidth / 2;
+        _compositePlaceY = centerY - newHeight / 2;
+
+        UpdateAvatarPlacementHighlight();
+        ScheduleCompositeRender();
+    }
+
+    private void AvatarHandle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingAvatarHandle = false;
+        _undo.CommitChange();
+        ((UIElement)sender).ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
+    private bool _isDraggingAvatarRotateGizmo;
+    private double _avatarRotateGizmoStartAngle;
+    private double _avatarRotateGizmoStartRotation;
+
+    private void AvatarRotateGizmo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_photoPixelBuffer is not { } photo) return;
+        _undo.BeginChange();
+        _isDraggingAvatarRotateGizmo = true;
+        var crop = GetDisplayedCropRect(photo.Width, photo.Height);
+        double scale = PreviewBorder.Width / crop.Width;
+        double centerX = (_compositePlaceX + _compositePlaceWidth / 2 - crop.Left) * scale;
+        double centerY = (_compositePlaceY + _compositePlaceHeight / 2 - crop.Top) * scale;
+        var mouse = e.GetPosition(PreviewBorder);
+        _avatarRotateGizmoStartAngle = Math.Atan2(mouse.Y - centerY, mouse.X - centerX) * 180.0 / Math.PI;
+        _avatarRotateGizmoStartRotation = _compositeRotation;
+        AvatarRotateGizmoHandle.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void AvatarRotateGizmo_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingAvatarRotateGizmo || _photoPixelBuffer is not { } photo) return;
+        var crop = GetDisplayedCropRect(photo.Width, photo.Height);
+        double scale = PreviewBorder.Width / crop.Width;
+        double centerX = (_compositePlaceX + _compositePlaceWidth / 2 - crop.Left) * scale;
+        double centerY = (_compositePlaceY + _compositePlaceHeight / 2 - crop.Top) * scale;
+        var mouse = e.GetPosition(PreviewBorder);
+        double currentAngle = Math.Atan2(mouse.Y - centerY, mouse.X - centerX) * 180.0 / Math.PI;
+        double newRotation = _avatarRotateGizmoStartRotation + (currentAngle - _avatarRotateGizmoStartAngle);
+        _compositeRotation = SoftSnap(newRotation, 5, -180, -90, 0, 90, 180);
+
+        UpdateAvatarPlacementHighlight();
+        ScheduleCompositeRender();
+    }
+
+    private void AvatarRotateGizmo_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingAvatarRotateGizmo = false;
+        _undo.CommitChange();
+        AvatarRotateGizmoHandle.ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
+    /// <summary>Shows/hides and positions the crop-boundary dim+outline+
+    /// corner-handle overlay -- visible while <see cref="_isCropModeActive"/>
+    /// (the 切り抜きモード toggle) is on. PreviewImage.Source itself
+    /// switches to the UNCROPPED composite for the same duration
+    /// (RenderCompositePreview skips ApplyCanvasCrop while it's true), so
+    /// PreviewBorder.Width maps to the FULL photo's width here, not
+    /// crop-space -- the opposite of GetCanvasCropRect's other callers
+    /// (UpdateAvatarPlacementHighlight, the Shift-drag handler), which is
+    /// why the scale below reads photo.Width, not crop.Width.</summary>
     private void UpdateCanvasCropBoundary()
     {
-        if (!_isCropAdjusting || _photoPixelBuffer is not { } photo
+        if (!_isCropModeActive || _photoPixelBuffer is not { } photo
             || double.IsNaN(PreviewBorder.Width) || PreviewBorder.Width <= 0)
         {
             CanvasCropDimOverlay.Visibility = Visibility.Collapsed;
             CanvasCropBoundaryOutline.Visibility = Visibility.Collapsed;
+            CanvasCropHandleTopLeft.Visibility = Visibility.Collapsed;
+            CanvasCropHandleTopRight.Visibility = Visibility.Collapsed;
+            CanvasCropHandleBottomLeft.Visibility = Visibility.Collapsed;
+            CanvasCropHandleBottomRight.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -3945,6 +4133,22 @@ public partial class ControlPanelWindow : Window
         CanvasCropBoundaryOutline.Height = height;
         CanvasCropBoundaryOutline.Margin = new Thickness(left, top, 0, 0);
         CanvasCropBoundaryOutline.Visibility = Visibility.Visible;
+
+        // Corner handles only make sense (and only need to be draggable) in
+        // the persistent 切り抜きモード, not while just dragging a slider --
+        // but leaving them collapsed there is a visibility-only difference,
+        // so it's simplest to gate all four on the same flag here rather
+        // than threading a second condition through every call site.
+        double handleSize = CanvasCropHandleTopLeft.Width;
+        var handleVisibility = _isCropModeActive ? Visibility.Visible : Visibility.Collapsed;
+        CanvasCropHandleTopLeft.Margin = new Thickness(left - handleSize / 2, top - handleSize / 2, 0, 0);
+        CanvasCropHandleTopLeft.Visibility = handleVisibility;
+        CanvasCropHandleTopRight.Margin = new Thickness(left + width - handleSize / 2, top - handleSize / 2, 0, 0);
+        CanvasCropHandleTopRight.Visibility = handleVisibility;
+        CanvasCropHandleBottomLeft.Margin = new Thickness(left - handleSize / 2, top + height - handleSize / 2, 0, 0);
+        CanvasCropHandleBottomLeft.Visibility = handleVisibility;
+        CanvasCropHandleBottomRight.Margin = new Thickness(left + width - handleSize / 2, top + height - handleSize / 2, 0, 0);
+        CanvasCropHandleBottomRight.Visibility = handleVisibility;
     }
 
     /// <summary>Window-wide, not scoped to the preview: Shift's own state
@@ -4029,7 +4233,14 @@ public partial class ControlPanelWindow : Window
 
     private void PreviewImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && !_compositeSkipAvatar
+        if (_colorPickTarget != ColorPickTarget.None)
+        {
+            TryPickColorAtClick(e);
+            e.Handled = true;
+            return;
+        }
+
+        if ((Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || _isAvatarPlacementModeActive) && !_compositeSkipAvatar
             && _overlayWindow.AdjustedPngSource is not null && _photoPixelBuffer is not null)
         {
             _isDraggingAvatarPlacement = true;
@@ -4061,10 +4272,16 @@ public partial class ControlPanelWindow : Window
 
     private void PreviewImage_MouseMove(object sender, MouseEventArgs e)
     {
+        if (_colorPickTarget != ColorPickTarget.None)
+        {
+            UpdateColorPickMagnifier(e.GetPosition(PreviewBorder));
+            return;
+        }
+
         if (_isDraggingAvatarPlacement)
         {
             if (_photoPixelBuffer is not { } photo) return;
-            var crop = GetCanvasCropRect(photo.Width, photo.Height);
+            var crop = GetDisplayedCropRect(photo.Width, photo.Height);
             // *_previewZoom (not /): a raw screen-DIP mouse delta measured
             // against PreviewBorder is already 1:1 with real on-screen
             // movement regardless of zoom (see the MouseDown comment on the
@@ -4090,6 +4307,11 @@ public partial class ControlPanelWindow : Window
         UpdatePreviewViewportTransform();
     }
 
+    private void PreviewImage_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (_colorPickTarget != ColorPickTarget.None) HideColorPickMagnifier();
+    }
+
     private void PreviewImage_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (_isDraggingAvatarPlacement)
@@ -4104,26 +4326,6 @@ public partial class ControlPanelWindow : Window
 
         _isPanningPreview = false;
         PreviewImage.ReleaseMouseCapture();
-    }
-
-    private void CompositeRotationBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (!TryParse(CompositeRotationBox.Text, out var v)) return;
-        _compositeRotation = v;
-        ScheduleCompositeRender();
-    }
-
-    private void CompositeRotationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        double snapped = SoftSnap(CompositeRotationSlider.Value, 5, -180, -90, 0, 90, 180);
-        _suppressEvents = true;
-        CompositeRotationSlider.Value = snapped;
-        CompositeRotationBox.Text = snapped.ToString("F1", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
-        _compositeRotation = snapped;
-        ScheduleCompositeRender();
     }
 
     private void PreviewHost_SizeChanged(object sender, SizeChangedEventArgs e) => SizePreviewToImage();
@@ -4151,7 +4353,10 @@ public partial class ControlPanelWindow : Window
         double maxHeight = PreviewHost.ActualHeight;
         if (maxWidth <= 0 || maxHeight <= 0) return;
 
-        double scale = Math.Min(maxWidth / bmp.PixelWidth, maxHeight / bmp.PixelHeight);
+        // *0.96 rather than an exact edge-to-edge fit: a small deliberate
+        // margin around the image at max zoom-out so it doesn't touch
+        // PreviewHost's own bounds exactly.
+        double scale = Math.Min(maxWidth / bmp.PixelWidth, maxHeight / bmp.PixelHeight) * 0.96;
         PreviewBorder.HorizontalAlignment = HorizontalAlignment.Center;
         PreviewBorder.VerticalAlignment = VerticalAlignment.Center;
         PreviewBorder.Width = bmp.PixelWidth * scale;
@@ -4238,6 +4443,7 @@ public partial class ControlPanelWindow : Window
         PhotoColorTintStrengthBox.Text = _photoColorTintStrength.ToString("F0", CultureInfo.InvariantCulture);
         PhotoColorTintStrengthSlider.Value = _photoColorTintStrength;
         PhotoColorTintSwatch.Background = new SolidColorBrush(Color.FromRgb(_photoColorTintR, _photoColorTintG, _photoColorTintB));
+        PhotoColorTintHexBox.Text = ToHexColor(_photoColorTintR, _photoColorTintG, _photoColorTintB);
         PhotoBlurBox.Text = _photoBlurAmount.ToString("F0", CultureInfo.InvariantCulture);
         PhotoBlurSlider.Value = _photoBlurAmount;
         _suppressEvents = false;
@@ -4631,24 +4837,27 @@ public partial class ControlPanelWindow : Window
         LightLeakBox.Text = _lightLeakAmount.ToString("F0", CultureInfo.InvariantCulture);
         LightLeakSlider.Value = _lightLeakAmount;
         LightLeakColorSwatch.Background = new SolidColorBrush(Color.FromRgb(_lightLeakColorR, _lightLeakColorG, _lightLeakColorB));
-        LightLeakAngleText.Text = _lightLeakAngle.ToString("F0", CultureInfo.InvariantCulture) + "°";
-        PositionDialDot(LightLeakDialDot, _lightLeakAngle, _lightLeakDistance);
+        LightLeakColorHexBox.Text = ToHexColor(_lightLeakColorR, _lightLeakColorG, _lightLeakColorB);
+        LightLeakDirectionBox.Text = _lightLeakAngle.ToString("F0", CultureInfo.InvariantCulture);
+        LightLeakDirectionSlider.Value = _lightLeakAngle;
         ToneGradientBox.Text = _toneGradientAmount.ToString("F0", CultureInfo.InvariantCulture);
         ToneGradientSlider.Value = _toneGradientAmount;
-        ToneGradientRotationText.Text = _toneGradientRotation.ToString("F0", CultureInfo.InvariantCulture) + "°";
-        PositionDialDot(ToneGradientDialDot, _toneGradientRotation, 1.0);
+        ToneGradientDirectionBox.Text = _toneGradientRotation.ToString("F0", CultureInfo.InvariantCulture);
+        ToneGradientDirectionSlider.Value = _toneGradientRotation;
+        ToneGradientLightSwatch.Background = new SolidColorBrush(Color.FromRgb(_toneGradientLightR, _toneGradientLightG, _toneGradientLightB));
+        ToneGradientLightHexBox.Text = ToHexColor(_toneGradientLightR, _toneGradientLightG, _toneGradientLightB);
+        ToneGradientDarkSwatch.Background = new SolidColorBrush(Color.FromRgb(_toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB));
+        ToneGradientDarkHexBox.Text = ToHexColor(_toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB);
         DropShadowBox.Text = _dropShadowAmount.ToString("F0", CultureInfo.InvariantCulture);
         DropShadowSlider.Value = _dropShadowAmount;
-        DropShadowRotationText.Text = _dropShadowDirection.ToString("F0", CultureInfo.InvariantCulture) + "°";
+        DropShadowDirectionBox.Text = _dropShadowDirection.ToString("F0", CultureInfo.InvariantCulture);
+        DropShadowDirectionSlider.Value = _dropShadowDirection;
         DropShadowDistanceBox.Text = _dropShadowDistance.ToString("F0", CultureInfo.InvariantCulture);
         DropShadowDistanceSlider.Value = _dropShadowDistance;
-        PositionDialDot(DropShadowDialDot, _dropShadowDirection, 1.0);
         DropShadowBlurBox.Text = _dropShadowBlur.ToString("F0", CultureInfo.InvariantCulture);
         DropShadowBlurSlider.Value = _dropShadowBlur;
         DropShadowColorSwatch.Background = new SolidColorBrush(Color.FromRgb(_dropShadowColorR, _dropShadowColorG, _dropShadowColorB));
-        DropShadowToneToggle.IsChecked = _dropShadowTone;
-        DropShadowDotSizeBox.Text = _dropShadowDotSize.ToString("F0", CultureInfo.InvariantCulture);
-        DropShadowDotSizeSlider.Value = _dropShadowDotSize;
+        DropShadowColorHexBox.Text = ToHexColor(_dropShadowColorR, _dropShadowColorG, _dropShadowColorB);
         DropShadowBlendModeCombo.SelectedIndex = _dropShadowBlendMode switch
         {
             ImageAdjustment.DropShadowBlendMode.Normal => 1,
@@ -4671,13 +4880,13 @@ public partial class ControlPanelWindow : Window
         _lightLeakColorB = 60; _lightLeakColorG = 160; _lightLeakColorR = 255;
         _toneGradientAmount = 0;
         _toneGradientRotation = 180;
+        _toneGradientLightR = _toneGradientLightG = _toneGradientLightB = 255;
+        _toneGradientDarkR = _toneGradientDarkG = _toneGradientDarkB = 0;
         _dropShadowAmount = 0;
         _dropShadowDirection = 0;
         _dropShadowDistance = 100;
         _dropShadowBlur = 10;
         _dropShadowColorB = _dropShadowColorG = _dropShadowColorR = 0;
-        _dropShadowTone = false;
-        _dropShadowDotSize = 8;
         _dropShadowBlendMode = ImageAdjustment.DropShadowBlendMode.Multiply;
         RefreshFinishUI();
         ScheduleCompositeRender();
@@ -4937,95 +5146,32 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- Direction dials: グラデーション/ドロップシャドウ/ライトリーク all
-    //      share this exact interaction -- a small square you drag inside to
-    //      set an angle (0..360, clockwise, 0 = straight down, same
-    //      convention as ApplyToneGradient/ApplyDropShadow/ApplyLightLeak),
-    //      shown as a dot instead of a rotating arrow icon. How far from
-    //      center the dot sits (0..1, normalized against how far the box's
-    //      own edge is in that direction -- the same box-intersection ray-
-    //      cast ApplyLightLeak/ApplyDropShadow already use for their own
-    //      anchor math) matters for effects with a real "how far" axis
-    //      (ライトリーク's anchor pull-in-from-the-edge, ドロップシャドウ's
-    //      offset distance) and is simply pinned to 1 (the edge) for
-    //      グラデーション, which has no such axis. ----
+    // ---- ライトリーク direction: plain slider, like every other row (the
+    //      direction dial was removed app-wide in favor of sliders). This
+    //      also drops the dial's old distance affordance -- _lightLeakDistance
+    //      just stays fixed at 1.0 now (see its own doc comment), same as
+    //      グラデーション/ドロップシャドウ's own direction always was. ----
 
-    private const double DirectionDialSize = 28;
-
-    /// <summary>Converts a raw point inside a DirectionDialSize square into
-    /// the angle it represents and how far toward the dial's own circular
-    /// track (0..1, clamped, radius = half the square) along that angle the
-    /// point sits. The dial itself is visually a rounded-corner square
-    /// (CornerRadius, not a true circle), but the indicator dot's own track
-    /// is a circle inscribed in it -- using the square's actual edges here
-    /// instead (as an earlier version did) put a distance01=1 dot exactly on
-    /// the mathematical square CORNER at diagonal angles, which sits well
-    /// outside the corner's rounded, actually-rendered edge -- the dot
-    /// visibly drifted past the dial's own boundary specifically near 45/
-    /// 135/225/315 degrees. A circular track has no corners to overshoot,
-    /// and reads more naturally as a rotation dial besides. A NaN angle
-    /// means the point was too close to dead center to have a meaningful
-    /// direction -- callers should just ignore that drag tick and keep
-    /// whatever angle they already had.</summary>
-    private static (double angleDegrees, double distance01) DialPointToAngleDistance(Point p)
+    private void LightLeakDirectionBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        double c = DirectionDialSize / 2.0;
-        double dx = p.X - c, dy = p.Y - c;
-        if (Math.Abs(dx) < 0.001 && Math.Abs(dy) < 0.001) return (double.NaN, 0);
-        double deg = Math.Atan2(-dx, dy) * 180.0 / Math.PI;
-        if (deg < 0) deg += 360;
-
-        double clickDist = Math.Sqrt(dx * dx + dy * dy);
-        double distance01 = Math.Clamp(clickDist / c, 0, 1);
-        return (deg, distance01);
+        if (_suppressEvents) return;
+        if (!TryParse(LightLeakDirectionBox.Text, out var v)) return;
+        _lightLeakAngle = Math.Clamp(v, 0, 360);
+        _suppressEvents = true;
+        LightLeakDirectionSlider.Value = _lightLeakAngle;
+        _suppressEvents = false;
+        ScheduleCompositeRender();
     }
 
-    /// <summary>Places a dial's indicator dot at the given angle/distance --
-    /// the exact inverse of DialPointToAngleDistance's own circular-track
-    /// math, so a dot dropped anywhere ends up exactly where it was
-    /// dragged.</summary>
-    private static void PositionDialDot(FrameworkElement dot, double angleDegrees, double distance01)
+    private void LightLeakDirectionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        double c = DirectionDialSize / 2.0;
-        double rad = angleDegrees * Math.PI / 180.0;
-        double dirX = -Math.Sin(rad), dirY = Math.Cos(rad);
-        double t = c * Math.Clamp(distance01, 0, 1);
-        double x = c + dirX * t, y = c + dirY * t;
-        dot.Margin = new Thickness(x - dot.Width / 2, y - dot.Height / 2, 0, 0);
-    }
-
-    // ---- ライトリーク: the one dial that actually uses distance -- see
-    //      _lightLeakDistance's own doc comment. ----
-
-    private bool _isDraggingLightLeakDial;
-
-    private void LightLeakDial_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        _isDraggingLightLeakDial = true;
-        LightLeakDial.CaptureMouse();
-        UpdateLightLeakFromDial(e.GetPosition(LightLeakDial));
-    }
-
-    private void LightLeakDial_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (!_isDraggingLightLeakDial) return;
-        UpdateLightLeakFromDial(e.GetPosition(LightLeakDial));
-    }
-
-    private void LightLeakDial_MouseUp(object sender, MouseButtonEventArgs e)
-    {
-        _isDraggingLightLeakDial = false;
-        LightLeakDial.ReleaseMouseCapture();
-    }
-
-    private void UpdateLightLeakFromDial(Point p)
-    {
-        var (deg, dist) = DialPointToAngleDistance(p);
-        if (double.IsNaN(deg)) return;
-        _lightLeakAngle = deg;
-        _lightLeakDistance = dist;
-        LightLeakAngleText.Text = deg.ToString("F0", CultureInfo.InvariantCulture) + "°";
-        PositionDialDot(LightLeakDialDot, deg, dist);
+        if (_suppressEvents) return;
+        double rounded = Math.Round(LightLeakDirectionSlider.Value);
+        _suppressEvents = true;
+        LightLeakDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEvents = false;
+        if (rounded == _lightLeakAngle) return;
+        _lightLeakAngle = rounded;
         ScheduleCompositeRender();
     }
 
@@ -5127,6 +5273,13 @@ public partial class ControlPanelWindow : Window
         SetLightLeakColor(_lightLeakColorR, _lightLeakColorG, (byte)Math.Clamp(v, 0, 255));
     }
 
+    private void LightLeakColorHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(LightLeakColorHexBox.Text, out var r, out var g, out var b)) return;
+        SetLightLeakColor(r, g, b);
+    }
+
     private void SyncLightLeakColorUI(byte r, byte g, byte b)
     {
         var (h, s, v) = RgbToHsv(r, g, b);
@@ -5142,6 +5295,7 @@ public partial class ControlPanelWindow : Window
         LightLeakColorValueSlider.Value = v * 100;
         PositionColorWheelCursor(LightLeakColorWheelCursor, _lightLeakHue, _lightLeakSat);
         LightLeakColorPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        LightLeakColorHexBox.Text = ToHexColor(r, g, b);
     }
 
     private void SetLightLeakColor(byte r, byte g, byte b)
@@ -5181,51 +5335,38 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- グラデーション direction: uses the shared direction dial above,
-    //      angle only -- ApplyToneGradient has no "how far" axis, so the dot
-    //      always stays pinned to the dial's own edge (distance01: 1.0)
-    //      regardless of where inside the square it's dragged. ----
+    // ---- グラデーション direction: plain slider, like every other row (the
+    //      direction dial was removed app-wide in favor of sliders). ----
 
-    private bool _isDraggingToneGradientDial;
-
-    private void ToneGradientDial_MouseDown(object sender, MouseButtonEventArgs e)
+    private void ToneGradientDirectionBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        _isDraggingToneGradientDial = true;
-        ToneGradientDial.CaptureMouse();
-        UpdateToneGradientRotationFromDial(e.GetPosition(ToneGradientDial));
+        if (_suppressEvents) return;
+        if (!TryParse(ToneGradientDirectionBox.Text, out var v)) return;
+        _toneGradientRotation = Math.Clamp(v, 0, 360);
+        _suppressEvents = true;
+        ToneGradientDirectionSlider.Value = _toneGradientRotation;
+        _suppressEvents = false;
+        ScheduleCompositeRender();
     }
 
-    private void ToneGradientDial_MouseMove(object sender, MouseEventArgs e)
+    private void ToneGradientDirectionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (!_isDraggingToneGradientDial) return;
-        UpdateToneGradientRotationFromDial(e.GetPosition(ToneGradientDial));
-    }
-
-    private void ToneGradientDial_MouseUp(object sender, MouseButtonEventArgs e)
-    {
-        _isDraggingToneGradientDial = false;
-        ToneGradientDial.ReleaseMouseCapture();
-    }
-
-    private void UpdateToneGradientRotationFromDial(Point p)
-    {
-        var (deg, _) = DialPointToAngleDistance(p);
-        if (double.IsNaN(deg)) return;
-        _toneGradientRotation = deg;
-        ToneGradientRotationText.Text = deg.ToString("F0", CultureInfo.InvariantCulture) + "°";
-        PositionDialDot(ToneGradientDialDot, deg, 1.0);
+        if (_suppressEvents) return;
+        double rounded = Math.Round(ToneGradientDirectionSlider.Value);
+        _suppressEvents = true;
+        ToneGradientDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEvents = false;
+        if (rounded == _toneGradientRotation) return;
+        _toneGradientRotation = rounded;
         ScheduleCompositeRender();
     }
 
     // ---- Drop shadow: duplicates the avatar's own silhouette, offset in a
     //      direction and blurred/tinted (multiply blend) -- see
-    //      ImageAdjustment.ApplyDropShadow. The dial controls DIRECTION only
-    //      (its dot stays pinned to the dial's own edge, same as
-    //      グラデーション's dial) -- 幅(distance) is set exclusively via
-    //      DropShadowDistanceSlider/Box, per explicit request: dragging the
-    //      dial used to change both direction AND distance in one gesture,
-    //      which made it too easy to shift 幅 by accident while just aiming
-    //      for a direction. ----
+    //      ImageAdjustment.ApplyDropShadow. Direction is a plain slider,
+    //      like every other row (the direction dial was removed app-wide in
+    //      favor of sliders); 幅(distance) stays its own separate
+    //      DropShadowDistanceSlider/Box. ----
 
     private void DropShadowBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -5250,34 +5391,26 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    private bool _isDraggingDropShadowDial;
-
-    private void DropShadowDial_MouseDown(object sender, MouseButtonEventArgs e)
+    private void DropShadowDirectionBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        _isDraggingDropShadowDial = true;
-        DropShadowDial.CaptureMouse();
-        UpdateDropShadowFromDial(e.GetPosition(DropShadowDial));
+        if (_suppressEvents) return;
+        if (!TryParse(DropShadowDirectionBox.Text, out var v)) return;
+        _dropShadowDirection = Math.Clamp(v, 0, 360);
+        _suppressEvents = true;
+        DropShadowDirectionSlider.Value = _dropShadowDirection;
+        _suppressEvents = false;
+        ScheduleCompositeRender();
     }
 
-    private void DropShadowDial_MouseMove(object sender, MouseEventArgs e)
+    private void DropShadowDirectionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (!_isDraggingDropShadowDial) return;
-        UpdateDropShadowFromDial(e.GetPosition(DropShadowDial));
-    }
-
-    private void DropShadowDial_MouseUp(object sender, MouseButtonEventArgs e)
-    {
-        _isDraggingDropShadowDial = false;
-        DropShadowDial.ReleaseMouseCapture();
-    }
-
-    private void UpdateDropShadowFromDial(Point p)
-    {
-        var (deg, _) = DialPointToAngleDistance(p);
-        if (double.IsNaN(deg)) return;
-        _dropShadowDirection = deg;
-        DropShadowRotationText.Text = deg.ToString("F0", CultureInfo.InvariantCulture) + "°";
-        PositionDialDot(DropShadowDialDot, deg, 1.0);
+        if (_suppressEvents) return;
+        double rounded = Math.Round(DropShadowDirectionSlider.Value);
+        _suppressEvents = true;
+        DropShadowDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEvents = false;
+        if (rounded == _dropShadowDirection) return;
+        _dropShadowDirection = rounded;
         ScheduleCompositeRender();
     }
 
@@ -5327,15 +5460,6 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    /// <summary>Manga screentone ("漫画トーン風の粒々") on/off -- see
-    /// ImageAdjustment.ApplyHalftoneDots.</summary>
-    private void DropShadowToneToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        _dropShadowTone = DropShadowToneToggle.IsChecked == true;
-        ScheduleCompositeRender();
-    }
-
     private void DropShadowBlendModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressEvents) return;
@@ -5347,29 +5471,6 @@ public partial class ControlPanelWindow : Window
             "normal" => ImageAdjustment.DropShadowBlendMode.Normal,
             _ => ImageAdjustment.DropShadowBlendMode.Multiply,
         };
-        ScheduleCompositeRender();
-    }
-
-    private void DropShadowDotSizeBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressEvents) return;
-        if (!TryParse(DropShadowDotSizeBox.Text, out var v) || v < 2) return;
-        _dropShadowDotSize = v;
-        _suppressEvents = true;
-        DropShadowDotSizeSlider.Value = v;
-        _suppressEvents = false;
-        ScheduleCompositeRender();
-    }
-
-    private void DropShadowDotSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_suppressEvents) return;
-        double rounded = Math.Round(DropShadowDotSizeSlider.Value);
-        _suppressEvents = true;
-        DropShadowDotSizeBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
-        if (rounded == _dropShadowDotSize) return;
-        _dropShadowDotSize = rounded;
         ScheduleCompositeRender();
     }
 
@@ -5469,6 +5570,23 @@ public partial class ControlPanelWindow : Window
         return ((byte)Math.Round((rf + m) * 255), (byte)Math.Round((gf + m) * 255), (byte)Math.Round((bf + m) * 255));
     }
 
+    private static string ToHexColor(byte r, byte g, byte b) =>
+        "#" + r.ToString("X2", CultureInfo.InvariantCulture) + g.ToString("X2", CultureInfo.InvariantCulture) + b.ToString("X2", CultureInfo.InvariantCulture);
+
+    /// <summary>Accepts "#RRGGBB" or "RRGGBB" (leading "#" optional, matching
+    /// what a user might paste from elsewhere); anything else (including a
+    /// still-in-progress partial edit) just fails silently so typing a hex
+    /// code character by character doesn't fight the field.</summary>
+    private static bool TryParseHexColor(string text, out byte r, out byte g, out byte b)
+    {
+        r = g = b = 0;
+        var s = text.Trim().TrimStart('#');
+        if (s.Length != 6) return false;
+        return byte.TryParse(s.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out r)
+            && byte.TryParse(s.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out g)
+            && byte.TryParse(s.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out b);
+    }
+
     private static void PositionColorWheelCursor(Border cursor, double hue, double sat)
     {
         double center = (ColorWheelSize - 1) / 2.0;
@@ -5555,6 +5673,13 @@ public partial class ControlPanelWindow : Window
         SetDropShadowColor(_dropShadowColorR, _dropShadowColorG, (byte)Math.Clamp(v, 0, 255));
     }
 
+    private void DropShadowColorHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(DropShadowColorHexBox.Text, out var r, out var g, out var b)) return;
+        SetDropShadowColor(r, g, b);
+    }
+
     /// <summary>Pure UI sync (wheel cursor, 明度/R/G/B sliders+boxes,
     /// preview swatch) from an RGB triple -- no field writes, no render.
     /// Shared by SetDropShadowColor (the real "apply" path) and
@@ -5579,6 +5704,7 @@ public partial class ControlPanelWindow : Window
         DropShadowColorValueSlider.Value = v * 100;
         PositionColorWheelCursor(DropShadowColorWheelCursor, _dropShadowHue, _dropShadowSat);
         DropShadowColorPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        DropShadowColorHexBox.Text = ToHexColor(r, g, b);
     }
 
     /// <summary>Single choke point for every way the shadow color can
@@ -5599,6 +5725,500 @@ public partial class ControlPanelWindow : Window
 
         DropShadowColorSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         ScheduleCompositeRender();
+    }
+
+    // ---- グラデーション 明色/暗色: same custom wheel+RGB popup as
+    //      ドロップシャドウ's own, just manual now instead of always
+    //      auto-computed -- see ToneGradientAutoDetectButton_Click for the
+    //      one-shot re-detect path. ----
+
+    private void ToneGradientLightColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToneGradientLightColorWheel.Source = GetColorWheelBitmap();
+        _suppressEvents = true;
+        SyncToneGradientLightColorUI(_toneGradientLightR, _toneGradientLightG, _toneGradientLightB);
+        _suppressEvents = false;
+        ToneGradientLightColorPopup.IsOpen = true;
+    }
+
+    private bool _isDraggingToneGradientLightWheel;
+
+    private void ToneGradientLightColorWheel_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingToneGradientLightWheel = true;
+        ToneGradientLightColorWheel.CaptureMouse();
+        UpdateToneGradientLightColorFromWheelPosition(e.GetPosition(ToneGradientLightColorWheel));
+    }
+
+    private void ToneGradientLightColorWheel_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingToneGradientLightWheel) return;
+        UpdateToneGradientLightColorFromWheelPosition(e.GetPosition(ToneGradientLightColorWheel));
+    }
+
+    private void ToneGradientLightColorWheel_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingToneGradientLightWheel = false;
+        ToneGradientLightColorWheel.ReleaseMouseCapture();
+    }
+
+    private void UpdateToneGradientLightColorFromWheelPosition(Point p)
+    {
+        double center = (ColorWheelSize - 1) / 2.0;
+        double dx = p.X - center, dy = p.Y - center;
+        double dist = Math.Sqrt(dx * dx + dy * dy) / center;
+        _toneGradientLightHue = (Math.Atan2(dy, dx) * 180.0 / Math.PI + 360) % 360;
+        _toneGradientLightSat = Math.Clamp(dist, 0, 1);
+        var (r, g, b) = HsvToRgb(_toneGradientLightHue, _toneGradientLightSat, ToneGradientLightColorValueSlider.Value / 100.0);
+        SetToneGradientLightColor(r, g, b);
+    }
+
+    private void ToneGradientLightColorValueSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        var (r, g, b) = HsvToRgb(_toneGradientLightHue, _toneGradientLightSat, ToneGradientLightColorValueSlider.Value / 100.0);
+        SetToneGradientLightColor(r, g, b);
+    }
+
+    private void ToneGradientLightColorRSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetToneGradientLightColor((byte)Math.Round(ToneGradientLightColorRSlider.Value), _toneGradientLightG, _toneGradientLightB);
+    }
+
+    private void ToneGradientLightColorGSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetToneGradientLightColor(_toneGradientLightR, (byte)Math.Round(ToneGradientLightColorGSlider.Value), _toneGradientLightB);
+    }
+
+    private void ToneGradientLightColorBSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetToneGradientLightColor(_toneGradientLightR, _toneGradientLightG, (byte)Math.Round(ToneGradientLightColorBSlider.Value));
+    }
+
+    private void ToneGradientLightColorRBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(ToneGradientLightColorRBox.Text, out var v)) return;
+        SetToneGradientLightColor((byte)Math.Clamp(v, 0, 255), _toneGradientLightG, _toneGradientLightB);
+    }
+
+    private void ToneGradientLightColorGBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(ToneGradientLightColorGBox.Text, out var v)) return;
+        SetToneGradientLightColor(_toneGradientLightR, (byte)Math.Clamp(v, 0, 255), _toneGradientLightB);
+    }
+
+    private void ToneGradientLightColorBBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(ToneGradientLightColorBBox.Text, out var v)) return;
+        SetToneGradientLightColor(_toneGradientLightR, _toneGradientLightG, (byte)Math.Clamp(v, 0, 255));
+    }
+
+    private void ToneGradientLightHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(ToneGradientLightHexBox.Text, out var r, out var g, out var b)) return;
+        SetToneGradientLightColor(r, g, b);
+    }
+
+    private void SyncToneGradientLightColorUI(byte r, byte g, byte b)
+    {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        _toneGradientLightSat = s;
+        if (s > 0.001) _toneGradientLightHue = h;
+
+        ToneGradientLightColorRSlider.Value = r;
+        ToneGradientLightColorRBox.Text = r.ToString(CultureInfo.InvariantCulture);
+        ToneGradientLightColorGSlider.Value = g;
+        ToneGradientLightColorGBox.Text = g.ToString(CultureInfo.InvariantCulture);
+        ToneGradientLightColorBSlider.Value = b;
+        ToneGradientLightColorBBox.Text = b.ToString(CultureInfo.InvariantCulture);
+        ToneGradientLightColorValueSlider.Value = v * 100;
+        PositionColorWheelCursor(ToneGradientLightColorWheelCursor, _toneGradientLightHue, _toneGradientLightSat);
+        ToneGradientLightColorPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        ToneGradientLightHexBox.Text = ToHexColor(r, g, b);
+    }
+
+    private void SetToneGradientLightColor(byte r, byte g, byte b)
+    {
+        _toneGradientLightR = r;
+        _toneGradientLightG = g;
+        _toneGradientLightB = b;
+
+        _suppressEvents = true;
+        SyncToneGradientLightColorUI(r, g, b);
+        _suppressEvents = false;
+
+        ToneGradientLightSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        ScheduleCompositeRender();
+    }
+
+    private void ToneGradientDarkColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToneGradientDarkColorWheel.Source = GetColorWheelBitmap();
+        _suppressEvents = true;
+        SyncToneGradientDarkColorUI(_toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB);
+        _suppressEvents = false;
+        ToneGradientDarkColorPopup.IsOpen = true;
+    }
+
+    private bool _isDraggingToneGradientDarkWheel;
+
+    private void ToneGradientDarkColorWheel_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingToneGradientDarkWheel = true;
+        ToneGradientDarkColorWheel.CaptureMouse();
+        UpdateToneGradientDarkColorFromWheelPosition(e.GetPosition(ToneGradientDarkColorWheel));
+    }
+
+    private void ToneGradientDarkColorWheel_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingToneGradientDarkWheel) return;
+        UpdateToneGradientDarkColorFromWheelPosition(e.GetPosition(ToneGradientDarkColorWheel));
+    }
+
+    private void ToneGradientDarkColorWheel_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingToneGradientDarkWheel = false;
+        ToneGradientDarkColorWheel.ReleaseMouseCapture();
+    }
+
+    private void UpdateToneGradientDarkColorFromWheelPosition(Point p)
+    {
+        double center = (ColorWheelSize - 1) / 2.0;
+        double dx = p.X - center, dy = p.Y - center;
+        double dist = Math.Sqrt(dx * dx + dy * dy) / center;
+        _toneGradientDarkHue = (Math.Atan2(dy, dx) * 180.0 / Math.PI + 360) % 360;
+        _toneGradientDarkSat = Math.Clamp(dist, 0, 1);
+        var (r, g, b) = HsvToRgb(_toneGradientDarkHue, _toneGradientDarkSat, ToneGradientDarkColorValueSlider.Value / 100.0);
+        SetToneGradientDarkColor(r, g, b);
+    }
+
+    private void ToneGradientDarkColorValueSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        var (r, g, b) = HsvToRgb(_toneGradientDarkHue, _toneGradientDarkSat, ToneGradientDarkColorValueSlider.Value / 100.0);
+        SetToneGradientDarkColor(r, g, b);
+    }
+
+    private void ToneGradientDarkColorRSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetToneGradientDarkColor((byte)Math.Round(ToneGradientDarkColorRSlider.Value), _toneGradientDarkG, _toneGradientDarkB);
+    }
+
+    private void ToneGradientDarkColorGSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetToneGradientDarkColor(_toneGradientDarkR, (byte)Math.Round(ToneGradientDarkColorGSlider.Value), _toneGradientDarkB);
+    }
+
+    private void ToneGradientDarkColorBSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetToneGradientDarkColor(_toneGradientDarkR, _toneGradientDarkG, (byte)Math.Round(ToneGradientDarkColorBSlider.Value));
+    }
+
+    private void ToneGradientDarkColorRBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(ToneGradientDarkColorRBox.Text, out var v)) return;
+        SetToneGradientDarkColor((byte)Math.Clamp(v, 0, 255), _toneGradientDarkG, _toneGradientDarkB);
+    }
+
+    private void ToneGradientDarkColorGBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(ToneGradientDarkColorGBox.Text, out var v)) return;
+        SetToneGradientDarkColor(_toneGradientDarkR, (byte)Math.Clamp(v, 0, 255), _toneGradientDarkB);
+    }
+
+    private void ToneGradientDarkColorBBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(ToneGradientDarkColorBBox.Text, out var v)) return;
+        SetToneGradientDarkColor(_toneGradientDarkR, _toneGradientDarkG, (byte)Math.Clamp(v, 0, 255));
+    }
+
+    private void ToneGradientDarkHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(ToneGradientDarkHexBox.Text, out var r, out var g, out var b)) return;
+        SetToneGradientDarkColor(r, g, b);
+    }
+
+    private void SyncToneGradientDarkColorUI(byte r, byte g, byte b)
+    {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        _toneGradientDarkSat = s;
+        if (s > 0.001) _toneGradientDarkHue = h;
+
+        ToneGradientDarkColorRSlider.Value = r;
+        ToneGradientDarkColorRBox.Text = r.ToString(CultureInfo.InvariantCulture);
+        ToneGradientDarkColorGSlider.Value = g;
+        ToneGradientDarkColorGBox.Text = g.ToString(CultureInfo.InvariantCulture);
+        ToneGradientDarkColorBSlider.Value = b;
+        ToneGradientDarkColorBBox.Text = b.ToString(CultureInfo.InvariantCulture);
+        ToneGradientDarkColorValueSlider.Value = v * 100;
+        PositionColorWheelCursor(ToneGradientDarkColorWheelCursor, _toneGradientDarkHue, _toneGradientDarkSat);
+        ToneGradientDarkColorPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        ToneGradientDarkHexBox.Text = ToHexColor(r, g, b);
+    }
+
+    private void SetToneGradientDarkColor(byte r, byte g, byte b)
+    {
+        _toneGradientDarkR = r;
+        _toneGradientDarkG = g;
+        _toneGradientDarkB = b;
+
+        _suppressEvents = true;
+        SyncToneGradientDarkColorUI(r, g, b);
+        _suppressEvents = false;
+
+        ToneGradientDarkSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        ScheduleCompositeRender();
+    }
+
+    /// <summary>Re-runs the same weighted whole-image extraction that used
+    /// to happen automatically on every render (see GpuToneGradient's own
+    /// doc comment) as a one-shot action instead, overwriting whatever
+    /// manual 明色/暗色 are currently set. Runs on the CURRENT photo buffer
+    /// -- if none is loaded, does nothing (there's nothing to sample).</summary>
+    private void ToneGradientAutoDetectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_photoPixelBuffer is not { } photo) return;
+        if (!GpuToneGradient.TryDetectColors(photo.Pixels, photo.Stride, photo.Width, photo.Height,
+                out var lightR, out var lightG, out var lightB, out var darkR, out var darkG, out var darkB))
+        {
+            return;
+        }
+        _undo.BeginChange();
+        SetToneGradientLightColor(lightR, lightG, lightB);
+        SetToneGradientDarkColor(darkR, darkG, darkB);
+        _undo.CommitChange();
+    }
+
+    // ---- Eyedropper: click one of the 4 color rows' pipette buttons, then
+    //      click anywhere on the preview to sample that pixel and apply it
+    //      to whichever row's button was clicked. Only samples from the
+    //      in-app preview image (not the whole screen) -- simplest to build
+    //      and needs no OS-level screen-capture permissions. ----
+
+    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark }
+
+    private ColorPickTarget _colorPickTarget = ColorPickTarget.None;
+
+    /// <summary>Clicking the same row's eyedropper again cancels instead of
+    /// re-arming it -- otherwise there'd be no way to back out short of
+    /// clicking the preview and picking an unwanted color.</summary>
+    private void BeginColorPick(ColorPickTarget target)
+    {
+        _colorPickTarget = _colorPickTarget == target ? ColorPickTarget.None : target;
+        PreviewImage.Cursor = _colorPickTarget == ColorPickTarget.None ? Cursors.SizeAll : Cursors.Cross;
+        if (_colorPickTarget == ColorPickTarget.None) HideColorPickMagnifier();
+    }
+
+    private void DropShadowEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.DropShadow);
+    private void LightLeakEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.LightLeak);
+    private void CompositeColorTintEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.AvatarTint);
+    private void PhotoColorTintEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.PhotoTint);
+    private void ToneGradientLightEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.ToneGradientLight);
+    private void ToneGradientDarkEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.ToneGradientDark);
+
+    /// <summary>Converts a screen position (relative to PreviewBorder) into a
+    /// pixel coordinate on the actual source bitmap, inverting the same
+    /// zoom/pan RenderTransform PreviewImage_MouseWheel's own comment derives
+    /// ("a local point P maps to screen position O + zoom*(P-O) + Pan"):
+    /// P = O + (screen - O - Pan) / zoom, then P (still in the unzoomed
+    /// display-scaled space PreviewBorder.Width/Height live in) is divided by
+    /// the display scale to land on a raw image pixel. Shared by the actual
+    /// pick (TryPickColorAtClick) and the magnifier preview that tracks the
+    /// cursor before the click happens.</summary>
+    private bool TryImagePixelFromScreen(Point screen, out BitmapSource bmp, out int px, out int py)
+    {
+        px = py = 0;
+        if (PreviewImage.Source is not BitmapSource source || source.PixelWidth <= 0 || source.PixelHeight <= 0)
+        {
+            bmp = null!;
+            return false;
+        }
+        bmp = source;
+        if (double.IsNaN(PreviewBorder.Width) || PreviewBorder.Width <= 0) return false;
+
+        double originX = PreviewImage.ActualWidth / 2.0;
+        double originY = PreviewImage.ActualHeight / 2.0;
+        double localX = originX + (screen.X - originX - _previewPanX) / _previewZoom;
+        double localY = originY + (screen.Y - originY - _previewPanY) / _previewZoom;
+
+        double scale = PreviewBorder.Width / bmp.PixelWidth;
+        px = (int)(localX / scale);
+        py = (int)(localY / scale);
+        return true;
+    }
+
+    private void TryPickColorAtClick(MouseButtonEventArgs e)
+    {
+        var target = _colorPickTarget;
+        _colorPickTarget = ColorPickTarget.None;
+        PreviewImage.Cursor = Cursors.SizeAll;
+        HideColorPickMagnifier();
+
+        if (!TryImagePixelFromScreen(e.GetPosition(PreviewBorder), out var bmp, out var px, out var py)) return;
+        if (!TryGetPixelColor(bmp, px, py, out var r, out var g, out var b)) return;
+
+        switch (target)
+        {
+            case ColorPickTarget.DropShadow: SetDropShadowColor(r, g, b); break;
+            case ColorPickTarget.LightLeak: SetLightLeakColor(r, g, b); break;
+            case ColorPickTarget.AvatarTint: SetCompositeColorTint(r, g, b); break;
+            case ColorPickTarget.PhotoTint: SetPhotoColorTint(r, g, b); break;
+            case ColorPickTarget.ToneGradientLight: SetToneGradientLightColor(r, g, b); break;
+            case ColorPickTarget.ToneGradientDark: SetToneGradientDarkColor(r, g, b); break;
+        }
+    }
+
+    private static bool TryGetPixelColor(BitmapSource source, int x, int y, out byte r, out byte g, out byte b)
+    {
+        r = g = b = 0;
+        if (x < 0 || y < 0 || x >= source.PixelWidth || y >= source.PixelHeight) return false;
+        BitmapSource bgra = source.Format == PixelFormats.Bgra32 ? source : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+        var pixel = new byte[4];
+        bgra.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+        b = pixel[0];
+        g = pixel[1];
+        r = pixel[2];
+        return true;
+    }
+
+    // ---- Magnifier: a small zoomed-in loupe that follows the cursor while a
+    //      color pick is armed, so the user can see exactly which pixel
+    //      they're about to sample before clicking. An Adorner (not a Popup),
+    //      same reasoning as ConnectorAdorner above -- stays confined to this
+    //      window and isn't affected by any card's DropShadowEffect z-order
+    //      quirk. Attached to PreviewBorder specifically (not PreviewImage):
+    //      PreviewBorder has no RenderTransform of its own, so its adorner
+    //      coordinate space matches e.GetPosition(PreviewBorder) directly,
+    //      the same untransformed frame every other preview mouse handler
+    //      already measures against. ----
+
+    private const int MagnifierSourcePixels = 9; // odd: gives a true center pixel
+    private const double MagnifierCellSize = 12; // each sampled pixel rendered this many DIPs wide
+    private const double MagnifierDisplaySize = MagnifierSourcePixels * MagnifierCellSize;
+
+    private Adorner? _colorPickMagnifierAdorner;
+    private Border? _colorPickMagnifierRoot;
+    private Image? _colorPickMagnifierImage;
+    private TextBlock? _colorPickMagnifierHexText;
+
+    private void EnsureColorPickMagnifier()
+    {
+        if (_colorPickMagnifierAdorner is not null) return;
+        var layer = AdornerLayer.GetAdornerLayer(PreviewBorder);
+        if (layer is null) return;
+
+        _colorPickMagnifierImage = new Image
+        {
+            Width = MagnifierDisplaySize,
+            Height = MagnifierDisplaySize,
+            Stretch = Stretch.Fill,
+        };
+        RenderOptions.SetBitmapScalingMode(_colorPickMagnifierImage, BitmapScalingMode.NearestNeighbor);
+
+        // Outlines the exact center cell (the pixel that'll actually be
+        // sampled) so "zoomed in enough to see individual pixels" doesn't
+        // leave the user guessing which one of them is the real target.
+        var centerHighlight = new Border
+        {
+            Width = MagnifierCellSize,
+            Height = MagnifierCellSize,
+            BorderBrush = Brushes.White,
+            BorderThickness = new Thickness(2),
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(centerHighlight, (MagnifierDisplaySize - MagnifierCellSize) / 2.0);
+        Canvas.SetTop(centerHighlight, (MagnifierDisplaySize - MagnifierCellSize) / 2.0);
+
+        var imageCanvas = new Canvas { Width = MagnifierDisplaySize, Height = MagnifierDisplaySize, ClipToBounds = true };
+        imageCanvas.Children.Add(_colorPickMagnifierImage);
+        imageCanvas.Children.Add(centerHighlight);
+
+        _colorPickMagnifierHexText = new TextBlock
+        {
+            Text = "#------",
+            FontSize = 12,
+            Foreground = (Brush)FindResource("TextPrimaryBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+
+        var stack = new StackPanel();
+        stack.Children.Add(imageCanvas);
+        stack.Children.Add(_colorPickMagnifierHexText);
+
+        _colorPickMagnifierRoot = new Border
+        {
+            Padding = new Thickness(6),
+            Background = (Brush)FindResource("CardBackgroundBrush"),
+            BorderBrush = (Brush)FindResource("HairlineBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = stack,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+        };
+
+        var canvas = new Canvas();
+        canvas.Children.Add(_colorPickMagnifierRoot);
+
+        _colorPickMagnifierAdorner = new ConnectorAdorner(PreviewBorder, canvas);
+        layer.Add(_colorPickMagnifierAdorner);
+    }
+
+    /// <summary>A generous fallback for the loupe's own height before its
+    /// first layout pass has run (ActualHeight still 0) -- padding(12) +
+    /// image(108) + hex text row(~22) rounded up with headroom.</summary>
+    private const double MagnifierEstimatedHeight = 150;
+
+    /// <summary>screen is e.GetPosition(PreviewBorder) -- same frame the
+    /// adorner renders in, so it can be used directly for Canvas.Left/Top.
+    /// Anchored above-right of the cursor (not below-right) so the loupe
+    /// itself never sits under the cursor it's magnifying.</summary>
+    private void UpdateColorPickMagnifier(Point screen)
+    {
+        EnsureColorPickMagnifier();
+        if (_colorPickMagnifierRoot is null || _colorPickMagnifierImage is null || _colorPickMagnifierHexText is null) return;
+
+        if (!TryImagePixelFromScreen(screen, out var bmp, out var px, out var py))
+        {
+            _colorPickMagnifierRoot.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        int half = MagnifierSourcePixels / 2;
+        int cropX = Math.Clamp(px - half, 0, Math.Max(0, bmp.PixelWidth - MagnifierSourcePixels));
+        int cropY = Math.Clamp(py - half, 0, Math.Max(0, bmp.PixelHeight - MagnifierSourcePixels));
+        int cropW = Math.Min(MagnifierSourcePixels, bmp.PixelWidth);
+        int cropH = Math.Min(MagnifierSourcePixels, bmp.PixelHeight);
+        _colorPickMagnifierImage.Source = new CroppedBitmap(bmp, new Int32Rect(cropX, cropY, cropW, cropH));
+
+        _colorPickMagnifierHexText.Text = TryGetPixelColor(bmp, px, py, out var r, out var g, out var b)
+            ? ToHexColor(r, g, b)
+            : "#------";
+
+        _colorPickMagnifierRoot.Visibility = Visibility.Visible;
+        double height = _colorPickMagnifierRoot.ActualHeight > 0 ? _colorPickMagnifierRoot.ActualHeight : MagnifierEstimatedHeight;
+        Canvas.SetLeft(_colorPickMagnifierRoot, screen.X + 20);
+        Canvas.SetTop(_colorPickMagnifierRoot, screen.Y - height - 20);
+    }
+
+    private void HideColorPickMagnifier()
+    {
+        if (_colorPickMagnifierRoot is not null) _colorPickMagnifierRoot.Visibility = Visibility.Collapsed;
     }
 
     // ---- ティント (color wash): two independent color pickers, one for the
@@ -5712,6 +6332,14 @@ public partial class ControlPanelWindow : Window
         CompositeColorTintValueSlider.Value = v * 100;
         PositionColorWheelCursor(CompositeColorTintWheelCursor, _avatarColorTintHue, _avatarColorTintSat);
         CompositeColorTintPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        CompositeColorTintHexBox.Text = ToHexColor(r, g, b);
+    }
+
+    private void CompositeColorTintHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(CompositeColorTintHexBox.Text, out var r, out var g, out var b)) return;
+        SetCompositeColorTint(r, g, b);
     }
 
     /// <summary>Guards SetCompositeColorTint/SetPhotoColorTint's mutual
@@ -5872,6 +6500,14 @@ public partial class ControlPanelWindow : Window
         PhotoColorTintValueSlider.Value = v * 100;
         PositionColorWheelCursor(PhotoColorTintWheelCursor, _photoColorTintHue, _photoColorTintSat);
         PhotoColorTintPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        PhotoColorTintHexBox.Text = ToHexColor(r, g, b);
+    }
+
+    private void PhotoColorTintHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(PhotoColorTintHexBox.Text, out var r, out var g, out var b)) return;
+        SetPhotoColorTint(r, g, b);
     }
 
     /// <summary>Single choke point for every way the photo's tint color can

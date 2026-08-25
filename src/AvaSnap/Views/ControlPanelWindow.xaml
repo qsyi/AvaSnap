@@ -313,11 +313,77 @@
             </Setter>
         </Style>
 
-        <!-- Generic iOS-style ON/OFF switch: no baked-in text (unlike
-             ToneToggleButton below, which is specifically ドロップシャドウ's
-             own トーン風 label and isn't reusable for anything else), just a
-             track that changes color and a thumb that slides side to side,
-             meant to sit next to its own plain TextBlock label (see Unity
+        <!-- Horizontally elongated color swatch button (ドロップシャドウ/
+             ライトリークの「・色」row): starts nudged in a bit from the
+             column's own left edge (small left Margin, not flush at x=0),
+             then Stretches to fill the rest of the column all the way to
+             the hex textbox, instead of stopping at a fixed width and
+             leaving a gap. Content is expected to be a Border whose own
+             Background carries the actual color; this style just makes the
+             ContentPresenter stretch to fill so that Border reaches every
+             edge. -->
+        <Style x:Key="ColorSwatchBarButton" TargetType="Button">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <ContentPresenter />
+                            <!-- Hover feedback can't be a background-tint
+                                 swap like RotateIconButton's (the button's
+                                 own "background" IS the picked color, so
+                                 tinting it would misrepresent the color);
+                                 a translucent white overlay on top instead. -->
+                            <Border x:Name="HoverOverlay" CornerRadius="5" Background="White" Opacity="0" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HoverOverlay" Property="Opacity" Value="0.1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Draggable divider between the composite-mode preview and the
+             cards column (see the 6px splitter ColumnDefinition in
+             CompositePanel): a thin centered hairline at rest so it doesn't
+             read as a heavy hard border, widening to the full 6px hit-area
+             and switching to PrimaryBrush on hover so it's discoverable as
+             draggable without being visually loud all the time. -->
+        <Style x:Key="PreviewCardsSplitter" TargetType="GridSplitter">
+            <Setter Property="Width" Value="6" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="SizeWE" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridSplitter">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Border x:Name="Line" Width="1" Background="{DynamicResource HairlineBrush}" HorizontalAlignment="Center" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Line" Property="Width" Value="2" />
+                                <Setter TargetName="Line" Property="Background" Value="{DynamicResource PrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Generic iOS-style ON/OFF switch: no baked-in text, just a track
+             that changes color and a thumb that slides side to side, meant
+             to sit next to its own plain TextBlock label (see Unity
              連携ガイド's 表示/同期 toggles). -->
         <Style x:Key="SwitchToggleButton" TargetType="ToggleButton">
             <Setter Property="Width" Value="34" />
@@ -397,43 +463,6 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-        </Style>
-
-        <!-- Small compact toggle pill (currently ドロップシャドウ's トーン風
-             switch): same flip-color-when-checked treatment as
-             AspectRatioRadioButton/SkipAvatarButton above, but for a
-             ToggleButton (a genuine on/off, not a mutually-exclusive
-             group). -->
-        <Style x:Key="ToneToggleButton" TargetType="ToggleButton">
-            <Setter Property="Background" Value="{DynamicResource HairlineBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Padding" Value="8,5" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Content" Value="トーン風" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="8">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bg" Property="Opacity" Value="0.85" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsChecked" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
-                    <Setter Property="Foreground" Value="White" />
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
         <!-- Small square preset swatch (DropShadowColorPopup's quick-pick
@@ -546,7 +575,7 @@
         </Style>
 
         <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
             <Setter Property="Margin" Value="0,0,0,4" />
         </Style>
@@ -555,11 +584,13 @@
              three stacked rows (label, box, slider). Both the label and the
              box get a fixed width so every field in a card lines up. -->
         <Style x:Key="SliderRowLabel" TargetType="TextBlock" BasedOn="{StaticResource FieldLabel}">
-            <!-- 90 (up from 78): FieldLabel's FontSize bump left the longest
-                 labels here (コントラスト and others 5-6 characters wide)
-                 no longer fitting the old width, overlapping the slider
-                 track next to them. -->
-            <Setter Property="Width" Value="90" />
+            <!-- 116 (up from 90): matches 仕上げエフェクト's own longtime
+                 convention (needed there to fit "ドロップシャドウ"/
+                 "ライトリーク" without clipping), so every slider on the
+                 composite screen, from avatar look through photo look to
+                 finishing effects, lines up to the same track length
+                 instead of the two sections visibly disagreeing. -->
+            <Setter Property="Width" Value="116" />
             <Setter Property="Margin" Value="0,0,8,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <!-- Default hover delay before a ToolTip shows (~400-500ms,
@@ -569,9 +600,15 @@
             <Setter Property="ToolTipService.InitialShowDelay" Value="150" />
         </Style>
         <Style x:Key="SliderRowBox" TargetType="TextBox" BasedOn="{StaticResource ModernTextBox}">
-            <Setter Property="Width" Value="52" />
+            <!-- 60 (up from 52): at FontSize 13 (bumped from 12), 3-digit
+                 values like "100"/"360" were clipping inside the old 52px
+                 width. Kept as small a bump as covers that, rather than
+                 widening further and visibly changing each row's overall
+                 footprint. -->
+            <Setter Property="Width" Value="60" />
             <Setter Property="Margin" Value="8,0,0,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
         </Style>
 
         <Style x:Key="SectionHeader" TargetType="TextBlock">
@@ -1299,63 +1336,22 @@
                                                   ToolTip="アバター画像を表示/非表示" />
                                 </StackPanel>
                             </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="X" Style="{StaticResource SliderRowLabel}" ToolTip="水平方向の位置" />
-                                <Slider Grid.Column="1" x:Name="XSlider" Minimum="-600" Maximum="600" Ticks="0" VerticalAlignment="Center"
-                                        ValueChanged="XSlider_ValueChanged"
-                                        PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp" />
-                                <TextBox Grid.Column="2" x:Name="XBox" Style="{StaticResource SliderRowBox}" TextChanged="XBox_TextChanged"
-                                          GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                            </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Y" Style="{StaticResource SliderRowLabel}" ToolTip="垂直方向の位置" />
-                                <Slider Grid.Column="1" x:Name="YSlider" Minimum="-600" Maximum="600" Ticks="0" VerticalAlignment="Center"
-                                        ValueChanged="YSlider_ValueChanged"
-                                        PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp" />
-                                <TextBox Grid.Column="2" x:Name="YBox" Style="{StaticResource SliderRowBox}" TextChanged="YBox_TextChanged"
-                                          GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                            </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="幅" Style="{StaticResource SliderRowLabel}" ToolTip="画像の幅" />
-                                <TextBox Grid.Column="1" x:Name="WidthBox" Style="{StaticResource ModernTextBox}" TextChanged="WidthBox_TextChanged"
-                                          GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                            </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="高さ" Style="{StaticResource SliderRowLabel}" ToolTip="画像の高さ" />
-                                <TextBox Grid.Column="1" x:Name="HeightBox" Style="{StaticResource ModernTextBox}" TextChanged="HeightBox_TextChanged"
-                                          GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                            </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="回転 (度)" Style="{StaticResource SliderRowLabel}" ToolTip="画像の回転角度" />
-                                <Slider Grid.Column="1" x:Name="RotationSlider" Minimum="-180" Maximum="180" Ticks="-180,-90,0,90,180" VerticalAlignment="Center"
-                                        ValueChanged="RotationSlider_ValueChanged"
-                                        PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp" />
-                                <TextBox Grid.Column="2" x:Name="RotationBox" Style="{StaticResource SliderRowBox}" TextChanged="RotationBox_TextChanged"
-                                          GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                            </Grid>
+                            <!-- X/Y/幅/高さ/回転(度) sliders removed: this window
+                                 (OverlayWindow, the live overlay positioned over
+                                 VRChat) already has its own full drag/corner-
+                                 resize/rotate-gizmo handle system (Handle_*/
+                                 RotateGizmo_* in OverlayWindow.xaml.cs) that's
+                                 the actual primary way this ever got positioned,
+                                 same direct-manipulation-only approach Composite
+                                 mode's own placement now uses too (see
+                                 AvatarPlacementModeToggle's own removal comment
+                                 in this same file); these were a redundant
+                                 second UI for the same _state.X/Y/Width/Height/
+                                 RotationDegrees fields. 不透明度 below is the one
+                                 field with no on-preview drag equivalent (it's
+                                 purely an Align-mode-only visibility aid, never
+                                 baked into the actual composite), so it alone
+                                 keeps its slider. -->
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -1395,18 +1391,15 @@
                         </StackPanel>
                         </Border>
 
-                        <!-- FOVガイド: 表示/同期は独立したトグル(非表示の
-                             まま同期だけ続けることも、同期を切って手動値の
-                             まま表示することもできる)。同期ONの間はFOV/
-                             ピッチ/ロールのスライダーをグレーアウトし、OFFの
-                             間だけ手動で操作できるようにする(値自体は
-                             OverlayStateのGuideManualFov/Pitch/Rollに保持
-                             され、同期ON中も編集した最後の値を保つ)。
+                        <!-- FOVガイド: 表示トグルはガイド線の表示/非表示のみ。
+                             FOV/ピッチ/ロールはOverlayStateのGuideManualFov/
+                             Pitch/Rollが唯一の値で、常に手入力可能(取得ボタンで
+                             Unityから取得した値もここへ直接書き込まれるだけで、
+                             手入力と取得を切り替えるモードは無い)。
                              UnityConnectionBadge/Textは
-                             UnityCameraGuideService.DataUpdated/BecameStale
-                             を見て、Unity側が実際に値を送ってきているか
-                             (表示/同期の設定に関係なく)を示すだけの
-                             ステータス表示。 -->
+                             UnityCameraGuideService.DataUpdatedを見て、
+                             直近でUnity側から値を取得できたか(表示設定に
+                             関係なく)を示すだけのステータス表示。 -->
                         <Border Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
                             <StackPanel>
                                 <Grid Margin="0,0,0,4">
@@ -1447,22 +1440,35 @@
                                                       ToolTip="ガイド線をVRChatの画面上に表示" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                        <TextBlock Text="同期" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                        <!-- Unity側は常時ポーリングではなくリクエスト待機
+                                             (FileSystemWatcher)のみなので、値を更新するには
+                                             この取得ボタンを押す必要がある。押しても応答が
+                                             来るとは限らない(Unity未起動/応答トグルOFF)ので
+                                             送りっぱなし。結果はUnityConnectionText/
+                                             DataUpdated側で分かる(下の数値へ直接書き込まれる)。 -->
+                                        <TextBlock Text="取得" Style="{StaticResource SliderRowLabel}" Width="Auto"
                                                    Margin="0,0,4,0" VerticalAlignment="Center" Opacity="0.7" />
-                                        <ToggleButton x:Name="GuideSyncToggle" Style="{StaticResource SwitchToggleButton}"
-                                                      Checked="GuideSyncToggle_Changed" Unchecked="GuideSyncToggle_Changed"
-                                                      ToolTip="UnityのCameraCompositionGuideWindowから自動取得(OFFで手動入力)" />
+                                        <Button x:Name="RequestGuideButton" Style="{StaticResource RotateIconButton}"
+                                                Margin="6,0,0,0" Click="RequestGuideButton_Click"
+                                                ToolTip="Unityから今すぐ取得(常時追従ではなく単発リクエストです)">
+                                            <Viewbox Width="13" Height="13">
+                                                <Canvas Width="24" Height="24">
+                                                    <!-- Lucide "refresh-cw" icon (ISC license). -->
+                                                    <Path Data="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
+                                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="M3 3v5h5" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"
+                                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="M16 16h5v5" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
                                     </StackPanel>
                                 </Grid>
-                                <!-- 同期ON中はスライダー自体もグレーアウトして
-                                     押せなくなる(UpdateGuideSlidersEnabled)が、
-                                     見た目が変わっただけでは理由が伝わりにくい
-                                     ため、なぜ触れないのかを明示するテキストを
-                                     同期ON中だけ表示する。 -->
-                                <TextBlock x:Name="GuideSyncHintText"
-                                           Text="同期中はUnityの値を表示しているため、下の数値は編集できません(同期をOFFにすると手動入力できます)"
-                                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
-                                           TextWrapping="Wrap" Margin="0,0,0,6" />
                                 <Grid Margin="0,4,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -1524,10 +1530,17 @@
             <!-- Matches the preview/cards split below (see the ScrollViewer's
                  Grid.RowSpan="2") so the nav bar's own column is bounded to
                  the preview's width, and the cards column can start at the
-                 very top instead of below the nav row. -->
+                 very top instead of below the nav row. The splitter column
+                 between them (see PreviewCardsSplitter below) lets the user
+                 drag-resize the preview/cards ratio; both sides keep their
+                 own MinWidth so dragging can't squeeze either one away. -->
+            <!-- 3*/2* (roughly 60/40, preview-heavy) instead of an even
+                 1*/1* split: matches where the splitter was last dragged to
+                 and kept as the new default. -->
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="300" />
-                <ColumnDefinition Width="*" MinWidth="440" />
+                <ColumnDefinition Width="3*" MinWidth="300" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="2*" MinWidth="440" />
             </Grid.ColumnDefinitions>
 
             <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource NavSegmentGroup}" HorizontalAlignment="Left" Margin="16,14,16,8">
@@ -1612,7 +1625,8 @@
                                        MouseLeftButtonDown="PreviewImage_MouseLeftButtonDown"
                                        MouseMove="PreviewImage_MouseMove"
                                        MouseLeftButtonUp="PreviewImage_MouseLeftButtonUp"
-                                       MouseWheel="PreviewImage_MouseWheel" />
+                                       MouseWheel="PreviewImage_MouseWheel"
+                                       MouseLeave="PreviewImage_MouseLeave" />
                                 <!-- Marks exactly where CompareSlider's before/
                                      after split falls on the image itself, not
                                      just on the slider below it. Position (see
@@ -1624,17 +1638,20 @@
                                 <Border x:Name="CompareSplitLine" Width="2" Background="White" Opacity="0.85"
                                         HorizontalAlignment="Left" IsHitTestVisible="False" Visibility="Collapsed" />
                                 <!-- Traces the avatar's current placement rect while
-                                     Shift is held (see UpdateAvatarPlacementHighlight),
-                                     so it's clear what Shift+drag on the preview is
-                                     about to move. See PreviewImage_MouseLeftButtonDown's
-                                     own Shift check. Position/size are in the same
-                                     coordinate space as CompareSplitLine above (scaled
-                                     to PreviewBorder, crop-aware); the RotateTransform
-                                     matches the avatar's own rotation so the box actually
-                                     traces the rotated placement, not just its unrotated
-                                     bounding box. IsHitTestVisible="False": this is a
-                                     purely visual trace, not itself a drag handle.
-                                     PreviewImage underneath still owns the drag. -->
+                                     Shift is held OR アバター配置モード is on (see
+                                     UpdateAvatarPlacementHighlight), so it's clear what
+                                     dragging the preview is about to move. See
+                                     PreviewImage_MouseLeftButtonDown's own Shift/mode
+                                     check. Position/size are in the same coordinate space
+                                     as CompareSplitLine above (scaled to PreviewBorder,
+                                     crop-aware); the RotateTransform matches the avatar's
+                                     own rotation so the box actually traces the rotated
+                                     placement, not just its unrotated bounding box.
+                                     IsHitTestVisible="False": this is a purely visual
+                                     trace, not itself a drag handle; PreviewImage
+                                     underneath owns the body-drag (both the legacy
+                                     Shift-anywhere shortcut and アバター配置モード's own
+                                     click-anywhere-to-move use the same handler). -->
                                 <Border x:Name="AvatarPlacementHighlight" BorderBrush="{DynamicResource PrimaryBrush}"
                                         BorderThickness="2" Background="#334A58C4"
                                         HorizontalAlignment="Left" VerticalAlignment="Top"
@@ -1643,6 +1660,43 @@
                                         <RotateTransform x:Name="AvatarPlacementHighlightRotate" />
                                     </Border.RenderTransform>
                                 </Border>
+                                <!-- 4 corner resize handles (aspect ratio locked, rotation-
+                                     aware) + a rotate gizmo, only meaningful/shown while
+                                     アバター配置モード is on (not just Shift; a quick Shift
+                                     drag is for repositioning, not fiddly resize/rotate work).
+                                     Positioned as a WHOLE (Canvas.Left/Top + Width/Height +
+                                     RotateTransform on the layer itself) to match
+                                     AvatarPlacementHighlight's own box exactly, then each
+                                     child is placed at a fixed LOCAL (unrotated) offset within
+                                     that layer; same technique OverlayWindow's own
+                                     HandlesLayer/PlaceHandle use for the equivalent Align-mode
+                                     gizmo, see UpdateAvatarPlacementHighlight. -->
+                                <Canvas x:Name="AvatarHandlesLayer" RenderTransformOrigin="0.5,0.5" Visibility="Collapsed"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                                    <Canvas.RenderTransform>
+                                        <RotateTransform x:Name="AvatarHandlesRotateTransform" />
+                                    </Canvas.RenderTransform>
+                                    <Rectangle x:Name="AvatarHandleTL" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNWSE" Tag="TopLeft"
+                                               MouseLeftButtonDown="AvatarHandle_MouseLeftButtonDown" MouseMove="AvatarHandle_MouseMove" MouseLeftButtonUp="AvatarHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="AvatarHandleTR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNESW" Tag="TopRight"
+                                               MouseLeftButtonDown="AvatarHandle_MouseLeftButtonDown" MouseMove="AvatarHandle_MouseMove" MouseLeftButtonUp="AvatarHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="AvatarHandleBL" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNESW" Tag="BottomLeft"
+                                               MouseLeftButtonDown="AvatarHandle_MouseLeftButtonDown" MouseMove="AvatarHandle_MouseMove" MouseLeftButtonUp="AvatarHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="AvatarHandleBR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNWSE" Tag="BottomRight"
+                                               MouseLeftButtonDown="AvatarHandle_MouseLeftButtonDown" MouseMove="AvatarHandle_MouseMove" MouseLeftButtonUp="AvatarHandle_MouseLeftButtonUp" />
+                                    <!-- Leader line + handle offset above the box's top-center
+                                         (not placed exactly on it): an exactly-centered handle
+                                         has no meaningful direction to measure an angle from the
+                                         instant it's grabbed. -->
+                                    <Line x:Name="AvatarRotateGizmoLine" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" IsHitTestVisible="False" />
+                                    <Ellipse x:Name="AvatarRotateGizmoHandle" Width="16" Height="16" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                             Cursor="Hand"
+                                             MouseLeftButtonDown="AvatarRotateGizmo_MouseLeftButtonDown" MouseMove="AvatarRotateGizmo_MouseMove" MouseLeftButtonUp="AvatarRotateGizmo_MouseLeftButtonUp" />
+                                </Canvas>
                                 <!-- Dims the part of the photo the current 切り抜き
                                      crop would throw away, while 切り抜き幅/位置X/Y
                                      is actively being dragged (see UpdateCanvasCropBoundary
@@ -1654,10 +1708,54 @@
                                 <Path x:Name="CanvasCropDimOverlay" Fill="#99000000"
                                       HorizontalAlignment="Left" VerticalAlignment="Top"
                                       IsHitTestVisible="False" Visibility="Collapsed" />
+                                <!-- Background="Transparent" (not null) so the WHOLE
+                                     rect area is hit-testable for the body-drag/move,
+                                     not just the 2px stroke itself. IsHitTestVisible
+                                     stays True unconditionally; harmless while
+                                     Collapsed (Collapsed elements never hit-test
+                                     regardless), and avoids needing a second flag
+                                     just to gate hit-testing separately from
+                                     visibility. -->
                                 <Border x:Name="CanvasCropBoundaryOutline" BorderBrush="{DynamicResource PrimaryBrush}"
-                                        BorderThickness="2"
+                                        BorderThickness="2" Background="Transparent" Cursor="SizeAll"
                                         HorizontalAlignment="Left" VerticalAlignment="Top"
-                                        IsHitTestVisible="False" Visibility="Collapsed" />
+                                        Visibility="Collapsed"
+                                        MouseLeftButtonDown="CanvasCropBoundary_MouseLeftButtonDown"
+                                        MouseMove="CanvasCropBoundary_MouseMove"
+                                        MouseLeftButtonUp="CanvasCropBoundary_MouseLeftButtonUp" />
+                                <!-- Corner resize handles: only shown/positioned
+                                     alongside CanvasCropBoundaryOutline (see
+                                     UpdateCanvasCropBoundary), one per corner, each
+                                     carrying which corner it is in Tag for the shared
+                                     CanvasCropHandle_MouseLeftButtonDown handler.
+                                     Dragging one resizes the crop box (aspect ratio
+                                     stays locked; see GetCanvasCropRect) anchored on
+                                     the OPPOSITE corner, same convention as any photo
+                                     editor's crop tool. -->
+                                <Border x:Name="CanvasCropHandleTopLeft" Tag="TopLeft" Width="14" Height="14" CornerRadius="7"
+                                        Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="2"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top" Cursor="SizeNWSE" Visibility="Collapsed"
+                                        MouseLeftButtonDown="CanvasCropHandle_MouseLeftButtonDown"
+                                        MouseMove="CanvasCropHandle_MouseMove"
+                                        MouseLeftButtonUp="CanvasCropHandle_MouseLeftButtonUp" />
+                                <Border x:Name="CanvasCropHandleTopRight" Tag="TopRight" Width="14" Height="14" CornerRadius="7"
+                                        Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="2"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top" Cursor="SizeNESW" Visibility="Collapsed"
+                                        MouseLeftButtonDown="CanvasCropHandle_MouseLeftButtonDown"
+                                        MouseMove="CanvasCropHandle_MouseMove"
+                                        MouseLeftButtonUp="CanvasCropHandle_MouseLeftButtonUp" />
+                                <Border x:Name="CanvasCropHandleBottomLeft" Tag="BottomLeft" Width="14" Height="14" CornerRadius="7"
+                                        Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="2"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top" Cursor="SizeNESW" Visibility="Collapsed"
+                                        MouseLeftButtonDown="CanvasCropHandle_MouseLeftButtonDown"
+                                        MouseMove="CanvasCropHandle_MouseMove"
+                                        MouseLeftButtonUp="CanvasCropHandle_MouseLeftButtonUp" />
+                                <Border x:Name="CanvasCropHandleBottomRight" Tag="BottomRight" Width="14" Height="14" CornerRadius="7"
+                                        Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="2"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top" Cursor="SizeNWSE" Visibility="Collapsed"
+                                        MouseLeftButtonDown="CanvasCropHandle_MouseLeftButtonDown"
+                                        MouseMove="CanvasCropHandle_MouseMove"
+                                        MouseLeftButtonUp="CanvasCropHandle_MouseLeftButtonUp" />
                             </Grid>
 
                             <!-- Shown only while ShowComposite or a Match
@@ -1721,6 +1819,51 @@
                         </Grid>
                     </Border>
 
+                    <!-- 確定/キャンセル bar for 切り抜きモード/アバター配置モード: a
+                         sibling of PreviewBorder within PreviewHost itself (not
+                         inside PreviewBorder, which is sized/positioned to match
+                         just the IMAGE; letterboxed narrower than PreviewHost
+                         for a portrait photo, say), so this pins to the bottom
+                         of the whole PREVIEW PANE instead, just above where the
+                         比較用スライダー row starts right below PreviewHost.
+                         Shown/hidden alongside RefreshSliderLockState's own
+                         locked check (see CropModeToggle_Changed/
+                         AvatarPlacementModeToggle_Changed, the same two modes
+                         that gray out the slider column); 確定 just turns the
+                         active mode's toggle off, keeping whatever's currently
+                         set; キャンセル restores the snapshot captured the
+                         moment that mode was turned on, then turns it off too;
+                         see PreviewModeConfirmButton_Click/
+                         PreviewModeCancelButton_Click. -->
+                    <StackPanel x:Name="PreviewModeConfirmBar" Orientation="Horizontal"
+                                HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,10"
+                                Visibility="Collapsed">
+                        <Button Style="{StaticResource PillButton}" Margin="0,0,8,0" Click="PreviewModeConfirmButton_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <Viewbox Width="13" Height="13" Margin="0,0,5,0">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M20 6 9 17l-5-5" Stroke="White" StrokeThickness="2.4"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBlock Text="確定" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource SecondaryPillButton}" Click="PreviewModeCancelButton_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <Viewbox Width="13" Height="13" Margin="0,0,5,0">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M18 6 6 18" Stroke="White" StrokeThickness="2.4"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                        <Path Data="m6 6 12 12" Stroke="White" StrokeThickness="2.4"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBlock Text="キャンセル" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
                     <!-- 配置: floats on top of the preview instead of sitting
                          in the controls column, since adjusting where the
                          avatar sits is naturally done while looking at the
@@ -1758,134 +1901,114 @@
                                 <!-- キャンバス比率: crops the FINISHED composite down to
                                      the chosen aspect ratio as the very last step (after
                                      every color/finishing effect), centered by default and
-                                     adjustable via the position sliders below when the
-                                     original photo's own ratio doesn't leave the crop
-                                     centered where it should be. 元 (null ratio) means no
-                                     crop at all: the saved image stays exactly the
-                                     photo's own size, today's behavior. -->
+                                     adjustable via 切り抜きモード (see CropModeToggle below)
+                                     when the original photo's own ratio doesn't leave the
+                                     crop centered where it should be. 自由 (null ratio, still
+                                     Tag="original" internally) doesn't lock a ratio, but IS
+                                     still an active crop: width and height each shrink
+                                     independently instead of together; see
+                                     GetCanvasCropRect/GetMaxCropSize. -->
+                                <!-- Its own 100%/100% default (both crop knobs start full-
+                                     size) means a freshly-selected 自由 looks identical to
+                                     "no crop" until the user actually drags something,
+                                     matching what 元 used to look like without needing a
+                                     separate "cropping is entirely off" state at all. -->
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="キャンバス比率" Style="{StaticResource SliderRowLabel}" Width="Auto"
                                                VerticalAlignment="Center" ToolTip="仕上がりの縦横比を選び、写真をその比率に切り抜きます" />
                                     <ComboBox Grid.Column="1" x:Name="CanvasAspectCombo" Style="{StaticResource CompactComboBox}"
                                               HorizontalAlignment="Left" MinWidth="90" Margin="8,0,0,0"
                                               ToolTip="仕上がりの縦横比を選び、写真をその比率に切り抜きます" SelectionChanged="CanvasAspectCombo_SelectionChanged">
-                                        <ComboBoxItem Content="元" Tag="original" />
+                                        <ComboBoxItem Content="自由" Tag="original" ToolTip="アス比を固定せず、幅と高さを個別に切り抜きます" />
                                         <ComboBoxItem Content="1:1" Tag="1" />
                                         <ComboBoxItem Content="4:5" Tag="0.8" />
                                         <ComboBoxItem Content="9:16" Tag="0.5625" />
                                         <ComboBoxItem Content="16:9" Tag="1.7778" />
                                         <ComboBoxItem Content="カスタム" Tag="custom" />
                                     </ComboBox>
-                                    <!-- Only shown while "カスタム" is selected. The number
-                                         entered is 幅÷高さ directly (matching how every
-                                         preset above is already stored internally;
-                                         _canvasAspectRatio IS a width/height ratio, "4:5"
-                                         is just 0.8's own display label), so no separate
-                                         W/H pair of fields or persisted state is needed:
-                                         RefreshCanvasAspectUI shows this box (and fills it
-                                         from _canvasAspectRatio directly) whenever the
-                                         current ratio doesn't match one of the five presets. -->
-                                    <TextBox Grid.Column="2" x:Name="CanvasAspectCustomBox" Style="{StaticResource SliderRowBox}"
-                                             Margin="6,0,0,0" Visibility="Collapsed"
-                                             ToolTip="幅÷高さを直接入力します (例: 3:2なら1.5、2:3なら0.667)"
-                                             TextChanged="CanvasAspectCustomBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
+                                <!-- Only shown while "カスタム" is selected, as its own
+                                     row below the combo (not crammed into that row) so
+                                     there's room for two separate 横/縦 fields instead of
+                                     one pre-divided decimal. _canvasAspectRatio IS still
+                                     just a single width/height double underneath (matching
+                                     every preset above; "4:5" is just 0.8's own display
+                                     label); these two boxes are purely a friendlier INPUT
+                                     for that same value, not separate persisted state, so
+                                     RefreshCanvasAspectUI re-derives their text from
+                                     _canvasAspectRatio directly (as ratio:1) whenever it
+                                     doesn't already match one of the five presets, same as
+                                     the old single box did. -->
+                                <Grid x:Name="CanvasAspectCustomRow" Margin="0,0,0,8" Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="縦横比" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="仕上がりの縦横比を横:縦の数値で入力します (例: 16:9)" />
+                                    <TextBox Grid.Column="1" x:Name="CanvasAspectCustomWidthBox" Style="{StaticResource SliderRowBox}"
+                                             Margin="8,0,0,0" ToolTip="横の比率"
+                                             TextChanged="CanvasAspectCustomRatio_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    <TextBlock Grid.Column="2" Text=":" VerticalAlignment="Center" Margin="4,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBox Grid.Column="3" x:Name="CanvasAspectCustomHeightBox" Style="{StaticResource SliderRowBox}"
+                                             ToolTip="縦の比率"
+                                             TextChanged="CanvasAspectCustomRatio_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                                <!-- Persistent alternative to dragging 切り抜き幅/位置X/Y:
+                                     while on, the crop boundary (dim+outline+corner
+                                     handles) stays visible on the preview and can be
+                                     dragged directly there instead; see
+                                     CropModeToggle_Changed/UpdateCanvasCropBoundary/
+                                     CanvasCropHandle_*/CanvasCropBoundary_*. -->
                                 <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="切り抜き幅" Style="{StaticResource SliderRowLabel}" Width="Auto"
-                                               ToolTip="切り抜き範囲の大きさです。小さくするほどズームして切り抜きます" />
-                                    <Slider Grid.Column="1" x:Name="CanvasCropWidthSlider" Minimum="10" Maximum="100" Margin="8,0,0,0" VerticalAlignment="Center"
-                                            ValueChanged="CanvasCropWidthSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="CanvasCropSliderMouseDown" PreviewMouseLeftButtonUp="CanvasCropSliderMouseUp" />
-                                </Grid>
-                                <Grid Margin="0,0,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="切り抜き位置X" Style="{StaticResource SliderRowLabel}" Width="Auto"
-                                               ToolTip="横方向に余裕がある場合の切り抜き位置" />
-                                    <Slider Grid.Column="1" x:Name="CanvasCropXSlider" Minimum="0" Maximum="100" Margin="8,0,0,0" VerticalAlignment="Center"
-                                            ValueChanged="CanvasCropXSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="CanvasCropSliderMouseDown" PreviewMouseLeftButtonUp="CanvasCropSliderMouseUp" />
-                                </Grid>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="切り抜き位置Y" Style="{StaticResource SliderRowLabel}" Width="Auto"
-                                               ToolTip="縦方向に余裕がある場合の切り抜き位置" />
-                                    <Slider Grid.Column="1" x:Name="CanvasCropYSlider" Minimum="0" Maximum="100" Margin="8,0,0,0" VerticalAlignment="Center"
-                                            ValueChanged="CanvasCropYSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="CanvasCropSliderMouseDown" PreviewMouseLeftButtonUp="CanvasCropSliderMouseUp" />
+                                    <TextBlock Grid.Column="0" x:Name="CropModeLabel" Text="切り抜きモード" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="プレビュー上で切り抜き範囲を直接ドラッグして調整します" />
+                                    <ToggleButton Grid.Column="1" x:Name="CropModeToggle" Style="{StaticResource SwitchToggleButton}"
+                                                  HorizontalAlignment="Left" Margin="8,0,0,0"
+                                                  Checked="CropModeToggle_Changed" Unchecked="CropModeToggle_Changed"
+                                                  ToolTip="プレビュー上で切り抜き範囲を直接ドラッグして調整します" />
                                 </Grid>
                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,0,0,10" />
 
-                                <TextBlock Text="写真上でのアバター画像の位置・サイズ・回転です" FontSize="13"
-                                           Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
-                                <Grid Margin="0,0,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="X" Style="{StaticResource SliderRowLabel}" ToolTip="水平方向の位置" />
-                                    <Slider Grid.Column="1" x:Name="CompositeXSlider" Ticks="0" VerticalAlignment="Center"
-                                            ValueChanged="CompositeXSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                    <TextBox Grid.Column="2" x:Name="CompositeXBox" Style="{StaticResource SliderRowBox}" TextChanged="CompositeXBox_TextChanged"
-                                              GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                </Grid>
-                                <Grid Margin="0,0,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Y" Style="{StaticResource SliderRowLabel}" ToolTip="垂直方向の位置" />
-                                    <Slider Grid.Column="1" x:Name="CompositeYSlider" Ticks="0" VerticalAlignment="Center"
-                                            ValueChanged="CompositeYSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                    <TextBox Grid.Column="2" x:Name="CompositeYBox" Style="{StaticResource SliderRowBox}" TextChanged="CompositeYBox_TextChanged"
-                                              GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                </Grid>
-                                <Grid Margin="0,0,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="幅" Style="{StaticResource SliderRowLabel}" ToolTip="画像の幅" />
-                                    <Slider Grid.Column="1" x:Name="CompositeWidthSlider" VerticalAlignment="Center"
-                                            ValueChanged="CompositeWidthSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                    <TextBox Grid.Column="2" x:Name="CompositeWidthBox" Style="{StaticResource SliderRowBox}" TextChanged="CompositeWidthBox_TextChanged"
-                                              GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                </Grid>
+                                <!-- Grayed out (IsEnabled=False, see CropModeToggle_Changed)
+                                     while 切り抜きモード is on: editing avatar placement at the
+                                     same time as dragging the crop boundary is confusing (the
+                                     preview shows the full uncropped photo during crop mode,
+                                     not where the avatar will actually end up relative to the
+                                     final crop), so this whole group is disabled instead of
+                                     left interactive but misleading. -->
+                                <StackPanel x:Name="CompositePlacementControlsPanel">
+                                <!-- Persistent alternative to Shift+drag (still works as a
+                                     quick shortcut even with this off): while on, the avatar's
+                                     bounding box + 4 corner resize handles (aspect ratio
+                                     locked) + a rotate gizmo stay up on the preview; see
+                                     AvatarPlacementModeToggle_Changed/UpdateAvatarPlacementHighlight/
+                                     AvatarHandle_*/AvatarRotateGizmo_*. Mutually exclusive with
+                                     切り抜きモード (turning one on turns the other off): both
+                                     want the preview's own drag gestures to themselves. -->
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="回転 (度)" Style="{StaticResource SliderRowLabel}" ToolTip="画像の回転角度" />
-                                    <Slider Grid.Column="1" x:Name="CompositeRotationSlider" Minimum="-180" Maximum="180" Ticks="-180,-90,0,90,180" VerticalAlignment="Center"
-                                            ValueChanged="CompositeRotationSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                    <TextBox Grid.Column="2" x:Name="CompositeRotationBox" Style="{StaticResource SliderRowBox}" TextChanged="CompositeRotationBox_TextChanged"
-                                              GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    <TextBlock Grid.Column="0" x:Name="AvatarPlacementModeLabel" Text="アバター配置モード" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="プレビュー上でアバター画像の位置・サイズ・回転を直接ドラッグして編集します" />
+                                    <ToggleButton Grid.Column="1" x:Name="AvatarPlacementModeToggle" Style="{StaticResource SwitchToggleButton}"
+                                                  HorizontalAlignment="Left" Margin="8,0,0,0"
+                                                  Checked="AvatarPlacementModeToggle_Changed" Unchecked="AvatarPlacementModeToggle_Changed"
+                                                  ToolTip="プレビュー上でアバター画像の位置・サイズ・回転を直接ドラッグして編集します" />
                                 </Grid>
                                 <Button Style="{StaticResource SecondaryPillButton}"
                                         HorizontalAlignment="Left" Click="ResetCompositePlacementButton_Click">
@@ -1899,6 +2022,7 @@
                                                 <TextBlock Text="リセット" />
                                             </StackPanel>
                                 </Button>
+                                </StackPanel>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -1914,7 +2038,16 @@
                          placement looks like with NONE of the look
                          adjustments or finishing effects applied. See
                          RenderCompositePreview/UpdateComparisonPreview. -->
-                    <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                    <StackPanel Grid.Row="1" Margin="0,8,0,0" Panel.ZIndex="10">
+                        <!-- ZIndex=10: CompareSlider is deliberately made
+                             WIDER than the preview column it sits in (see
+                             SizePreviewToImage's own comment on why), so its
+                             round thumb pokes a few px past that column's own
+                             edge at Value 0/100; without a raised ZIndex
+                             those overflow pixels render BEHIND the
+                             PreviewCardsSplitter/cards column to its right
+                             (later XAML siblings paint on top by default),
+                             making the thumb look cut off there. -->
                         <!-- Its own centered StackPanel (not sharing one
                              with the label below) so nothing about the
                              label's width can shift the slider off-center
@@ -1987,7 +2120,9 @@
                      occupies the preview's column (see NavSegmentGroup's Grid.Column
                      above), so this column has nothing to share that space
                      with. -->
-                <ScrollViewer Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="0,14,16,14" VerticalScrollBarVisibility="Auto">
+                <GridSplitter Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource PreviewCardsSplitter}" />
+
+                <ScrollViewer x:Name="CompositeCardsScrollViewer" Grid.Row="0" Grid.RowSpan="2" Grid.Column="2" Margin="0,14,16,14" VerticalScrollBarVisibility="Auto">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -2039,7 +2174,20 @@
                          kept separate at the bottom instead of breaking that
                          alignment. -->
                     <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
-                        <StackPanel>
+                        <!-- Grid (not a plain StackPanel) so the reset button
+                             pins to this Border's own bottom edge, not just
+                             the end of this column's own content: the two
+                             look cards share one Grid row (see the shared-row
+                             comment above), so whichever column has less
+                             content gets stretched taller by its sibling,
+                             leaving blank space below a StackPanel-stacked
+                             button instead of true bottom. -->
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0">
                             <Grid Margin="0,0,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -2056,8 +2204,6 @@
                                               HorizontalAlignment="Right" VerticalAlignment="Center"
                                               Checked="LookLinkToggle_Changed" Unchecked="LookLinkToggle_Changed" />
                             </Grid>
-                                <TextBlock Text="位置合わせモードと共通です" FontSize="13"
-                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,-4,0,10" />
 
                                 <!-- Nudges all 11 sliders above toward the
                                      background photo's CURRENT look (see
@@ -2235,19 +2381,32 @@
                                      which only nudge warm/cool and green/
                                      magenta: this picks ANY color via the
                                      same wheel popup DropShadow/LightLeak use. -->
-                                <Grid Margin="0,0,0,6">
+                                <Grid Margin="0,0,0,2">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="116" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="AvatarColorTintLabel" Text="ティント色" Style="{StaticResource SliderRowLabel}" ToolTip="指定した色を強度に応じて重ねます(色相/色温度とは別の色被せ効果)" />
-                                    <Button Grid.Column="1" x:Name="CompositeColorTintButton" Style="{StaticResource RotateIconButton}"
-                                            Margin="6,0,6,0" Click="CompositeColorTintButton_Click" ToolTip="ティントの色を選択">
-                                        <Border x:Name="CompositeColorTintSwatch" Width="14" Height="14" CornerRadius="3"
+                                    <TextBlock Grid.Column="0" x:Name="AvatarColorTintLabel" Text="ティント色" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="指定した色を強度に応じて重ねます(色相/色温度とは別の色被せ効果)" />
+                                    <Button Grid.Column="1" x:Name="CompositeColorTintButton" Style="{StaticResource ColorSwatchBarButton}"
+                                            Click="CompositeColorTintButton_Click" ToolTip="ティントの色を選択">
+                                        <Border x:Name="CompositeColorTintSwatch" CornerRadius="5"
                                                 Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
                                     </Button>
+                                    <Button Grid.Column="2" x:Name="CompositeColorTintEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                            Margin="6,0,0,0" Click="CompositeColorTintEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                        <Viewbox Width="13" Height="13">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBox Grid.Column="3" x:Name="CompositeColorTintHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                             ToolTip="カラーコード(#RRGGBB)"
+                                             TextChanged="CompositeColorTintHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     <Popup x:Name="CompositeColorTintPopup" PlacementTarget="{Binding ElementName=CompositeColorTintButton}"
                                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
                                         <Border Style="{StaticResource Card}" Padding="12" Width="220">
@@ -2314,10 +2473,25 @@
                                             </StackPanel>
                                         </Border>
                                     </Popup>
-                                    <Slider Grid.Column="2" x:Name="CompositeColorTintStrengthSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                </Grid>
+                                <!-- Own row (matching every plain slider row's
+                                     3-column layout) instead of sharing the
+                                     label row above, so this slider's length
+                                     matches every other slider's: putting it
+                                     alongside the label+color-button row left
+                                     it visibly shorter (two Auto columns eating
+                                     into its Width="*" track instead of one). -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource SliderRowLabel}" />
+                                    <Slider Grid.Column="1" x:Name="CompositeColorTintStrengthSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
                                             ValueChanged="CompositeColorTintStrengthSlider_ValueChanged"
                                             PreviewMouseLeftButtonDown="PngColorSliderMouseDown" PreviewMouseLeftButtonUp="PngColorSliderMouseUp" />
-                                    <TextBox Grid.Column="3" x:Name="CompositeColorTintStrengthBox" Style="{StaticResource SliderRowBox}"
+                                    <TextBox Grid.Column="2" x:Name="CompositeColorTintStrengthBox" Style="{StaticResource SliderRowBox}"
                                              TextChanged="CompositeColorTintStrengthBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
                                 <!-- 境界ぼかし is its own group, separate from
@@ -2342,7 +2516,238 @@
                                              TextChanged="EdgeBlurBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
 
-                            <Button Style="{StaticResource SecondaryPillButton}"
+                                <!-- ドロップシャドウ: duplicates the avatar's own
+                                     silhouette, offset in a direction and
+                                     blurred/tinted (multiply blend); see
+                                     ImageAdjustment.ApplyDropShadow. Only has any
+                                     effect with an avatar loaded. Moved here (below
+                                     境界ぼかし, still in the avatar-look card) from
+                                     仕上げエフェクト at the user's request. -->
+                                <!-- Title-only row (no control of its own): every actual
+                                     setting below, including the color/direction/blend-mode
+                                     controls that used to share this row, is now its own
+                                     "・"-prefixed label|control|value row so the whole effect
+                                     follows the exact same 3-column grammar as a plain slider
+                                     row (ソフトネス/シャープネス/etc.) instead of mixing a
+                                     wide multi-column header with indented sub-rows. Still
+                                     wrapped in the same 3-column Grid as every other row
+                                     (not a bare TextBlock) so its label sits in the exact
+                                     same Column0 as 境界ぼかし above it, instead of relying
+                                     on a loose TextBlock happening to render at the same X. -->
+                                <Grid Margin="0,10,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="ドロップシャドウ" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="アバター画像の影を複製し、向き・幅・ぼかし・色を指定して重ねます" />
+                                </Grid>
+
+                                <!-- ・色: a long horizontal swatch bar (matches a slider's own
+                                     width) instead of a small square icon, with a hex code
+                                     textbox in the value column, same slot a numeric TextBox
+                                     occupies on every other row. -->
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="・色" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="影の色を選択" Opacity="0.7" />
+                                    <Button Grid.Column="1" x:Name="DropShadowColorButton" Style="{StaticResource ColorSwatchBarButton}"
+                                            Click="DropShadowColorButton_Click" ToolTip="影の色を選択">
+                                        <Border x:Name="DropShadowColorSwatch" CornerRadius="5"
+                                                Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                    </Button>
+                                    <!-- Eyedropper: click, then click anywhere on the preview image
+                                         to sample that pixel's color (see BeginColorPick/
+                                         TryPickColorAtClick in code-behind). Sits between the
+                                         swatch bar and the hex box, its own Auto column. -->
+                                    <Button Grid.Column="2" x:Name="DropShadowEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                            Margin="6,0,0,0" Click="DropShadowEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                        <Viewbox Width="13" Height="13">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBox Grid.Column="3" x:Name="DropShadowColorHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                             ToolTip="カラーコード(#RRGGBB)"
+                                             TextChanged="DropShadowColorHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    <!-- Custom in-app popup instead of the native OS color
+                                         dialog, so picking a shadow color looks like the
+                                         rest of AvaSnap (Card, rounded swatches, the same
+                                         slider row style) rather than a jarring system
+                                         window. StaysOpen="False" closes it on any click
+                                         outside, same as a combo box dropdown. -->
+                                    <Popup x:Name="DropShadowColorPopup" PlacementTarget="{Binding ElementName=DropShadowColorButton}"
+                                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                        <Border Style="{StaticResource Card}" Padding="12" Width="220">
+                                            <StackPanel>
+                                                <TextBlock Text="影の色" Style="{StaticResource SectionHeader}" />
+
+                                                <!-- カラーホイール: 角度=色相、中心からの距離=彩度。
+                                                     DropShadowColorWheel.Source is a 140x140 bitmap
+                                                     built once (GetColorWheelBitmap, value=1 fixed)
+                                                     since only hue/saturation vary spatially;
+                                                     brightness is the separate 明度 slider below,
+                                                     which just scales the picked hue/saturation's
+                                                     RGB rather than needing the wheel bitmap itself
+                                                     regenerated. -->
+                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                    <Image x:Name="DropShadowColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
+                                                           MouseLeftButtonDown="DropShadowColorWheel_MouseDown"
+                                                           MouseMove="DropShadowColorWheel_MouseMove"
+                                                           MouseLeftButtonUp="DropShadowColorWheel_MouseUp" />
+                                                    <Border x:Name="DropShadowColorWheelCursor" Width="12" Height="12" CornerRadius="6"
+                                                            BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
+                                                            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="34" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
+                                                    <Slider Grid.Column="1" x:Name="DropShadowColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                            ValueChanged="DropShadowColorValueSlider_ValueChanged" />
+                                                </Grid>
+                                                <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
+                                                <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="DropShadowColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="DropShadowColorRSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="DropShadowColorRBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="DropShadowColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="DropShadowColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="DropShadowColorGSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="DropShadowColorGBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="DropShadowColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="DropShadowColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="DropShadowColorBSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="DropShadowColorBBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="DropShadowColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Border x:Name="DropShadowColorPreviewLarge" Height="28" CornerRadius="6"
+                                                        Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+
+                                <!-- ・合成方法: control column holds the combo box; the combo's
+                                     own selected text already IS its value, so no separate value
+                                     column content is needed here (like ・色 above). -->
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="・合成方法" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="影の色を写真にどう重ねるか" Opacity="0.7" />
+                                    <ComboBox Grid.Column="1" x:Name="DropShadowBlendModeCombo" Style="{StaticResource CompactComboBox}"
+                                              MinWidth="90"
+                                              ToolTip="影の色を写真にどう重ねるか" SelectionChanged="DropShadowBlendModeCombo_SelectionChanged">
+                                        <ComboBoxItem Content="乗算" Tag="multiply" ToolTip="下地を暗く/色付けする、通常の影らしい見た目" />
+                                        <ComboBoxItem Content="通常" Tag="normal" ToolTip="下地を無視して影の色をそのまま重ねる" />
+                                        <ComboBoxItem Content="加算" Tag="additive" ToolTip="下地に影の色の光を足す(発光風)" />
+                                    </ComboBox>
+                                </Grid>
+
+                                <!-- ・強さ/幅/ぼかし: a "・" prefix marks them as ドロップシャドウの
+                                     own sub-settings rather than independent top-level effects (a
+                                     drawn tree-view connector line was tried and reverted: too
+                                     fragile to align correctly without exact pixel heights). -->
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="影の濃さ" Opacity="0.7" />
+                                    <Slider Grid.Column="1" x:Name="DropShadowSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                            ValueChanged="DropShadowSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DropShadowBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DropShadowBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                                <!-- ・方向: control column holds the dial, value column holds
+                                     the degree readout, same slot the numeric TextBox occupies
+                                     on a slider row. -->
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="・方向" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="影の向き(度)" Opacity="0.7" />
+                                    <Slider Grid.Column="1" x:Name="DropShadowDirectionSlider" Margin="8,0,0,0" Minimum="0" Maximum="360" VerticalAlignment="Center"
+                                            ValueChanged="DropShadowDirectionSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DropShadowDirectionBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DropShadowDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="・幅" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="影を複製してずらす距離(ピクセル)" Opacity="0.7" />
+                                    <Slider Grid.Column="1" x:Name="DropShadowDistanceSlider" Margin="8,0,0,0" Minimum="0" Maximum="300" VerticalAlignment="Center"
+                                            ValueChanged="DropShadowDistanceSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DropShadowDistanceBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DropShadowDistanceBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="・ぼかし" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="影の輪郭のぼかし量" Opacity="0.7" />
+                                    <Slider Grid.Column="1" x:Name="DropShadowBlurSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                            ValueChanged="DropShadowBlurSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DropShadowBlurBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DropShadowBlurBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+
+                            </StackPanel>
+                            <Button Grid.Row="1" Style="{StaticResource SecondaryPillButton}"
                                     HorizontalAlignment="Left" Click="ResetLookButton_Click">
                                         <StackPanel Orientation="Horizontal">
                                             <Viewbox Width="13" Height="13" Margin="0,0,5,0">
@@ -2354,7 +2759,7 @@
                                             <TextBlock Text="リセット" />
                                         </StackPanel>
                             </Button>
-                        </StackPanel>
+                        </Grid>
                     </Border>
 
                     <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
@@ -2387,7 +2792,17 @@
                     </Border>
 
                     <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
-                        <StackPanel>
+                        <!-- Grid (not a plain StackPanel), matching the
+                             avatar-look card's own fix: pins the reset
+                             button to this Border's own bottom edge instead
+                             of leaving blank space below it when this
+                             column's content is shorter than its row-mate. -->
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0">
                             <Grid Margin="0,0,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -2406,8 +2821,6 @@
                                 <ToggleButton Grid.Column="1" Style="{StaticResource LinkToggleButton}" Visibility="Hidden"
                                               IsHitTestVisible="False" HorizontalAlignment="Right" VerticalAlignment="Center" />
                             </Grid>
-                                <TextBlock Text="アバター画像とは独立した見た目です" FontSize="13"
-                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,-4,0,10" />
 
                                 <!-- Reverse direction of MatchAvatarToPhotoButton,
                                      see MatchPhotoToAvatarButton_Click. -->
@@ -2572,19 +2985,32 @@
                                      comment on this same row, identical
                                      luminance-preserving color-wash effect,
                                      independent instance for the photo. -->
-                                <Grid Margin="0,0,0,6">
+                                <Grid Margin="0,0,0,2">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="116" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="PhotoColorTintLabel" Text="ティント色" Style="{StaticResource SliderRowLabel}" ToolTip="指定した色を強度に応じて重ねます(色相/色温度とは別の色被せ効果)" />
-                                    <Button Grid.Column="1" x:Name="PhotoColorTintButton" Style="{StaticResource RotateIconButton}"
-                                            Margin="6,0,6,0" Click="PhotoColorTintButton_Click" ToolTip="ティントの色を選択">
-                                        <Border x:Name="PhotoColorTintSwatch" Width="14" Height="14" CornerRadius="3"
+                                    <TextBlock Grid.Column="0" x:Name="PhotoColorTintLabel" Text="ティント色" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="指定した色を強度に応じて重ねます(色相/色温度とは別の色被せ効果)" />
+                                    <Button Grid.Column="1" x:Name="PhotoColorTintButton" Style="{StaticResource ColorSwatchBarButton}"
+                                            Click="PhotoColorTintButton_Click" ToolTip="ティントの色を選択">
+                                        <Border x:Name="PhotoColorTintSwatch" CornerRadius="5"
                                                 Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
                                     </Button>
+                                    <Button Grid.Column="2" x:Name="PhotoColorTintEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                            Margin="6,0,0,0" Click="PhotoColorTintEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                        <Viewbox Width="13" Height="13">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBox Grid.Column="3" x:Name="PhotoColorTintHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                             ToolTip="カラーコード(#RRGGBB)"
+                                             TextChanged="PhotoColorTintHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     <Popup x:Name="PhotoColorTintPopup" PlacementTarget="{Binding ElementName=PhotoColorTintButton}"
                                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
                                         <Border Style="{StaticResource Card}" Padding="12" Width="220">
@@ -2651,10 +3077,22 @@
                                             </StackPanel>
                                         </Border>
                                     </Popup>
-                                    <Slider Grid.Column="2" x:Name="PhotoColorTintStrengthSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                </Grid>
+                                <!-- Own row, matching the avatar-side tint's own
+                                     comment on why (its slider was visibly
+                                     shorter than every other slider while
+                                     sharing the label+color-button row). -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource SliderRowLabel}" />
+                                    <Slider Grid.Column="1" x:Name="PhotoColorTintStrengthSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
                                             ValueChanged="PhotoColorTintStrengthSlider_ValueChanged"
                                             PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                    <TextBox Grid.Column="3" x:Name="PhotoColorTintStrengthBox" Style="{StaticResource SliderRowBox}"
+                                    <TextBox Grid.Column="2" x:Name="PhotoColorTintStrengthBox" Style="{StaticResource SliderRowBox}"
                                              TextChanged="PhotoColorTintStrengthBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
 
@@ -2679,7 +3117,8 @@
                                              TextChanged="PhotoBlurBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
 
-                            <Button Style="{StaticResource SecondaryPillButton}"
+                            </StackPanel>
+                            <Button Grid.Row="1" Style="{StaticResource SecondaryPillButton}"
                                     HorizontalAlignment="Left" Click="ResetPhotoLookButton_Click">
                                         <StackPanel Orientation="Horizontal">
                                             <Viewbox Width="13" Height="13" Margin="0,0,5,0">
@@ -2691,7 +3130,7 @@
                                             <TextBlock Text="リセット" />
                                         </StackPanel>
                             </Button>
-                        </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- Spans both columns (Grid.Column="0" + ColumnSpan="3",
@@ -2715,13 +3154,9 @@
 
                                 <!-- Reordered into 4 category groups (ディテール/トーン/光/フィルム・
                                      レトロ) instead of implementation order, split across the two
-                                     sub-columns at a category boundary where possible: column 0 holds
-                                     ディテール+トーン+光 plus the first 2 フィルム・レトロ items
-                                     (フィルムグレイン/ビネット), column 2 continues フィルム・レトロ
-                                     (色収差/色にじみ/スキャンライン) then ドロップシャドウ. A clean
-                                     category-then-category split would leave column 0 far shorter than
-                                     column 2 once ドロップシャドウ's own bulk (color popup + dial +
-                                     blend dropdown + 3 sub-sliders) is counted. -->
+                                     sub-columns at the category boundary: column 0 holds
+                                     ディテール+トーン+光, column 2 holds all 5 フィルム・レトロ
+                                     items (フィルムグレイン/ビネット/色収差/色にじみ/スキャンライン). -->
                                 <StackPanel Grid.Column="0">
                                     <!-- ディテール -->
                                     <!-- Unlike ぼかし (photo only, before the
@@ -2784,47 +3219,250 @@
                                         <TextBox Grid.Column="2" x:Name="FadeBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="FadeBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
-                                    <Grid>
+                                    <!-- Title-only row, then "・"-prefixed 方向/強さ rows, same
+                                         3-column (label|control|value) grammar as every plain
+                                         slider row: matches the ドロップシャドウ/ライトリーク
+                                         restructuring, replacing the old label+dial+slider mega-row. -->
+                                    <!-- Wrapped in the same 3-column Grid as every other row
+                                         (not a bare TextBlock) so this label sits in the exact
+                                         same Column0 as its neighbors above it. -->
+                                    <Grid Margin="0,6,0,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="116" />
                                             <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="グラデーション" Style="{StaticResource SliderRowLabel}" Width="116"
                                                    ToolTip="写真の中の明るい色と暗い色を抽出し、画面の上から下へグラデーションとして重ねます" />
-                                        <Slider Grid.Column="1" x:Name="ToneGradientSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                        <!-- Re-runs the same weighted whole-image bright/dark
+                                             extraction ・明色/・暗色 used to always run automatically
+                                             every render, now a one-shot action instead (see
+                                             GpuToneGradient.TryDetectColors); overwrites whatever
+                                             manual colors are currently set. -->
+                                        <Button Grid.Column="2" x:Name="ToneGradientAutoDetectButton" Style="{StaticResource SecondaryPillButton}"
+                                                Padding="8,4" Click="ToneGradientAutoDetectButton_Click" ToolTip="写真から明色/暗色を自動で判定し直します">
+                                            <TextBlock Text="自動判定" FontSize="12" />
+                                        </Button>
+                                    </Grid>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="グラデーションの強さ" Opacity="0.7" />
+                                        <Slider Grid.Column="1" x:Name="ToneGradientSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
                                                 ValueChanged="ToneGradientSlider_ValueChanged"
                                                 PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
                                         <TextBox Grid.Column="2" x:Name="ToneGradientBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="ToneGradientBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                        <!-- Shared direction-dial square (see DialPointToAngleDistance/
-                                             PositionDialDot, also used by ライトリーク/ドロップシャドウ):
-                                             drag anywhere inside to set the direction. ApplyToneGradient
-                                             has no "how far" axis, so the dot always stays pinned to the
-                                             square's own edge (distance01 fixed at 1.0), unlike ライト
-                                             リーク's dial where distance is meaningful. -->
-                                        <!-- The dot is a SIBLING of the tinted Border, not its child:
-                                             Border auto-clips child content to its own rounded-corner
-                                             geometry regardless of ClipToBounds, so a dot centered
-                                             exactly on the square's edge (distance01 at or near 1) would
-                                             render half-cut-off if it lived inside the Border instead. -->
-                                        <Grid Grid.Column="3">
-                                            <Border x:Name="ToneGradientDial" Width="28" Height="28" CornerRadius="14"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Top"
-                                                    Background="{DynamicResource PrimaryTintBrush}" BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1"
-                                                    Cursor="Hand" ToolTip="ドラッグしてグラデーションの向きを変更"
-                                                    MouseLeftButtonDown="ToneGradientDial_MouseDown" MouseMove="ToneGradientDial_MouseMove"
-                                                    MouseLeftButtonUp="ToneGradientDial_MouseUp" />
-                                            <Border x:Name="ToneGradientDialDot" Width="8" Height="8" CornerRadius="4"
-                                                    Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="1"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
-                                                    Margin="10,0,0,0" />
-                                        </Grid>
-                                        <TextBlock Grid.Column="5" x:Name="ToneGradientRotationText" Text="0°" Style="{StaticResource SliderRowLabel}"
-                                                   Width="30" Margin="4,0,0,0" HorizontalAlignment="Left" Opacity="0.7" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="・方向" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="グラデーションの向き(度)" Opacity="0.7" />
+                                        <Slider Grid.Column="1" x:Name="ToneGradientDirectionSlider" Margin="8,0,0,0" Minimum="0" Maximum="360" VerticalAlignment="Center"
+                                                ValueChanged="ToneGradientDirectionSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="ToneGradientDirectionBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="ToneGradientDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                    <!-- ・明色/・暗色: same swatch-bar+eyedropper+hex UI as every
+                                         other color row (・色 above). Manual, no longer recomputed
+                                         every render; see ToneGradientAutoDetectButton above and
+                                         GpuToneGradient.TryDetectColors. -->
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="・明色" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="グラデーションの明るい側の色" Opacity="0.7" />
+                                        <Button Grid.Column="1" x:Name="ToneGradientLightColorButton" Style="{StaticResource ColorSwatchBarButton}"
+                                                Click="ToneGradientLightColorButton_Click" ToolTip="明色を選択">
+                                            <Border x:Name="ToneGradientLightSwatch" CornerRadius="5"
+                                                    Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                        </Button>
+                                        <Button Grid.Column="2" x:Name="ToneGradientLightEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                                Margin="6,0,0,0" Click="ToneGradientLightEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                            <Viewbox Width="13" Height="13">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                        <TextBox Grid.Column="3" x:Name="ToneGradientLightHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                                 ToolTip="カラーコード(#RRGGBB)"
+                                                 TextChanged="ToneGradientLightHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                        <Popup x:Name="ToneGradientLightColorPopup" PlacementTarget="{Binding ElementName=ToneGradientLightColorButton}"
+                                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                            <Border Style="{StaticResource Card}" Padding="12" Width="220">
+                                                <StackPanel>
+                                                    <TextBlock Text="明色" Style="{StaticResource SectionHeader}" />
+                                                    <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                        <Image x:Name="ToneGradientLightColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
+                                                               MouseLeftButtonDown="ToneGradientLightColorWheel_MouseDown"
+                                                               MouseMove="ToneGradientLightColorWheel_MouseMove"
+                                                               MouseLeftButtonUp="ToneGradientLightColorWheel_MouseUp" />
+                                                        <Border x:Name="ToneGradientLightColorWheelCursor" Width="12" Height="12" CornerRadius="6"
+                                                                BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
+                                                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="34" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientLightColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientLightColorValueSlider_ValueChanged" />
+                                                    </Grid>
+                                                    <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
+                                                    <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="20" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientLightColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientLightColorRSlider_ValueChanged" />
+                                                        <TextBox Grid.Column="2" x:Name="ToneGradientLightColorRBox" Style="{StaticResource SliderRowBox}"
+                                                                 TextChanged="ToneGradientLightColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="20" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientLightColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientLightColorGSlider_ValueChanged" />
+                                                        <TextBox Grid.Column="2" x:Name="ToneGradientLightColorGBox" Style="{StaticResource SliderRowBox}"
+                                                                 TextChanged="ToneGradientLightColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="20" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientLightColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientLightColorBSlider_ValueChanged" />
+                                                        <TextBox Grid.Column="2" x:Name="ToneGradientLightColorBBox" Style="{StaticResource SliderRowBox}"
+                                                                 TextChanged="ToneGradientLightColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                    </Grid>
+                                                    <Border x:Name="ToneGradientLightColorPreviewLarge" Height="28" CornerRadius="6"
+                                                            Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Popup>
+                                    </Grid>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="・暗色" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="グラデーションの暗い側の色" Opacity="0.7" />
+                                        <Button Grid.Column="1" x:Name="ToneGradientDarkColorButton" Style="{StaticResource ColorSwatchBarButton}"
+                                                Click="ToneGradientDarkColorButton_Click" ToolTip="暗色を選択">
+                                            <Border x:Name="ToneGradientDarkSwatch" CornerRadius="5"
+                                                    Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                        </Button>
+                                        <Button Grid.Column="2" x:Name="ToneGradientDarkEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                                Margin="6,0,0,0" Click="ToneGradientDarkEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                            <Viewbox Width="13" Height="13">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                        <TextBox Grid.Column="3" x:Name="ToneGradientDarkHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                                 ToolTip="カラーコード(#RRGGBB)"
+                                                 TextChanged="ToneGradientDarkHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                        <Popup x:Name="ToneGradientDarkColorPopup" PlacementTarget="{Binding ElementName=ToneGradientDarkColorButton}"
+                                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                            <Border Style="{StaticResource Card}" Padding="12" Width="220">
+                                                <StackPanel>
+                                                    <TextBlock Text="暗色" Style="{StaticResource SectionHeader}" />
+                                                    <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                        <Image x:Name="ToneGradientDarkColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
+                                                               MouseLeftButtonDown="ToneGradientDarkColorWheel_MouseDown"
+                                                               MouseMove="ToneGradientDarkColorWheel_MouseMove"
+                                                               MouseLeftButtonUp="ToneGradientDarkColorWheel_MouseUp" />
+                                                        <Border x:Name="ToneGradientDarkColorWheelCursor" Width="12" Height="12" CornerRadius="6"
+                                                                BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
+                                                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="34" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientDarkColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientDarkColorValueSlider_ValueChanged" />
+                                                    </Grid>
+                                                    <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
+                                                    <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="20" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientDarkColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientDarkColorRSlider_ValueChanged" />
+                                                        <TextBox Grid.Column="2" x:Name="ToneGradientDarkColorRBox" Style="{StaticResource SliderRowBox}"
+                                                                 TextChanged="ToneGradientDarkColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="20" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientDarkColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientDarkColorGSlider_ValueChanged" />
+                                                        <TextBox Grid.Column="2" x:Name="ToneGradientDarkColorGBox" Style="{StaticResource SliderRowBox}"
+                                                                 TextChanged="ToneGradientDarkColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="20" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                        <Slider Grid.Column="1" x:Name="ToneGradientDarkColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                                ValueChanged="ToneGradientDarkColorBSlider_ValueChanged" />
+                                                        <TextBox Grid.Column="2" x:Name="ToneGradientDarkColorBBox" Style="{StaticResource SliderRowBox}"
+                                                                 TextChanged="ToneGradientDarkColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                    </Grid>
+                                                    <Border x:Name="ToneGradientDarkColorPreviewLarge" Height="28" CornerRadius="6"
+                                                            Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Popup>
                                     </Grid>
                                     <!-- 光 -->
                                     <Grid Margin="0,0,0,6">
@@ -2840,41 +3478,56 @@
                                         <TextBox Grid.Column="2" x:Name="GlowBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="GlowBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
-                                    <!-- Two rows instead of one: the color
-                                         picker button + mini-frame direction
-                                         dial, plus fitting label + these +
-                                         slider + box on one line left no room
-                                         for the slider itself. The label
-                                         column stays Width="116" like every
-                                         other row here so the slider on the
-                                         second line still starts at the same
-                                         X as the rest. Direction is a free
-                                         0..360 angle (LightLeakDial, see its
-                                         own comment below) rather than a
-                                         fixed set of named corners/edges;
-                                         see ImageAdjustment.ApplyLightLeak's
-                                         own doc comment for how one continuous
-                                         box-intersection formula subsumes the
-                                         old discrete position system. Color
-                                         picking (LightLeakColorButton/Popup)
-                                         is the same custom wheel+RGB UI as
-                                         ドロップシャドウ's own, just with its
-                                         own presets (暖色/寒色/白) and its own
+                                    <!-- Title-only row, then "・"-prefixed 色/方向/強さ rows, same
+                                         3-column (label|control|value) grammar as every plain
+                                         slider row, matching the ドロップシャドウ/グラデーション
+                                         restructuring. Color picking (LightLeakColorButton/Popup)
+                                         is the same custom wheel+RGB UI as ドロップシャドウ's own,
+                                         just with its own presets (暖色/寒色/白) and its own
                                          popup/wheel/slider elements below. -->
+                                    <!-- Wrapped in the same 3-column Grid as every other row
+                                         (not a bare TextBlock) so this label sits in the exact
+                                         same Column0 as its neighbors above it. -->
+                                    <Grid Margin="0,6,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="ライトリーク" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="光が差し込む向きと強さを指定します" />
+                                    </Grid>
+                                    <!-- ・色: a long horizontal swatch bar (matches a slider's own
+                                         width) instead of a small square icon, with a hex code
+                                         textbox in the value column, same slot a numeric TextBox
+                                         occupies on every other row. -->
                                     <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="116" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="ライトリーク" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="光が差し込む向きをミニフレームの縁上でドラッグして指定します" />
-                                        <Button Grid.Column="2" x:Name="LightLeakColorButton" Style="{StaticResource RotateIconButton}"
-                                                Margin="0,0,6,0" Click="LightLeakColorButton_Click" ToolTip="光の色を選択">
-                                            <Border x:Name="LightLeakColorSwatch" Width="14" Height="14" CornerRadius="3"
-                                                    Background="#FF60A0" BorderBrush="White" BorderThickness="1" />
+                                        <TextBlock Grid.Column="0" Text="・色" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="光の色を選択" Opacity="0.7" />
+                                        <Button Grid.Column="1" x:Name="LightLeakColorButton" Style="{StaticResource ColorSwatchBarButton}"
+                                                Click="LightLeakColorButton_Click" ToolTip="光の色を選択">
+                                            <Border x:Name="LightLeakColorSwatch" CornerRadius="5"
+                                                    Background="#FF60A0" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
                                         </Button>
+                                        <Button Grid.Column="2" x:Name="LightLeakEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                                Margin="6,0,0,0" Click="LightLeakEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                            <Viewbox Width="13" Height="13">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                    <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                        <TextBox Grid.Column="3" x:Name="LightLeakColorHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                                 ToolTip="カラーコード(#RRGGBB)"
+                                                 TextChanged="LightLeakColorHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                         <Popup x:Name="LightLeakColorPopup" PlacementTarget="{Binding ElementName=LightLeakColorButton}"
                                                Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
                                             <Border Style="{StaticResource Card}" Padding="12" Width="220">
@@ -2946,44 +3599,47 @@
                                                 </StackPanel>
                                             </Border>
                                         </Popup>
-                                        <!-- Shared direction-dial square (see DialPointToAngleDistance/
-                                             PositionDialDot): drag the dot anywhere inside, not just
-                                             along the edge, how far in it sits pulls the light's
-                                             anchor in from the frame's border toward its center (see
-                                             _lightLeakDistance's own doc comment), a real degree of
-                                             freedom this effect actually has. The dot is a SIBLING of
-                                             the tinted Border, not its child: Border auto-clips child
-                                             content to its own rounded-corner geometry regardless of
-                                             ClipToBounds, so a dot near/at distance01=1 would render
-                                             half-cut-off if it lived inside the Border instead. -->
-                                        <Grid Grid.Column="3">
-                                            <Border x:Name="LightLeakDial" Width="28" Height="28" CornerRadius="14"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Top"
-                                                    Background="{DynamicResource PrimaryTintBrush}" BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1"
-                                                    Cursor="Hand" ToolTip="ドラッグして光の向きと距離を変更"
-                                                    MouseLeftButtonDown="LightLeakDial_MouseDown" MouseMove="LightLeakDial_MouseMove"
-                                                    MouseLeftButtonUp="LightLeakDial_MouseUp" />
-                                            <Border x:Name="LightLeakDialDot" Width="8" Height="8" CornerRadius="4"
-                                                    Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="1"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
-                                                    Margin="10,0,0,0" />
-                                        </Grid>
-                                        <TextBlock Grid.Column="4" x:Name="LightLeakAngleText" Text="225°" Style="{StaticResource SliderRowLabel}"
-                                                   Width="30" Margin="4,0,0,0" HorizontalAlignment="Left" Opacity="0.7" />
                                     </Grid>
-                                    <Grid>
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="116" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <Slider Grid.Column="1" x:Name="LightLeakSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="光の強さ" Opacity="0.7" />
+                                        <Slider Grid.Column="1" x:Name="LightLeakSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
                                                 ValueChanged="LightLeakSlider_ValueChanged"
                                                 PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
                                         <TextBox Grid.Column="2" x:Name="LightLeakBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="LightLeakBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
-                                    <!-- フィルム・レトロ (前半: 残りはcolumn 2で続く) -->
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="・方向" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="光の向き(度)" Opacity="0.7" />
+                                        <!-- The dial used to also control _lightLeakDistance (how far
+                                             the light's anchor pulls in from the frame's edge toward
+                                             its center) via how far inside the square you dragged.
+                                             With the dial gone, distance is no longer user-adjustable
+                                             and just stays fixed at 1.0 (the edge), same as グラデーション/
+                                             ドロップシャドウ's own direction controls always were. -->
+                                        <Slider Grid.Column="1" x:Name="LightLeakDirectionSlider" Margin="8,0,0,0" Minimum="0" Maximum="360" VerticalAlignment="Center"
+                                                ValueChanged="LightLeakDirectionSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="LightLeakDirectionBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="LightLeakDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <!-- フィルム・レトロ: フィルムグレイン・ビネット・色収差(R/Bチャンネル
+                                         のズレ)・カラーブリード(色だけ横ににじむ)・スキャンライン(走査線+
+                                         トラッキンググリッチ、まとめて1項目)。 -->
                                     <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -3010,12 +3666,6 @@
                                         <TextBox Grid.Column="2" x:Name="VignetteBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="VignetteBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="2">
-                                    <!-- フィルム・レトロ (続き) / VHS風の3項目: 色収差(R/Bチャンネルの
-                                         ズレ)・カラーブリード(色だけ横ににじむ)・スキャンライン(走査線+
-                                         トラッキンググリッチ、まとめて1項目)。 -->
                                     <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -3056,209 +3706,6 @@
                                                  TextChanged="ScanlineBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
 
-                                    <!-- ドロップシャドウ: duplicates the avatar's own
-                                         silhouette, offset in a direction and
-                                         blurred/tinted (multiply blend); see
-                                         ImageAdjustment.ApplyDropShadow. Only has any
-                                         effect with an avatar loaded. -->
-                                    <Grid Margin="0,10,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="ドロップシャドウ" Style="{StaticResource SliderRowLabel}" Width="116"
-                                                   ToolTip="アバター画像の影を複製し、向き・幅・ぼかし・色を指定して重ねます" />
-                                        <Button Grid.Column="2" x:Name="DropShadowColorButton" Style="{StaticResource RotateIconButton}"
-                                                Margin="0,0,6,0" Click="DropShadowColorButton_Click" ToolTip="影の色を選択">
-                                            <Border x:Name="DropShadowColorSwatch" Width="14" Height="14" CornerRadius="3"
-                                                    Background="Black" BorderBrush="White" BorderThickness="1" />
-                                        </Button>
-                                        <!-- Custom in-app popup instead of the native OS color
-                                             dialog, so picking a shadow color looks like the
-                                             rest of AvaSnap (Card, rounded swatches, the same
-                                             slider row style) rather than a jarring system
-                                             window. StaysOpen="False" closes it on any click
-                                             outside, same as a combo box dropdown. -->
-                                        <Popup x:Name="DropShadowColorPopup" PlacementTarget="{Binding ElementName=DropShadowColorButton}"
-                                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
-                                            <Border Style="{StaticResource Card}" Padding="12" Width="220">
-                                                <StackPanel>
-                                                    <TextBlock Text="影の色" Style="{StaticResource SectionHeader}" />
-
-                                                    <!-- カラーホイール: 角度=色相、中心からの距離=彩度。
-                                                         DropShadowColorWheel.Source is a 140x140 bitmap
-                                                         built once (GetColorWheelBitmap, value=1 fixed)
-                                                         since only hue/saturation vary spatially;
-                                                         brightness is the separate 明度 slider below,
-                                                         which just scales the picked hue/saturation's
-                                                         RGB rather than needing the wheel bitmap itself
-                                                         regenerated. -->
-                                                    <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
-                                                        <Image x:Name="DropShadowColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
-                                                               MouseLeftButtonDown="DropShadowColorWheel_MouseDown"
-                                                               MouseMove="DropShadowColorWheel_MouseMove"
-                                                               MouseLeftButtonUp="DropShadowColorWheel_MouseUp" />
-                                                        <Border x:Name="DropShadowColorWheelCursor" Width="12" Height="12" CornerRadius="6"
-                                                                BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
-                                                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
-                                                    </Grid>
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="34" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                        <Slider Grid.Column="1" x:Name="DropShadowColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                                ValueChanged="DropShadowColorValueSlider_ValueChanged" />
-                                                    </Grid>
-                                                    <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
-                                                    <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="20" />
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
-                                                        <Slider Grid.Column="1" x:Name="DropShadowColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
-                                                                ValueChanged="DropShadowColorRSlider_ValueChanged" />
-                                                        <TextBox Grid.Column="2" x:Name="DropShadowColorRBox" Style="{StaticResource SliderRowBox}"
-                                                                 TextChanged="DropShadowColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                                    </Grid>
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="20" />
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
-                                                        <Slider Grid.Column="1" x:Name="DropShadowColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
-                                                                ValueChanged="DropShadowColorGSlider_ValueChanged" />
-                                                        <TextBox Grid.Column="2" x:Name="DropShadowColorGBox" Style="{StaticResource SliderRowBox}"
-                                                                 TextChanged="DropShadowColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                                    </Grid>
-                                                    <Grid Margin="0,0,0,10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="20" />
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
-                                                        <Slider Grid.Column="1" x:Name="DropShadowColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
-                                                                ValueChanged="DropShadowColorBSlider_ValueChanged" />
-                                                        <TextBox Grid.Column="2" x:Name="DropShadowColorBBox" Style="{StaticResource SliderRowBox}"
-                                                                 TextChanged="DropShadowColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                                    </Grid>
-                                                    <Border x:Name="DropShadowColorPreviewLarge" Height="28" CornerRadius="6"
-                                                            Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
-                                                </StackPanel>
-                                            </Border>
-                                        </Popup>
-                                        <!-- Shared direction-dial square (see DialPointToAngleDistance/
-                                             PositionDialDot, also used by グラデーション/ライトリーク):
-                                             drag anywhere inside to set direction only (the dot stays
-                                             pinned to the dial's own edge, distance01 fixed at 1.0), same
-                                             as グラデーション's dial. 幅(distance) is set exclusively via
-                                             DropShadowDistanceSlider/Box below, not via this dial (see
-                                             UpdateDropShadowFromDial's own comment on why). -->
-                                        <!-- The dot is a SIBLING of the tinted Border, not its child:
-                                             Border auto-clips child content to its own rounded-corner
-                                             geometry regardless of ClipToBounds, so a dot near/at
-                                             distance01=1 would render half-cut-off if it lived inside
-                                             the Border instead. -->
-                                        <Grid Grid.Column="3">
-                                            <Border x:Name="DropShadowDial" Width="28" Height="28" CornerRadius="14"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Top"
-                                                    Background="{DynamicResource PrimaryTintBrush}" BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1"
-                                                    Cursor="Hand" ToolTip="ドラッグして影の向きを変更"
-                                                    MouseLeftButtonDown="DropShadowDial_MouseDown" MouseMove="DropShadowDial_MouseMove"
-                                                    MouseLeftButtonUp="DropShadowDial_MouseUp" />
-                                            <Border x:Name="DropShadowDialDot" Width="8" Height="8" CornerRadius="4"
-                                                    Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="1"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
-                                                    Margin="10,0,0,0" />
-                                        </Grid>
-                                        <TextBlock Grid.Column="5" x:Name="DropShadowRotationText" Text="0°" Style="{StaticResource SliderRowLabel}"
-                                                   Width="30" Margin="4,0,0,0" HorizontalAlignment="Left" Opacity="0.7" />
-                                        <ToggleButton Grid.Column="6" x:Name="DropShadowToneToggle" Style="{StaticResource ToneToggleButton}"
-                                                      Margin="6,0,0,0" Checked="DropShadowToneToggle_Changed" Unchecked="DropShadowToneToggle_Changed"
-                                                      ToolTip="漫画トーン風(粒々)の影にします" />
-                                        <!-- ブレンドモード: kept right next to トーン風 (both are
-                                             "what does the shadow look like" mode switches) instead of
-                                             its own row. See ImageAdjustment.DropShadowBlendMode's own
-                                             doc comment for what each mode does. -->
-                                        <ComboBox Grid.Column="7" x:Name="DropShadowBlendModeCombo" Style="{StaticResource CompactComboBox}"
-                                                  Margin="6,0,0,0" MinWidth="70"
-                                                  ToolTip="影の色を写真にどう重ねるか" SelectionChanged="DropShadowBlendModeCombo_SelectionChanged">
-                                            <ComboBoxItem Content="乗算" Tag="multiply" ToolTip="下地を暗く/色付けする、通常の影らしい見た目" />
-                                            <ComboBoxItem Content="通常" Tag="normal" ToolTip="下地を無視して影の色をそのまま重ねる" />
-                                            <ComboBoxItem Content="加算" Tag="additive" ToolTip="下地に影の色の光を足す(発光風)" />
-                                        </ComboBox>
-                                    </Grid>
-                                    <Grid Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Slider Grid.Column="1" x:Name="DropShadowSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="DropShadowSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="DropShadowBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="DropShadowBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <!-- 粒の大きさ/幅/ぼかし below: indented (label text margin, not
-                                         the whole row, so the slider/box columns still line up with
-                                         every other row) and dimmed, marking them as ドロップシャドウ's
-                                         OWN sub-settings rather than independent top-level effects. -->
-                                    <Grid Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="粒の大きさ" Style="{StaticResource SliderRowLabel}" Width="116"
-                                                   Margin="12,0,0,0" ToolTip="トーン風がオンの時の点の大きさ" Opacity="0.7" />
-                                        <Slider Grid.Column="1" x:Name="DropShadowDotSizeSlider" Minimum="2" Maximum="40" VerticalAlignment="Center"
-                                                ValueChanged="DropShadowDotSizeSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="DropShadowDotSizeBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="DropShadowDotSizeBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="幅" Style="{StaticResource SliderRowLabel}" Width="116"
-                                                   Margin="12,0,0,0" ToolTip="影を複製してずらす距離(ピクセル)" Opacity="0.7" />
-                                        <Slider Grid.Column="1" x:Name="DropShadowDistanceSlider" Minimum="0" Maximum="300" VerticalAlignment="Center"
-                                                ValueChanged="DropShadowDistanceSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="DropShadowDistanceBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="DropShadowDistanceBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="ぼかし" Style="{StaticResource SliderRowLabel}" Width="116"
-                                                   Margin="12,0,0,0" ToolTip="影の輪郭のぼかし量" Opacity="0.7" />
-                                        <Slider Grid.Column="1" x:Name="DropShadowBlurSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="DropShadowBlurSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="DropShadowBlurBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="DropShadowBlurBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
                                 </StackPanel>
                             </Grid>
 
@@ -3286,6 +3733,25 @@
                     <Grid Grid.Row="1" Grid.Column="1" x:Name="LookLinkConnector" />
                 </Grid>
                 </ScrollViewer>
+                <!-- Pinned to the cards column's own top edge (a sibling
+                     drawn AFTER the ScrollViewer, not inside it) so it stays
+                     put regardless of scroll position instead of needing to
+                     scroll up to rediscover why every slider stopped
+                     responding. Shared by every "preview interaction mode"
+                     that wants exclusive ownership of the preview's drag
+                     gestures (currently 切り抜きモード and アバター配置モード,
+                     see RefreshSliderLockState in code-behind, the one
+                     common choke point both modes' _Changed handlers call);
+                     adding a future mode just means adding its own flag to
+                     that method's own locked check, not touching this
+                     element again. -->
+                <Border x:Name="SliderLockNotice" Grid.Row="0" Grid.Column="2"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Top" Margin="16,14,16,0"
+                        Background="{DynamicResource PrimaryTintBrush}" BorderBrush="{DynamicResource PrimaryBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="10,7" Visibility="Collapsed" IsHitTestVisible="False">
+                    <TextBlock Text="切り抜きモード・アバター配置モード中はスライダーを変更できません" FontSize="12"
+                               Foreground="{DynamicResource PrimaryBrush}" TextWrapping="Wrap" HorizontalAlignment="Center" />
+                </Border>
         </Grid>
 
         <!-- Compact: shrinks the whole window down to a small corner widget

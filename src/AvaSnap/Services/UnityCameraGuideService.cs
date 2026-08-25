@@ -34,17 +34,21 @@ public sealed class UnityCameraGuideExport
 /// a 500ms poll-fallback regardless -- see _pollTimer) the JSON file
 /// Unity's CameraCompositionGuideWindow editor script writes (see that
 /// script's own doc comment for the writer side) and raises
-/// <see cref="DataUpdated"/> on every successful read. <see cref="BecameStale"/>
-/// fires once the most recently read timestamp is old enough that Unity is
-/// presumed to have stopped exporting (closed, or the guide toggled off
-/// there), so a caller can hide the guide instead of freezing it on a
-/// last-known angle forever.</summary>
+/// <see cref="DataUpdated"/> whenever a read turns up a genuinely NEW
+/// export (see _lastSeenTimestampUtc) -- not on every successful read,
+/// which would otherwise fire every poll tick forever off the same
+/// leftover file.
+///
+/// REQUEST-DRIVEN, not continuous: Unity no longer polls its own camera on
+/// a timer -- it sits idle until <see cref="RequestUpdate"/> touches
+/// RequestPath, which Unity's own FileSystemWatcher reacts to by writing
+/// FilePath exactly once. There's deliberately no more staleness concept
+/// here (the old BecameStale/StaleAfter pair, removed): a one-shot
+/// snapshot doesn't go "stale" the way a continuous feed did, it's just
+/// whatever the last successful RequestUpdate returned.</summary>
 public sealed class UnityCameraGuideService : IDisposable
 {
     public event Action<UnityCameraGuideData>? DataUpdated;
-    public event Action? BecameStale;
-
-    private static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(2);
 
     /// <summary>Same path Unity's CameraCompositionGuideWindow editor script
     /// writes to -- exposed publicly so the control panel's own "エクスプ
@@ -53,29 +57,44 @@ public sealed class UnityCameraGuideService : IDisposable
     public static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AvaSnap", "unity_camera_guide.json");
 
+    /// <summary>Touched (any content -- Unity's watcher reacts to the file
+    /// Changed/Created event itself, not what's inside) by
+    /// <see cref="RequestUpdate"/> to ask Unity's CameraCompositionGuideWindow
+    /// for a fresh snapshot. Same AppData folder as FilePath, matching that
+    /// script's own RequestPath.</summary>
+    private static readonly string RequestPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AvaSnap", "unity_camera_guide_request.txt");
+
     private readonly Dispatcher _dispatcher;
 
-    /// <summary>Both the poll-fallback and the staleness check ride this one
-    /// timer (see its Tick handler in Start()) -- FileSystemWatcher's
-    /// cross-process, cross-filesystem reliability is inconsistent enough
-    /// in practice (observed: it simply never fired for this exact file/
-    /// folder in testing, likely environment-specific -- antivirus,
-    /// indexing, or just an OS quirk) that watcher events are now only the
-    /// FAST path when they happen to work; this timer is what actually
-    /// guarantees correctness regardless.</summary>
+    /// <summary>The poll-fallback (see its Tick handler in Start()) --
+    /// FileSystemWatcher's cross-process, cross-filesystem reliability is
+    /// inconsistent enough in practice (observed: it simply never fired for
+    /// this exact file/folder in testing, likely environment-specific --
+    /// antivirus, indexing, or just an OS quirk) that watcher events are now
+    /// only the FAST path when they happen to work; this timer is what
+    /// actually guarantees correctness regardless.</summary>
     private readonly DispatcherTimer _pollTimer;
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
     private FileSystemWatcher? _watcher;
-    private DateTime _lastGoodTimestampUtc;
-    private bool _isStale = true;
+
+    /// <summary>Unity's own export timestamp from the last file we actually
+    /// fired DataUpdated for -- lets TryRead tell "a genuinely new fetch
+    /// landed" apart from "the 500ms poll timer re-read the exact same
+    /// leftover file Unity wrote once, possibly in a previous session, and
+    /// hasn't touched since". Without this, DataUpdated (and the
+    /// 最終取得 badge it drives) kept firing every single poll tick forever
+    /// off a stale file, making it look like Unity was continuously
+    /// responding even while closed.</summary>
+    private string? _lastSeenTimestampUtc;
 
     public UnityCameraGuideService(Dispatcher dispatcher)
     {
         _dispatcher = dispatcher;
         _pollTimer = new DispatcherTimer { Interval = PollInterval };
-        _pollTimer.Tick += (_, _) => { TryRead(); CheckStale(); };
+        _pollTimer.Tick += (_, _) => TryRead();
     }
 
     public void Start()
@@ -112,8 +131,10 @@ public sealed class UnityCameraGuideService : IDisposable
     /// <summary>Unity writes via a plain File.WriteAllText (not an atomic
     /// rename), so a Changed event can fire while the file is only
     /// partially written -- both the read and the parse are wrapped so a
-    /// torn read just gets silently skipped, and the NEXT Changed event
-    /// (Unity's next export tick, ~150ms later) picks it up instead.</summary>
+    /// torn read just gets silently skipped. Since Unity is now request-
+    /// driven (see RequestUpdate), a torn read here just means this
+    /// particular 取得 request effectively went unanswered; the user
+    /// pressing it again is what picks it up, not a background retry.</summary>
     private void TryRead()
     {
         if (!File.Exists(FilePath)) return;
@@ -145,28 +166,37 @@ public sealed class UnityCameraGuideService : IDisposable
             return;
         }
         if (export is null) return;
-        // RoundtripKind and AdjustToUniversal can't be combined (DateTime.
-        // TryParse throws ArgumentException, "Try" only covers parse-format
-        // failures, not invalid style-flag combinations) -- parse with
-        // RoundtripKind alone (Unity's DateTime.UtcNow.ToString("o") already
-        // round-trips as Kind=Utc) and convert explicitly afterward instead.
-        if (!DateTime.TryParse(export.timestampUtc, null,
-                System.Globalization.DateTimeStyles.RoundtripKind,
-                out var parsedTimestamp))
-            return;
-        var timestampUtc = parsedTimestamp.Kind == DateTimeKind.Utc ? parsedTimestamp : parsedTimestamp.ToUniversalTime();
-
-        _lastGoodTimestampUtc = timestampUtc;
-        _isStale = false;
+        // Dirty-check: skip firing if this is the same export Unity wrote
+        // last time (see _lastSeenTimestampUtc's own doc comment) --
+        // otherwise the poll-fallback alone would re-fire DataUpdated every
+        // PollInterval forever off whatever file happens to already be on
+        // disk, Unity running or not.
+        if (export.timestampUtc == _lastSeenTimestampUtc) return;
+        _lastSeenTimestampUtc = export.timestampUtc;
         DataUpdated?.Invoke(new UnityCameraGuideData(export.fov, export.pitch, export.roll));
     }
 
-    private void CheckStale()
+    /// <summary>Asks Unity's CameraCompositionGuideWindow (if it's running
+    /// and its own "AvaSnapからの取得に応答" toggle is on) for a fresh
+    /// snapshot -- touches RequestPath, which its FileSystemWatcher reacts
+    /// to by writing FilePath once; TryRead (via this service's own watcher/
+    /// poll-fallback) picks that up the same way it always has. Fire-and-
+    /// forget: if Unity isn't listening (closed, or that toggle is off),
+    /// this silently does nothing -- there's no request/response handshake,
+    /// just "if a fresh file shows up, DataUpdated fires".</summary>
+    public void RequestUpdate()
     {
-        if (_isStale) return;
-        if (DateTime.UtcNow - _lastGoodTimestampUtc <= StaleAfter) return;
-        _isStale = true;
-        BecameStale?.Invoke();
+        try
+        {
+            var dir = Path.GetDirectoryName(RequestPath)!;
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(RequestPath, DateTime.UtcNow.ToString("o"));
+        }
+        catch (IOException)
+        {
+            // Unity might have this file open at the exact wrong instant --
+            // harmless, the user can just press 取得 again.
+        }
     }
 
     public void Dispose()

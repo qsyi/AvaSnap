@@ -126,7 +126,7 @@ public partial class App : Application
         // after opening the app.
         var existingVrchat = VRChatWindowService.FindVRChatWindow();
 
-        _overlayWindow = new OverlayWindow(_state, _undoManager, _oscListener, _unityCameraGuide);
+        _overlayWindow = new OverlayWindow(_state, _undoManager, _oscListener);
         _overlayWindow.Show();
 
         if (!string.IsNullOrEmpty(_state.ImagePath) && File.Exists(_state.ImagePath))
@@ -147,7 +147,9 @@ public partial class App : Application
         _controlPanelWindow.Show();
         _screenshotNotifications.PhotoSelected += path => _controlPanelWindow.LoadPhotoForComposite(path);
 
-        // Now that both windows have subscribed to DataUpdated/BecameStale,
+        // Now that ControlPanelWindow has subscribed to DataUpdated (the
+        // only remaining subscriber -- OverlayWindow reads GuideManualFov/
+        // Pitch/Roll off _state directly instead, see its own doc comment),
         // it's safe to start reading/watching the export file (see the
         // comment where _unityCameraGuide was constructed above).
         _unityCameraGuide.Start();

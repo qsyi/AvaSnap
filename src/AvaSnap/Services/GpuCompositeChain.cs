@@ -75,6 +75,8 @@ public static class GpuCompositeChain
         double LightLeakAmount, double LightLeakAngle, double LightLeakDistance,
         byte LightLeakColorB, byte LightLeakColorG, byte LightLeakColorR,
         double ToneGradientAmount, double ToneGradientRotation,
+        byte ToneGradientLightR, byte ToneGradientLightG, byte ToneGradientLightB,
+        byte ToneGradientDarkR, byte ToneGradientDarkG, byte ToneGradientDarkB,
         double ChromaticAberrationAmount, double ColorBleedAmount, double VhsScale,
         double ScanlineAmount, double VignetteAmount, double GrainAmount);
 
@@ -132,7 +134,10 @@ public static class GpuCompositeChain
             return 3;
         }
 
-        if (prev.ToneGradientAmount != cur.ToneGradientAmount || prev.ToneGradientRotation != cur.ToneGradientRotation)
+        if (prev.ToneGradientAmount != cur.ToneGradientAmount || prev.ToneGradientRotation != cur.ToneGradientRotation
+            || prev.ToneGradientLightR != cur.ToneGradientLightR || prev.ToneGradientLightG != cur.ToneGradientLightG
+            || prev.ToneGradientLightB != cur.ToneGradientLightB || prev.ToneGradientDarkR != cur.ToneGradientDarkR
+            || prev.ToneGradientDarkG != cur.ToneGradientDarkG || prev.ToneGradientDarkB != cur.ToneGradientDarkB)
         {
             return 4;
         }
@@ -185,6 +190,8 @@ public static class GpuCompositeChain
         double lightLeakAmount, double lightLeakAngle, double lightLeakDistance,
         byte lightLeakColorB, byte lightLeakColorG, byte lightLeakColorR,
         double toneGradientAmount, double toneGradientRotation,
+        byte toneGradientLightR, byte toneGradientLightG, byte toneGradientLightB,
+        byte toneGradientDarkR, byte toneGradientDarkG, byte toneGradientDarkB,
         double chromaticAberrationAmount, double colorBleedAmount, double vhsScale,
         double scanlineAmount,
         double vignetteAmount,
@@ -211,6 +218,8 @@ public static class GpuCompositeChain
             glowAmount, glowScale,
             lightLeakAmount, lightLeakAngle, lightLeakDistance, lightLeakColorB, lightLeakColorG, lightLeakColorR,
             toneGradientAmount, toneGradientRotation,
+            toneGradientLightR, toneGradientLightG, toneGradientLightB,
+            toneGradientDarkR, toneGradientDarkG, toneGradientDarkB,
             chromaticAberrationAmount, colorBleedAmount, vhsScale,
             scanlineAmount, vignetteAmount, grainAmount);
 
@@ -265,6 +274,8 @@ public static class GpuCompositeChain
                     glowAmount, glowScale, lightLeakAmount, lightLeakAngle, lightLeakDistance,
                     lightLeakColorB, lightLeakColorG, lightLeakColorR,
                     toneGradientAmount, toneGradientRotation,
+                    toneGradientLightR, toneGradientLightG, toneGradientLightB,
+                    toneGradientDarkR, toneGradientDarkG, toneGradientDarkB,
                     chromaticAberrationAmount, colorBleedAmount, vhsScale,
                     scanlineAmount, vignetteAmount, grainAmount))
                 {
@@ -305,6 +316,8 @@ public static class GpuCompositeChain
         double lightLeakAmount, double lightLeakAngle, double lightLeakDistance,
         byte lightLeakColorB, byte lightLeakColorG, byte lightLeakColorR,
         double toneGradientAmount, double toneGradientRotation,
+        byte toneGradientLightR, byte toneGradientLightG, byte toneGradientLightB,
+        byte toneGradientDarkR, byte toneGradientDarkG, byte toneGradientDarkB,
         double chromaticAberrationAmount, double colorBleedAmount, double vhsScale,
         double scanlineAmount, double vignetteAmount, double grainAmount)
     {
@@ -340,7 +353,9 @@ public static class GpuCompositeChain
 
             case 4:
                 if (toneGradientAmount <= 0) return true;
-                return GpuToneGradient.ApplyToTexture(main, device, photoWidth, photoHeight, toneGradientAmount, toneGradientRotation);
+                return GpuToneGradient.ApplyToTexture(main, device, photoWidth, photoHeight, toneGradientAmount, toneGradientRotation,
+                    toneGradientLightR, toneGradientLightG, toneGradientLightB,
+                    toneGradientDarkR, toneGradientDarkG, toneGradientDarkB);
 
             case 5:
                 // Same grouping as GpuFinishingEffects.TryRunPreScanlines.

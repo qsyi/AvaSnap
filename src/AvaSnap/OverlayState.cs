@@ -165,20 +165,15 @@ public sealed class OverlayState : INotifyPropertyChanged
     public byte ColorTintB { get => _colorTintB; set => Set(ref _colorTintB, value); }
 
     // ---- Unity連携ガイド: shown over the live VRChat window (OverlayWindow),
-    //      controlled from the control panel's Align-mode side. GuideVisible
-    //      is independent of GuideSyncWithUnity -- you can show a manually-
-    //      set guide with sync off, or hide it entirely while still synced
-    //      in the background. Purely a view-time aid, never baked into
-    //      anything saved. ----
+    //      controlled from the control panel's Align-mode side. Purely a
+    //      view-time aid, never baked into anything saved. GuideManualFov/
+    //      Pitch/Roll are the only source of truth for what's drawn -- a
+    //      successful Unity fetch (see ControlPanelWindow's
+    //      UnityCameraGuideService.DataUpdated handler) just writes into
+    //      these same three fields, same as typing a value in by hand. ----
 
     private bool _guideVisible;
     public bool GuideVisible { get => _guideVisible; set => Set(ref _guideVisible, value); }
-
-    private bool _guideSyncWithUnity = true;
-    /// <summary>True: the guide follows UnityCameraGuideService's live FOV/
-    /// pitch/roll. False: it uses GuideManualFov/Pitch/Roll instead, set by
-    /// hand from the control panel's sliders.</summary>
-    public bool GuideSyncWithUnity { get => _guideSyncWithUnity; set => Set(ref _guideSyncWithUnity, value); }
 
     private double _guideManualFov = 45; // VRChat's own camera FOV default
     public double GuideManualFov { get => _guideManualFov; set => Set(ref _guideManualFov, value); }

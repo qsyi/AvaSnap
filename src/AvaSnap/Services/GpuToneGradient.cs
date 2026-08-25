@@ -22,10 +22,12 @@ namespace AvaSnap.Services;
 public static class GpuToneGradient
 {
     /// <summary>Returns false (leaving <paramref name="pixels"/> untouched)
-    /// if no DX12-capable GPU/driver is available, so the caller falls back
-    /// to its own CPU ExtractToneGradientColors + ApplyToneGradient
-    /// instead.</summary>
-    public static bool TryApply(byte[] pixels, int stride, int width, int height, double amount, double rotationDegrees)
+    /// if no DX12-capable GPU/driver is available. lightR/G/B and darkR/G/B
+    /// are the gradient's two endpoint colors -- no longer auto-computed on
+    /// every call (see TryDetectColors for that, now a separate one-shot
+    /// operation the UI's 自動判定 button triggers explicitly).</summary>
+    public static bool TryApply(byte[] pixels, int stride, int width, int height, double amount, double rotationDegrees,
+        byte lightR, byte lightG, byte lightB, byte darkR, byte darkG, byte darkB)
     {
         if (amount <= 0) return true;
         if (stride != width * 4 || pixels.Length < stride * height) return false;
@@ -37,7 +39,7 @@ public static class GpuToneGradient
             ReadWriteTexture2D<Bgra32, float4> texture = GpuTexturePool.Rent(device, "ToneGradient", width, height);
             texture.CopyFrom(pixelSpan);
 
-            ApplyToTexture(texture, device, width, height, amount, rotationDegrees);
+            ApplyToTexture(texture, device, width, height, amount, rotationDegrees, lightR, lightG, lightB, darkR, darkG, darkB);
 
             texture.CopyTo(pixelSpan);
             return true;
@@ -50,36 +52,12 @@ public static class GpuToneGradient
 
     /// <summary>Same tone-gradient pass as <see cref="TryApply"/>, but
     /// operating directly on an already GPU-resident <paramref name="texture"/>
-    /// -- no upload/download of the photo itself (the tiny height*8-float
-    /// row-sum readback is unavoidable either way -- the final gradient
-    /// colors need the CPU-side summation across rows before the second
-    /// dispatch's shader parameters can even be computed). Used by
-    /// GpuCompositeChain -- see its own doc comment.</summary>
-    internal static bool ApplyToTexture(ReadWriteTexture2D<Bgra32, float4> texture, GraphicsDevice device, int width, int height, double amount, double rotationDegrees)
+    /// -- no upload/download of the photo itself. Used by GpuCompositeChain
+    /// -- see its own doc comment.</summary>
+    internal static bool ApplyToTexture(ReadWriteTexture2D<Bgra32, float4> texture, GraphicsDevice device, int width, int height, double amount, double rotationDegrees,
+        byte lightR, byte lightG, byte lightB, byte darkR, byte darkG, byte darkB)
     {
         if (amount <= 0) return true;
-
-        using ReadWriteBuffer<float> rowSums = device.AllocateReadWriteBuffer<float>(height * 8);
-        device.For(height, new ToneGradientRowSumShader(texture, rowSums, width));
-
-        var rowSumsArray = new float[height * 8];
-        rowSums.CopyTo(rowSumsArray);
-
-        double brightW = 0, brightB = 0, brightG = 0, brightR = 0;
-        double darkW = 0, darkB = 0, darkG = 0, darkR = 0;
-        for (int y = 0; y < height; y++)
-        {
-            int b = y * 8;
-            brightW += rowSumsArray[b]; brightB += rowSumsArray[b + 1]; brightG += rowSumsArray[b + 2]; brightR += rowSumsArray[b + 3];
-            darkW += rowSumsArray[b + 4]; darkB += rowSumsArray[b + 5]; darkG += rowSumsArray[b + 6]; darkR += rowSumsArray[b + 7];
-        }
-
-        float finalBrightB = (float)(brightW > 1e-6 ? brightB / brightW : 255);
-        float finalBrightG = (float)(brightW > 1e-6 ? brightG / brightW : 255);
-        float finalBrightR = (float)(brightW > 1e-6 ? brightR / brightW : 255);
-        float finalDarkB = (float)(darkW > 1e-6 ? darkB / darkW : 0);
-        float finalDarkG = (float)(darkW > 1e-6 ? darkG / darkW : 0);
-        float finalDarkR = (float)(darkW > 1e-6 ? darkR / darkW : 0);
 
         double rad = rotationDegrees * Math.PI / 180.0;
         float dirX = (float)-Math.Sin(rad), dirY = (float)Math.Cos(rad);
@@ -89,9 +67,61 @@ public static class GpuToneGradient
         float strength = (float)(amount / 100.0);
 
         device.For(width, height, new ToneGradientApplyShader(texture, dirX, dirY, cx, cy, maxExtent, strength,
-            finalBrightB, finalBrightG, finalBrightR, finalDarkB, finalDarkG, finalDarkR));
+            lightB, lightG, lightR, darkB, darkG, darkR));
 
         return true;
+    }
+
+    /// <summary>The one-shot whole-image weighted-average extraction that
+    /// used to run on every ApplyToTexture call -- now only invoked
+    /// explicitly by the 自動判定 (auto-detect) button, with the result
+    /// stored as the user's own editable 明色/暗色 fields from then on
+    /// rather than recomputed every render. Same ToneGradientRowSumShader
+    /// reduction as before (see its own doc comment for the weighting
+    /// rationale), just no longer chained straight into an apply pass.
+    /// Returns false (leaving the out params at their white/black defaults)
+    /// if no GPU is available.</summary>
+    public static bool TryDetectColors(byte[] pixels, int stride, int width, int height,
+        out byte lightR, out byte lightG, out byte lightB, out byte darkR, out byte darkG, out byte darkB)
+    {
+        lightR = lightG = lightB = 255;
+        darkR = darkG = darkB = 0;
+        if (stride != width * 4 || pixels.Length < stride * height) return false;
+        if (GpuAvailability.Device is not { } device) return false;
+
+        try
+        {
+            Span<Bgra32> pixelSpan = MemoryMarshal.Cast<byte, Bgra32>(pixels.AsSpan(0, stride * height));
+            ReadWriteTexture2D<Bgra32, float4> texture = GpuTexturePool.Rent(device, "ToneGradientDetect", width, height);
+            texture.CopyFrom(pixelSpan);
+
+            using ReadWriteBuffer<float> rowSums = device.AllocateReadWriteBuffer<float>(height * 8);
+            device.For(height, new ToneGradientRowSumShader(texture, rowSums, width));
+
+            var rowSumsArray = new float[height * 8];
+            rowSums.CopyTo(rowSumsArray);
+
+            double brightW = 0, brightB = 0, brightG = 0, brightR = 0;
+            double darkW = 0, darkBAcc = 0, darkGAcc = 0, darkRAcc = 0;
+            for (int y = 0; y < height; y++)
+            {
+                int b = y * 8;
+                brightW += rowSumsArray[b]; brightB += rowSumsArray[b + 1]; brightG += rowSumsArray[b + 2]; brightR += rowSumsArray[b + 3];
+                darkW += rowSumsArray[b + 4]; darkBAcc += rowSumsArray[b + 5]; darkGAcc += rowSumsArray[b + 6]; darkRAcc += rowSumsArray[b + 7];
+            }
+
+            lightR = (byte)Math.Clamp(brightW > 1e-6 ? brightR / brightW : 255, 0, 255);
+            lightG = (byte)Math.Clamp(brightW > 1e-6 ? brightG / brightW : 255, 0, 255);
+            lightB = (byte)Math.Clamp(brightW > 1e-6 ? brightB / brightW : 255, 0, 255);
+            darkR = (byte)Math.Clamp(darkW > 1e-6 ? darkRAcc / darkW : 0, 0, 255);
+            darkG = (byte)Math.Clamp(darkW > 1e-6 ? darkGAcc / darkW : 0, 0, 255);
+            darkB = (byte)Math.Clamp(darkW > 1e-6 ? darkBAcc / darkW : 0, 0, 255);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 }
 
