@@ -1437,6 +1437,13 @@ public static class ImageAdjustment
     /// RenderCompositePreview's drag-time small buffer) shrink the pixel
     /// radius proportionally, so the live preview doesn't look more blurred
     /// than the eventual full-resolution result.</summary>
+    /// <summary>Same blur CompositeOverlayOntoPhoto's GPU chain applies to the
+    /// background, exposed for callers (decal behind-avatar compositing) that
+    /// need the background already blurred BEFORE something is pasted onto
+    /// it, so that something doesn't get blurred along with it.</summary>
+    internal static void ApplyPhotoBlurInPlace(PixelBuffer buffer, double amount, double scale) =>
+        ApplyPhotoBlur(buffer.Pixels, buffer.Stride, buffer.Width, buffer.Height, amount, scale);
+
     private static void ApplyPhotoBlur(byte[] pixels, int stride, int width, int height, double amount, double scale)
     {
         int radius = (int)Math.Round(Math.Clamp(amount, 0, 100) / 100.0 * MaxPhotoBlurRadius * scale);

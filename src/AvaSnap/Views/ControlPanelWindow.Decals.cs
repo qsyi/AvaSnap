@@ -210,7 +210,10 @@ public partial class ControlPanelWindow
     {
         entry.PreviewMouseLeftButtonDown += (_, e) =>
         {
-            if (e.OriginalSource is Button) return; // 削除ボタン自身のClickに譲る
+            // OriginalSourceは削除ボタンの中身(TextBlock等)になっていることが
+            // 多く、Button自身との参照比較だけでは弾けない -- 祖先を辿って
+            // Buttonが見つかれば削除ボタンのClickにそのまま譲る。
+            if (e.OriginalSource is DependencyObject source && FindAncestorButton(source) is not null) return;
             _isDraggingStripEntry = true;
             _draggingStripDecal = decal;
             _draggingStripIsAvatarEntry = decal is null;
@@ -238,6 +241,16 @@ public partial class ControlPanelWindow
             _isDraggingStripEntry = false;
             entry.ReleaseMouseCapture();
         };
+    }
+
+    private static Button? FindAncestorButton(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Button button) return button;
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
+        }
+        return null;
     }
 
     private int HitTestStripIndex(double x)
@@ -433,15 +446,27 @@ public partial class ControlPanelWindow
 
     /// <summary>デカールが1枚も無ければphotoをそのまま返す(クローンすら
     /// しない) -- この機能を使っていない大半のユーザーには一切コストが
-    /// 乗らない。</summary>
-    private static ImageAdjustment.PixelBuffer ApplyBehindAvatarDecals(ImageAdjustment.PixelBuffer photo, List<DecalRenderEntry> behind, double scale)
+    /// 乗らない。背景ぼかし(photoBlurAmount)が有効な場合、通常はGPU側の
+    /// CompositeOverlayOntoPhoto内でこのphotoごとぼかされるが、それだと
+    /// アバターの後ろに置いたはずのデカールまで背景と一緒にぼけてしまう
+    /// (デカールは「背景よりは手前」のつもりで置いている)。そこで背景ぼかしを
+    /// ここで先に適用してからデカールを重ね、呼び出し側はCompositeOverlayOntoPhoto
+    /// にphotoBlurAmount: 0を渡して二重ぼかしを避ける -- 判断はEffectivePhotoBlurAmountで。</summary>
+    private static ImageAdjustment.PixelBuffer ApplyBehindAvatarDecals(ImageAdjustment.PixelBuffer photo, List<DecalRenderEntry> behind, double scale, double photoBlurAmount, double photoBlurScale)
     {
         if (behind.Count == 0) return photo;
         var cloned = photo with { Pixels = (byte[])photo.Pixels.Clone() };
+        if (photoBlurAmount > 0) ImageAdjustment.ApplyPhotoBlurInPlace(cloned, photoBlurAmount, photoBlurScale);
         foreach (var decal in behind)
             BlendDecalOnto(cloned, decal, decal.X * scale, decal.Y * scale, decal.Width * scale, decal.Height * scale);
         return cloned;
     }
+
+    /// <summary>背後デカールが無ければ通常通りGPU側でぼかしていい
+    /// (snap.PhotoBlurAmountをそのまま渡す)。ある場合はApplyBehindAvatarDecals
+    /// 側で既にCPU側でぼかし済みなので、GPU側には0を渡して二重ぼかしを防ぐ。</summary>
+    private static double EffectivePhotoBlurAmount(double photoBlurAmount, List<DecalRenderEntry> behind) =>
+        behind.Count > 0 ? 0 : photoBlurAmount;
 
     private static WriteableBitmap ApplyInFrontOfAvatarDecals(WriteableBitmap composite, List<DecalRenderEntry> front, double scale)
     {

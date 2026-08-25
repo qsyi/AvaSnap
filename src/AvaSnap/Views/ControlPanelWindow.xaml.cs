@@ -3605,7 +3605,8 @@ public partial class ControlPanelWindow : Window
             var snap = CaptureCompositeSnapshot();
             var behindDecalsNoAvatar = CaptureBehindAvatarDecals();
             var frontDecalsNoAvatar = CaptureInFrontOfAvatarDecals();
-            renderPhotoBuffer = ApplyBehindAvatarDecals(renderPhotoBuffer, behindDecalsNoAvatar, photoOnlyScale);
+            renderPhotoBuffer = ApplyBehindAvatarDecals(renderPhotoBuffer, behindDecalsNoAvatar, photoOnlyScale, snap.PhotoBlurAmount, photoOnlyScale);
+            double effectivePhotoBlurAmountNoAvatar = EffectivePhotoBlurAmount(snap.PhotoBlurAmount, behindDecalsNoAvatar);
 
             await _compositeRenderGate.WaitAsync();
             WriteableBitmap after;
@@ -3617,7 +3618,7 @@ public partial class ControlPanelWindow : Window
                     var result = ImageAdjustment.CompositeOverlayOntoPhoto(
                         renderPhotoBuffer, photoAdjustments,
                         grainAmount: snap.GrainAmount, vignetteAmount: snap.VignetteAmount,
-                        photoBlurAmount: snap.PhotoBlurAmount, photoBlurScale: photoOnlyScale,
+                        photoBlurAmount: effectivePhotoBlurAmountNoAvatar, photoBlurScale: photoOnlyScale,
                         softnessAmount: snap.SoftnessAmount, sharpnessAmount: snap.SharpnessAmount, finishDetailScale: photoOnlyScale,
                         fadeAmount: snap.FadeAmount, glowAmount: snap.GlowAmount, glowScale: photoOnlyScale,
                         chromaticAberrationAmount: snap.ChromaticAberrationAmount, colorBleedAmount: snap.ColorBleedAmount,
@@ -3672,7 +3673,6 @@ public partial class ControlPanelWindow : Window
             : photoBuffer;
         var behindDecals = CaptureBehindAvatarDecals();
         var frontDecals = CaptureInFrontOfAvatarDecals();
-        scaledPhotoBuffer = ApplyBehindAvatarDecals(scaledPhotoBuffer, behindDecals, previewScale);
 
         double placeLeft = _compositePlaceX * previewScale;
         double placeTop = _compositePlaceY * previewScale;
@@ -3727,6 +3727,8 @@ public partial class ControlPanelWindow : Window
 
         var fullPhotoAdjustments = PhotoAdjustments;
         var fullSnap = CaptureCompositeSnapshot();
+        scaledPhotoBuffer = ApplyBehindAvatarDecals(scaledPhotoBuffer, behindDecals, previewScale, fullSnap.PhotoBlurAmount, previewScale);
+        double effectivePhotoBlurAmount = EffectivePhotoBlurAmount(fullSnap.PhotoBlurAmount, behindDecals);
 
         // Finishing effects (film grain, vignette) apply exactly once, to the
         // final composite result only -- not per-layer -- so they read as
@@ -3742,7 +3744,7 @@ public partial class ControlPanelWindow : Window
                 var result = ImageAdjustment.CompositeOverlayOntoPhoto(
                     scaledPhotoBuffer, fullPhotoAdjustments,
                     overlayPixels, overlayStride, overlayWidth, overlayHeight, overlayLeft, overlayTop,
-                    fullSnap.GrainAmount, fullSnap.VignetteAmount, fullSnap.PhotoBlurAmount, previewScale,
+                    fullSnap.GrainAmount, fullSnap.VignetteAmount, effectivePhotoBlurAmount, previewScale,
                     fullSnap.SoftnessAmount, fullSnap.SharpnessAmount, previewScale,
                     fullSnap.FadeAmount, fullSnap.GlowAmount, previewScale,
                     fullSnap.ChromaticAberrationAmount, fullSnap.ColorBleedAmount, fullSnap.ScanlineAmount, previewScale,
@@ -3859,7 +3861,11 @@ public partial class ControlPanelWindow : Window
         {
             var behindDecals = CaptureBehindAvatarDecals();
             var frontDecals = CaptureInFrontOfAvatarDecals();
-            var decaledPhotoBuffer = ApplyBehindAvatarDecals(photoBuffer, behindDecals, 1.0);
+            // "Before" never applies photo blur (see the CompositeOverlayOntoPhoto
+            // calls just below, which omit photoBlurAmount entirely -- it's the
+            // untouched photo for comparison), so there's no background blur to
+            // keep behind-decals out of here.
+            var decaledPhotoBuffer = ApplyBehindAvatarDecals(photoBuffer, behindDecals, 1.0, photoBlurAmount: 0, photoBlurScale: 1.0);
 
             if (_compositeSkipAvatar || _overlayWindow.RawPngSource is not { } rawOverlaySource)
             {

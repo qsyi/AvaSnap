@@ -3212,9 +3212,10 @@
 
                                 <!-- Reordered into 4 category groups (ディテール/トーン/光/フィルム・
                                      レトロ) instead of implementation order, split across the two
-                                     sub-columns at the category boundary: column 0 holds
-                                     ディテール+トーン+光, column 2 holds all 5 フィルム・レトロ
-                                     items (フィルムグレイン/ビネット/色収差/色にじみ/スキャンライン). -->
+                                     sub-columns: column 0 holds ディテール+色褪せ+ブルーム+
+                                     フィルム・レトロ(5項目), column 2 holds グラデーションと
+                                     ライトリーク(どちらも色ピッカー付きで縦に長いブロック、
+                                     ユーザー要望で右列にまとめた). -->
                                 <StackPanel Grid.Column="0">
                                     <!-- ディテール -->
                                     <!-- Unlike ぼかし (photo only, before the
@@ -3277,6 +3278,91 @@
                                         <TextBox Grid.Column="2" x:Name="FadeBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="FadeBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
+                                    <!-- 光 -->
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="ブルーム" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="明るい部分をふんわり滲ませて光らせます" />
+                                        <Slider Grid.Column="1" x:Name="GlowSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="GlowSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="GlowBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="GlowBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                    <!-- フィルム・レトロ: フィルムグレイン・ビネット・色収差(R/Bチャンネル
+                                         のズレ)・カラーブリード(色だけ横ににじむ)・スキャンライン(走査線+
+                                         トラッキンググリッチ、まとめて1項目)。 -->
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="フィルムグレイン" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="写真のようなノイズ(粒子感)を加えます" />
+                                        <Slider Grid.Column="1" x:Name="GrainSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="GrainSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="GrainBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="GrainBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="ビネット" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="四隅を暗くします" />
+                                        <Slider Grid.Column="1" x:Name="VignetteSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="VignetteSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="VignetteBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="VignetteBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="色収差" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="色ズレを起こして、レンズの収差のような見た目にします" />
+                                        <Slider Grid.Column="1" x:Name="ChromaticAberrationSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="ChromaticAberrationSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="ChromaticAberrationBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="ChromaticAberrationBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="色にじみ" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="色だけを横方向ににじませます(VHS風)" />
+                                        <Slider Grid.Column="1" x:Name="ColorBleedSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="ColorBleedSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="ColorBleedBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="ColorBleedBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="スキャンライン" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="走査線とノイズでビデオ映像風の質感を加えます" />
+                                        <Slider Grid.Column="1" x:Name="ScanlineSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="ScanlineSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="ScanlineBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="ScanlineBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
                                     <!-- Title-only row, then "・"-prefixed 方向/強さ rows, same
                                          3-column (label|control|value) grammar as every plain
                                          slider row: matches the ドロップシャドウ/ライトリーク
@@ -3522,20 +3608,6 @@
                                             </Border>
                                         </Popup>
                                     </Grid>
-                                    <!-- 光 -->
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="ブルーム" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="明るい部分をふんわり滲ませて光らせます" />
-                                        <Slider Grid.Column="1" x:Name="GlowSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="GlowSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="GlowBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="GlowBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
                                     <!-- Title-only row, then "・"-prefixed 色/方向/強さ rows, same
                                          3-column (label|control|value) grammar as every plain
                                          slider row, matching the ドロップシャドウ/グラデーション
@@ -3691,77 +3763,6 @@
                                                 PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
                                         <TextBox Grid.Column="2" x:Name="LightLeakDirectionBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="LightLeakDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="2">
-                                    <!-- フィルム・レトロ: フィルムグレイン・ビネット・色収差(R/Bチャンネル
-                                         のズレ)・カラーブリード(色だけ横ににじむ)・スキャンライン(走査線+
-                                         トラッキンググリッチ、まとめて1項目)。 -->
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="フィルムグレイン" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="写真のようなノイズ(粒子感)を加えます" />
-                                        <Slider Grid.Column="1" x:Name="GrainSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="GrainSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="GrainBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="GrainBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="ビネット" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="四隅を暗くします" />
-                                        <Slider Grid.Column="1" x:Name="VignetteSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="VignetteSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="VignetteBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="VignetteBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="色収差" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="色ズレを起こして、レンズの収差のような見た目にします" />
-                                        <Slider Grid.Column="1" x:Name="ChromaticAberrationSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="ChromaticAberrationSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="ChromaticAberrationBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="ChromaticAberrationBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="色にじみ" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="色だけを横方向ににじませます(VHS風)" />
-                                        <Slider Grid.Column="1" x:Name="ColorBleedSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="ColorBleedSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="ColorBleedBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="ColorBleedBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="スキャンライン" Style="{StaticResource SliderRowLabel}" Width="116" ToolTip="走査線とノイズでビデオ映像風の質感を加えます" />
-                                        <Slider Grid.Column="1" x:Name="ScanlineSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="ScanlineSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="ScanlineBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="ScanlineBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
 
                                 </StackPanel>
