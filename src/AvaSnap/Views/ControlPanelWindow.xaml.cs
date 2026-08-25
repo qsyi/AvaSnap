@@ -70,6 +70,7 @@ public partial class ControlPanelWindow : Window
         _suppressEvents = false;
         _defaultMinWidth = MinWidth;
         _defaultMinHeight = MinHeight;
+        RebuildDecalStrip(); // populates just the non-removable アバター marker at startup
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
         TitleBarVersionText.Text = $"v{version.Major}.{version.Minor}.{version.Build}";
@@ -2830,6 +2831,12 @@ public partial class ControlPanelWindow : Window
         _compositePlacementInitialized = false; // a new photo needs its own fresh placement guess
         _photoPath = path;
         PhotoPathText.Text = Path.GetFileName(path);
+        // デカールの位置は今の写真の画素座標系そのものなので、別の写真に
+        // 差し替えたら意味を持たなくなる -- 新しい写真ごとにリセット
+        // (アバターマーカーだけ残す)。
+        _decalLayerOrder.RemoveAll(l => l is not null);
+        ExitDecalPlacementMode();
+        RebuildDecalStrip();
         return true;
     }
 
@@ -3059,6 +3066,14 @@ public partial class ControlPanelWindow : Window
         {
             AvatarPlacementModeToggle.IsChecked = false;
         }
+        // Also mutually exclusive with デカール配置中 -- unlike the other two
+        // modes this one has no toggle of its own (it's entered by adding a
+        // decal), so there's no ToggleButton to uncheck; just cancel the
+        // in-progress placement the same way its own キャンセル would.
+        if (_isCropModeActive && _isDecalPlacementModeActive)
+        {
+            CancelDecalPlacement();
+        }
         ScheduleCompositeRender();
         // Also update immediately rather than waiting for the (debounced)
         // render to come back around to its own UpdateCanvasCropBoundary
@@ -3097,6 +3112,10 @@ public partial class ControlPanelWindow : Window
         {
             CropModeToggle.IsChecked = false;
         }
+        if (_isAvatarPlacementModeActive && _isDecalPlacementModeActive)
+        {
+            CancelDecalPlacement();
+        }
 
         AvatarPlacementModeLabel.Foreground = _isAvatarPlacementModeActive
             ? (Brush)FindResource("PrimaryBrush")
@@ -3125,7 +3144,7 @@ public partial class ControlPanelWindow : Window
     /// itself.</summary>
     private void RefreshSliderLockState()
     {
-        bool locked = _isCropModeActive || _isAvatarPlacementModeActive;
+        bool locked = _isCropModeActive || _isAvatarPlacementModeActive || _isDecalPlacementModeActive;
         CompositeCardsScrollViewer.IsEnabled = !locked;
         SliderLockNotice.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
         PreviewModeConfirmBar.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
@@ -3148,6 +3167,7 @@ public partial class ControlPanelWindow : Window
     {
         if (_isCropModeActive) CropModeToggle.IsChecked = false;
         else if (_isAvatarPlacementModeActive) AvatarPlacementModeToggle.IsChecked = false;
+        else if (_isDecalPlacementModeActive) ExitDecalPlacementMode();
     }
 
     /// <summary>キャンセル: restores the snapshot captured when the active
@@ -3159,6 +3179,11 @@ public partial class ControlPanelWindow : Window
     /// does.</summary>
     private void PreviewModeCancelButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_isDecalPlacementModeActive)
+        {
+            CancelDecalPlacement();
+            return;
+        }
         var snapshot = _isCropModeActive ? _cropModeEntrySnapshot
             : _isAvatarPlacementModeActive ? _avatarPlacementModeEntrySnapshot
             : null;
@@ -3562,7 +3587,7 @@ public partial class ControlPanelWindow : Window
         // by a crop that hasn't even been committed to yet -- see
         // GetDisplayedCropRect, which every avatar coordinate conversion
         // must agree with this flag on.
-        bool cropAdjusting = _isCropModeActive || _isAvatarPlacementModeActive;
+        bool cropAdjusting = _isCropModeActive || _isAvatarPlacementModeActive || _isDecalPlacementModeActive;
 
         if (overlaySource is null)
         {
@@ -3578,6 +3603,9 @@ public partial class ControlPanelWindow : Window
                 : photoBuffer;
             var photoAdjustments = PhotoAdjustments;
             var snap = CaptureCompositeSnapshot();
+            var behindDecalsNoAvatar = CaptureBehindAvatarDecals();
+            var frontDecalsNoAvatar = CaptureInFrontOfAvatarDecals();
+            renderPhotoBuffer = ApplyBehindAvatarDecals(renderPhotoBuffer, behindDecalsNoAvatar, photoOnlyScale);
 
             await _compositeRenderGate.WaitAsync();
             WriteableBitmap after;
@@ -3600,6 +3628,7 @@ public partial class ControlPanelWindow : Window
                         toneGradientAmount: snap.ToneGradientAmount, toneGradientRotation: snap.ToneGradientRotation,
                         toneGradientLightR: snap.ToneGradientLightR, toneGradientLightG: snap.ToneGradientLightG, toneGradientLightB: snap.ToneGradientLightB,
                         toneGradientDarkR: snap.ToneGradientDarkR, toneGradientDarkG: snap.ToneGradientDarkG, toneGradientDarkB: snap.ToneGradientDarkB);
+                    result = ApplyInFrontOfAvatarDecals(result, frontDecalsNoAvatar, photoOnlyScale);
                     return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, snap.CanvasAspectRatio, snap.CanvasCropOffsetX, snap.CanvasCropOffsetY, snap.CanvasCropWidthPercent, snap.CanvasCropHeightPercent);
                 });
             }
@@ -3641,6 +3670,9 @@ public partial class ControlPanelWindow : Window
         var scaledPhotoBuffer = previewScale < 1.0
             ? GetDownscaledPhoto(photoBuffer, (int)Math.Round(photoBuffer.Width * previewScale), (int)Math.Round(photoBuffer.Height * previewScale))
             : photoBuffer;
+        var behindDecals = CaptureBehindAvatarDecals();
+        var frontDecals = CaptureInFrontOfAvatarDecals();
+        scaledPhotoBuffer = ApplyBehindAvatarDecals(scaledPhotoBuffer, behindDecals, previewScale);
 
         double placeLeft = _compositePlaceX * previewScale;
         double placeTop = _compositePlaceY * previewScale;
@@ -3723,6 +3755,7 @@ public partial class ControlPanelWindow : Window
                     fullSnap.DropShadowColorB, fullSnap.DropShadowColorG, fullSnap.DropShadowColorR, previewScale,
                     // トーン風(ハーフトーン)UIは削除済み: 常時オフのプレーンな影のみ。
                     false, 8, fullSnap.DropShadowBlendMode);
+                result = ApplyInFrontOfAvatarDecals(result, frontDecals, previewScale);
                 return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, fullSnap.CanvasAspectRatio, fullSnap.CanvasCropOffsetX, fullSnap.CanvasCropOffsetY, fullSnap.CanvasCropWidthPercent, fullSnap.CanvasCropHeightPercent);
             });
         }
@@ -3797,7 +3830,17 @@ public partial class ControlPanelWindow : Window
             photoBuffer, _compositeSkipAvatar ? null : _overlayWindow.OriginalPixelBuffer, _compositeSkipAvatar,
             _compositePlaceX, _compositePlaceY, _compositePlaceWidth, _compositePlaceHeight, _compositeRotation,
             _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY);
-        if (_cachedBeforeCompositeKey == key && _cachedBeforeCompositeResult is not null)
+        // Decals aren't part of the key at all -- a List<DecalRenderEntry>
+        // field couldn't participate in this record struct's own structural
+        // equality anyway (List<T> compares by reference, so a fresh
+        // capture would never equal a previous one, permanently defeating
+        // the cache). Simplest correct fix: skip the cache entirely once
+        // any decal actually exists (_decalLayerOrder always has AT LEAST
+        // the avatar sentinel, hence > 1) -- zero effect on the common case
+        // (no decals in use at all), just always-recompute for the users
+        // actively using this newer feature.
+        bool hasDecals = _decalLayerOrder.Count > 1;
+        if (!hasDecals && _cachedBeforeCompositeKey == key && _cachedBeforeCompositeResult is not null)
         {
             return _cachedBeforeCompositeResult;
         }
@@ -3814,11 +3857,17 @@ public partial class ControlPanelWindow : Window
         WriteableBitmap result;
         try
         {
+            var behindDecals = CaptureBehindAvatarDecals();
+            var frontDecals = CaptureInFrontOfAvatarDecals();
+            var decaledPhotoBuffer = ApplyBehindAvatarDecals(photoBuffer, behindDecals, 1.0);
+
             if (_compositeSkipAvatar || _overlayWindow.RawPngSource is not { } rawOverlaySource)
             {
                 // No avatar loaded (or explicitly skipped) -- "before" is just
                 // the untouched photo.
-                result = ApplyCanvasCrop(ImageAdjustment.CompositeOverlayOntoPhoto(photoBuffer, default));
+                var beforeResult = ImageAdjustment.CompositeOverlayOntoPhoto(decaledPhotoBuffer, default);
+                beforeResult = ApplyInFrontOfAvatarDecals(beforeResult, frontDecals, 1.0);
+                result = ApplyCanvasCrop(beforeResult);
             }
             else
             {
@@ -3830,10 +3879,12 @@ public partial class ControlPanelWindow : Window
                 var (rawOverlayRendered, rawOffsetX, rawOffsetY) = ImageAdjustment.RenderOverlayForComposite(
                     rawOverlaySource, placeWidth, placeHeight, _compositeRotation, opacity: 1.0);
                 var (rawOverlayPixels, rawOverlayStride, rawOverlayWidth, rawOverlayHeight) = ExtractBgraPixels(rawOverlayRendered);
-                result = ApplyCanvasCrop(ImageAdjustment.CompositeOverlayOntoPhoto(
-                    photoBuffer, default,
+                var beforeResult = ImageAdjustment.CompositeOverlayOntoPhoto(
+                    decaledPhotoBuffer, default,
                     rawOverlayPixels, rawOverlayStride, rawOverlayWidth, rawOverlayHeight,
-                    placeLeft - rawOffsetX, placeTop - rawOffsetY));
+                    placeLeft - rawOffsetX, placeTop - rawOffsetY);
+                beforeResult = ApplyInFrontOfAvatarDecals(beforeResult, frontDecals, 1.0);
+                result = ApplyCanvasCrop(beforeResult);
             }
         }
         finally
@@ -3910,7 +3961,9 @@ public partial class ControlPanelWindow : Window
     /// itself and so need the TRUE rect regardless of which mode is
     /// active.</summary>
     private (double Left, double Top, double Width, double Height) GetDisplayedCropRect(int photoWidth, int photoHeight) =>
-        _isCropModeActive || _isAvatarPlacementModeActive ? (0, 0, photoWidth, photoHeight) : GetCanvasCropRect(photoWidth, photoHeight);
+        _isCropModeActive || _isAvatarPlacementModeActive || _isDecalPlacementModeActive
+            ? (0, 0, photoWidth, photoHeight)
+            : GetCanvasCropRect(photoWidth, photoHeight);
 
     /// <summary>The largest box of _canvasAspectRatio's ratio that fits
     /// inside the photo (100% zoom) -- factored out of GetCanvasCropRect so
@@ -4327,6 +4380,8 @@ public partial class ControlPanelWindow : Window
             return;
         }
 
+        if (TryStartDecalBodyDrag(e)) return;
+
         _isPanningPreview = true;
         // Measured relative to PreviewBorder (which has no RenderTransform of
         // its own), not PreviewImage itself -- GetPosition on the SAME
@@ -4374,6 +4429,8 @@ public partial class ControlPanelWindow : Window
             return;
         }
 
+        if (TryContinueDecalBodyDrag(e)) return;
+
         if (!_isPanningPreview) return;
         var currentPan = e.GetPosition(PreviewBorder);
         _previewPanX = _panDragStartPanX + (currentPan.X - _panDragStartMouse.X);
@@ -4397,6 +4454,8 @@ public partial class ControlPanelWindow : Window
             _undo.CommitChange();
             return;
         }
+
+        if (TryEndDecalBodyDrag()) return;
 
         _isPanningPreview = false;
         PreviewImage.ReleaseMouseCapture();

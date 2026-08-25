@@ -1731,6 +1731,29 @@
                                              Cursor="Hand"
                                              MouseLeftButtonDown="AvatarRotateGizmo_MouseLeftButtonDown" MouseMove="AvatarRotateGizmo_MouseMove" MouseLeftButtonUp="AvatarRotateGizmo_MouseLeftButtonUp" />
                                 </Canvas>
+                                <!-- デカール配置中の枠+角ハンドル。アバター用と違い
+                                     回転が無いのでRotateTransform類は無し。Margin/
+                                     Width/Heightはコード側(UpdateDecalHandles)で
+                                     _placingDecalの位置に合わせて毎回設定する。 -->
+                                <Border x:Name="DecalPlacementHighlight" BorderBrush="{DynamicResource PrimaryBrush}"
+                                        BorderThickness="2" Background="#334A58C4"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                                        IsHitTestVisible="False" Visibility="Collapsed" />
+                                <Canvas x:Name="DecalHandlesLayer" Visibility="Collapsed"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                                    <Rectangle x:Name="DecalHandleTL" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNWSE" Tag="TopLeft"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="DecalHandleTR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNESW" Tag="TopRight"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="DecalHandleBL" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNESW" Tag="BottomLeft"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="DecalHandleBR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNWSE" Tag="BottomRight"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                </Canvas>
                                 <!-- Dims the part of the photo the current 切り抜き
                                      crop would throw away, while 切り抜き幅/位置X/Y
                                      is actively being dragged (see UpdateCanvasCropBoundary
@@ -2164,6 +2187,7 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -3755,6 +3779,32 @@
                                             <TextBlock Text="リセット" />
                                         </StackPanel>
                             </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- デカール: ステッカー的な追加画像。DecalLayerStripの中身は
+                         コード側で組み立てる(可変長+ドラッグ並べ替えのため)。
+                         並び順=描画順(右ほど手前)。中の「アバター」マーカーは
+                         削除できない固定エントリで、これより左のデカールは
+                         アバターの後ろに、右は前に合成される。 -->
+                    <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Style="{StaticResource Card}" Padding="12">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="デカール" Style="{StaticResource SectionHeader}"
+                                           Margin="0" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="画像を追加" Style="{StaticResource SecondaryPillButton}"
+                                        FontSize="13" Padding="14,6" Click="AddDecalButton_Click" />
+                            </Grid>
+                            <TextBlock Text="右にあるほど手前に表示されます。ドラッグで並べ替え、「アバター」より左に動かすとアバターの後ろに配置されます。"
+                                       FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <StackPanel x:Name="DecalLayerStrip" Orientation="Horizontal" MinHeight="64" />
+                            </ScrollViewer>
                         </StackPanel>
                     </Border>
 
