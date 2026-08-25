@@ -1561,10 +1561,11 @@ public partial class ControlPanelWindow : Window
         UnityConnectionText.Foreground = (Brush)FindResource(foreground);
     }
 
-    /// <summary>「取得」ボタン: UnityのCameraCompositionGuideWindowへ
-    /// スナップショットをリクエストする。送りっぱなし(応答を待たない) --
-    /// Unity側が開いていない/応答オフなら何も起きず、UnityConnectionText
-    /// はそのまま(前回取得時刻のまま、または未接続のまま)。</summary>
+    /// <summary>「取得」ボタン: UnityのCameraCompositionGuideExporterへ
+    /// スナップショットをリクエストする(設定不要、Unityを開いてさえいれば
+    /// バックグラウンドで自動応答)。送りっぱなし(応答を待たない) --
+    /// Unity Editorが起動していなければ何も起きず、UnityConnectionText
+    /// はそのまま(未取得のまま)。</summary>
     private void RequestGuideButton_Click(object sender, RoutedEventArgs e) => _unityCameraGuide.RequestUpdate();
 
     private void GuideVisibleToggle_Changed(object sender, RoutedEventArgs e)

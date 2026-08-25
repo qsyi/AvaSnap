@@ -14,7 +14,7 @@
          over the image/handles that actually have their own content. -->
     <Canvas x:Name="RootCanvas">
         <!-- Unity連携ガイド: FOV/pitch/roll are read from the file Unity's
-             CameraCompositionGuideWindow editor script exports (see
+             CameraCompositionGuideExporter editor script exports (see
              UnityCameraGuideService), not typed in here. Purely a
              compositional reference, never baked into anything saved, so
              it stays visible even during click-through (no drag handle of

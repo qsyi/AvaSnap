@@ -6,7 +6,7 @@ using System.Windows.Threading;
 namespace AvaSnap.Services;
 
 /// <summary>FOV/pitch/roll of whatever camera Unity's own
-/// CameraCompositionGuideWindow editor script is currently exporting --
+/// CameraCompositionGuideExporter editor script is currently exporting --
 /// enough for AvaSnap to draw an equivalent one-point-perspective guide
 /// over the live VRChat window without the user re-typing FOV by hand.
 /// World position is deliberately not part of this: AvaSnap has no 3D
@@ -32,7 +32,7 @@ public sealed class UnityCameraGuideExport
 
 /// <summary>Watches (via FileSystemWatcher when that works, and always via
 /// a 500ms poll-fallback regardless -- see _pollTimer) the JSON file
-/// Unity's CameraCompositionGuideWindow editor script writes (see that
+/// Unity's CameraCompositionGuideExporter editor script writes (see that
 /// script's own doc comment for the writer side) and raises
 /// <see cref="DataUpdated"/> whenever a read turns up a genuinely NEW
 /// export (see _lastSeenTimestampUtc) -- not on every successful read,
@@ -50,7 +50,7 @@ public sealed class UnityCameraGuideService : IDisposable
 {
     public event Action<UnityCameraGuideData>? DataUpdated;
 
-    /// <summary>Same path Unity's CameraCompositionGuideWindow editor script
+    /// <summary>Same path Unity's CameraCompositionGuideExporter editor script
     /// writes to -- exposed publicly so the control panel's own "エクスプ
     /// ローラーで開く" button can point at it without duplicating the path
     /// logic.</summary>
@@ -59,7 +59,7 @@ public sealed class UnityCameraGuideService : IDisposable
 
     /// <summary>Touched (any content -- Unity's watcher reacts to the file
     /// Changed/Created event itself, not what's inside) by
-    /// <see cref="RequestUpdate"/> to ask Unity's CameraCompositionGuideWindow
+    /// <see cref="RequestUpdate"/> to ask Unity's CameraCompositionGuideExporter
     /// for a fresh snapshot. Same AppData folder as FilePath, matching that
     /// script's own RequestPath.</summary>
     private static readonly string RequestPath = Path.Combine(
@@ -105,6 +105,15 @@ public sealed class UnityCameraGuideService : IDisposable
         // throws if the path doesn't exist.
         Directory.CreateDirectory(dir);
 
+        // Whatever's already sitting at FilePath (e.g. left over from a
+        // previous AvaSnap/Unity session, or from Unity's own "今すぐ送信
+        // (テスト用)" button) is NOT a fetch THIS session ever asked for --
+        // silently record its timestamp as the baseline so TryRead treats
+        // it as "already seen" instead of firing DataUpdated for it the
+        // moment polling starts. Without this, the connection badge showed
+        // 取得済み immediately on launch even though 取得 was never pressed.
+        SeedLastSeenTimestamp();
+
         try
         {
             _watcher = new FileSystemWatcher(dir)
@@ -125,7 +134,21 @@ public sealed class UnityCameraGuideService : IDisposable
         }
 
         _pollTimer.Start();
-        TryRead();
+    }
+
+    private void SeedLastSeenTimestamp()
+    {
+        if (!File.Exists(FilePath)) return;
+        try
+        {
+            var export = JsonSerializer.Deserialize<UnityCameraGuideExport>(File.ReadAllText(FilePath));
+            _lastSeenTimestampUtc = export?.timestampUtc;
+        }
+        catch
+        {
+            // Leave it null -- worst case, a genuinely fresh write right
+            // after Start() still gets picked up correctly by TryRead.
+        }
     }
 
     /// <summary>Unity writes via a plain File.WriteAllText (not an atomic
@@ -176,14 +199,14 @@ public sealed class UnityCameraGuideService : IDisposable
         DataUpdated?.Invoke(new UnityCameraGuideData(export.fov, export.pitch, export.roll));
     }
 
-    /// <summary>Asks Unity's CameraCompositionGuideWindow (if it's running
-    /// and its own "AvaSnapからの取得に応答" toggle is on) for a fresh
-    /// snapshot -- touches RequestPath, which its FileSystemWatcher reacts
-    /// to by writing FilePath once; TryRead (via this service's own watcher/
-    /// poll-fallback) picks that up the same way it always has. Fire-and-
-    /// forget: if Unity isn't listening (closed, or that toggle is off),
-    /// this silently does nothing -- there's no request/response handshake,
-    /// just "if a fresh file shows up, DataUpdated fires".</summary>
+    /// <summary>Asks Unity's CameraCompositionGuideExporter (if the Editor
+    /// is running -- no setup or toggle needed on that side at all) for a
+    /// fresh snapshot -- touches RequestPath, which its FileSystemWatcher/
+    /// poll-fallback reacts to by writing FilePath once; TryRead (via this
+    /// service's own watcher/poll-fallback) picks that up the same way it
+    /// always has. Fire-and-forget: if Unity isn't running, this silently
+    /// does nothing -- there's no request/response handshake, just "if a
+    /// fresh file shows up, DataUpdated fires".</summary>
     public void RequestUpdate()
     {
         try
