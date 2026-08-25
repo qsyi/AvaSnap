@@ -214,11 +214,21 @@ public sealed class UnityCameraGuideService : IDisposable
             var dir = Path.GetDirectoryName(RequestPath)!;
             Directory.CreateDirectory(dir);
             File.WriteAllText(RequestPath, DateTime.UtcNow.ToString("o"));
+            Debug.WriteLine($"UnityCameraGuideService: wrote request to {RequestPath}");
         }
-        catch (IOException)
+        catch (IOException ex)
         {
             // Unity might have this file open at the exact wrong instant --
             // harmless, the user can just press 取得 again.
+            Debug.WriteLine($"UnityCameraGuideService: RequestUpdate IOException: {ex}");
+        }
+        catch (Exception ex)
+        {
+            // Anything else (permissions, path issues, ...) used to fail
+            // completely silently here -- traced now instead, so a request
+            // that never reaches disk at all shows up somewhere instead of
+            // just looking like Unity never answered.
+            Debug.WriteLine($"UnityCameraGuideService: RequestUpdate failed: {ex}");
         }
     }
 
