@@ -1546,6 +1546,58 @@ public partial class ControlPanelWindow : Window
         }
     }
 
+    private const double UnityIntegrationGuideOffscreenY = -400;
+
+    /// <summary>Slides UnityIntegrationGuidePanel down from above (the
+    /// overlay itself was already Visibility=Visible-toggled, this just
+    /// animates it in) -- same BeginAnimation-on-a-DependencyProperty
+    /// pattern as ShowUndoRedoReaction/ShowGuideFetchedNotification, just
+    /// TranslateTransform.Y instead of Opacity.</summary>
+    private void OpenUnityIntegrationGuideButton_Click(object sender, RoutedEventArgs e)
+    {
+        UnityIntegrationGuideOverlay.Visibility = Visibility.Visible;
+        var anim = new DoubleAnimation(UnityIntegrationGuideOffscreenY, 0, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+        };
+        UnityIntegrationGuideTransform.BeginAnimation(TranslateTransform.YProperty, anim);
+    }
+
+    private void CloseUnityIntegrationGuideButton_Click(object sender, RoutedEventArgs e) => CloseUnityIntegrationGuide();
+
+    private void UnityIntegrationGuideScrim_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseUnityIntegrationGuide();
+
+    private void CloseUnityIntegrationGuide()
+    {
+        var anim = new DoubleAnimation(0, UnityIntegrationGuideOffscreenY, TimeSpan.FromMilliseconds(180))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn },
+        };
+        anim.Completed += (_, _) => UnityIntegrationGuideOverlay.Visibility = Visibility.Collapsed;
+        UnityIntegrationGuideTransform.BeginAnimation(TranslateTransform.YProperty, anim);
+    }
+
+    /// <summary>qsToolBoxのインストールページ(https://qsyi.github.io/qsToolbox/install)
+    /// にある「Add to VCC」ボタンと全く同じvcc://ディープリンク -- 同じ
+    /// vpm-reposのリスティング(index.json)にAvaSnap連携も同梱されている
+    /// ので、リポジトリURLも変える必要がない。VCCがインストールされていて
+    /// vcc://プロトコルハンドラが登録されていれば、クリックでVCCが起動し
+    /// リポジトリ追加の確認ダイアログが出る。</summary>
+    private void AddToVccButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(
+                "vcc://vpm/addRepo?url=https%3A%2F%2Fqsyi.github.io%2Fvpm-repos%2Findex.json")
+            { UseShellExecute = true });
+        }
+        catch (Win32Exception)
+        {
+            // VCC isn't installed / the vcc:// protocol isn't registered --
+            // nothing more to do here.
+        }
+    }
+
     /// <summary>UnityCameraGuideService.DataUpdatedが発火するたび(＝取得
     /// ボタンへの応答がUnityから届くたび)に「取得しました」を数秒表示して
     /// 消える一時通知 -- ShowUndoRedoReactionと同じ

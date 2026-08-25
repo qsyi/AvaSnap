@@ -1478,6 +1478,14 @@
                                 <TextBlock Text="取得ボタンを押してUnityをフォーカスすると反映されます" FontSize="12"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                            TextWrapping="Wrap" Margin="0,0,0,6" />
+                                <!-- Unity側の準備(VCCへのリポジトリ登録+プロジェクトへの
+                                     パッケージ追加)を案内する、上から降りてくるガイドパネル
+                                     (UnityIntegrationGuideOverlay、Windowルートの一番下=
+                                     最前面に宣言)を開くだけのリンク風ボタン。 -->
+                                <Button Content="Unity連携はこちらから" Style="{StaticResource BackButton}"
+                                        Click="OpenUnityIntegrationGuideButton_Click"
+                                        HorizontalAlignment="Left" Margin="-6,0,0,6" Padding="6,2"
+                                        FontSize="12" FontWeight="Normal" />
                                 <Grid Margin="0,4,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -3866,6 +3874,47 @@
                              FontSize="11" />
                 </StackPanel>
             </ScrollViewer>
+        </Grid>
+
+        <!-- Unity連携ガイド: 位置合わせモードのFOVガイド内「Unity連携は
+             こちらから」ボタン(OpenUnityIntegrationGuideButton_Click)で開く、
+             上から降りてくるオーバーレイ。HomePanel/AlignPanel/...のような
+             画面切り替えではなく、ルートGridの最後に宣言することで今表示中の
+             画面の上に重ねて表示する(Grid.RowSpan="2"でタイトルバーの下に
+             かぶさる)。スクリムをクリックしても閉じる。 -->
+        <Grid x:Name="UnityIntegrationGuideOverlay" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed">
+            <Border Background="#88000000" MouseLeftButtonDown="UnityIntegrationGuideScrim_MouseLeftButtonDown" />
+            <Border x:Name="UnityIntegrationGuidePanel" Style="{StaticResource Card}"
+                    VerticalAlignment="Top" Margin="16,16,16,0" Padding="16"
+                    RenderTransformOrigin="0.5,0">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="UnityIntegrationGuideTransform" Y="-400" />
+                </Border.RenderTransform>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Unity連携" Style="{StaticResource SectionHeader}"
+                                   Margin="0" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="&#10005;" Style="{StaticResource BackButton}"
+                                Padding="8,4" Click="CloseUnityIntegrationGuideButton_Click" />
+                    </Grid>
+
+                    <TextBlock Text="① VCCにリポジトリを登録" FontWeight="SemiBold" FontSize="13" Margin="0,14,0,4" />
+                    <TextBlock Text="下のボタンでVRChat Creator Companion(VCC)に、AvaSnap連携のパッケージリポジトリを登録します。"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,8" />
+                    <Button Content="VCCに追加" Style="{StaticResource PillButton}"
+                            HorizontalAlignment="Left" Click="AddToVccButton_Click" />
+
+                    <TextBlock Text="② プロジェクトへインストール" FontWeight="SemiBold" FontSize="13" Margin="0,16,0,4" />
+                    <TextBlock Text="VCCで対象のUnityプロジェクトを開き、パッケージ一覧から「AvaSnap連携」を探してAddしてください。"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
         </Grid>
     </Grid>
     </AdornerDecorator>
