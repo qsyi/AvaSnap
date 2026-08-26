@@ -2214,7 +2214,7 @@
                         <StackPanel>
                             <TextBlock Text="アバター画像" Style="{StaticResource SectionHeader}" />
                             <Button x:Name="CompositeLoadImageButton" Style="{StaticResource PillButton}"
-                                    HorizontalAlignment="Stretch" Margin="0,0,0,4" Click="LoadImageButton_Click">
+                                    HorizontalAlignment="Stretch" Margin="0,0,0,8" Click="LoadImageButton_Click">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                             <Viewbox Width="14" Height="14" Margin="0,0,6,0">
                                                 <Canvas Width="24" Height="24">
