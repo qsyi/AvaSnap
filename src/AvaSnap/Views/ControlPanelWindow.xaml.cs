@@ -3586,7 +3586,7 @@ public partial class ControlPanelWindow : Window
     private void RefreshSkipAvatarUI()
     {
         CompositeSkipAvatarButton.IsEnabled = !_compositeSkipAvatar;
-        CompositeSkipAvatarButton.Content = _compositeSkipAvatar ? "アバターなしで進行中" : "アバターなしにする";
+        CompositeSkipAvatarButtonText.Text = _compositeSkipAvatar ? "アバターなしで進行中" : "アバターなしにする";
     }
 
     /// <summary>Extracts an overlay-rendered bitmap's raw BGRA32 pixels --
