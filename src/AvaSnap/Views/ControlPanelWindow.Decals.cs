@@ -9,8 +9,8 @@ using AvaSnap.Services;
 
 namespace AvaSnap.Views;
 
-// ---- デカール: ステッカー的な追加画像。位置/サイズはアバター配置モードと
-//      同じ移動+拡縮(アス比固定、回転なし)。レイヤー順はDecalLayerStrip上の
+// ---- デカール: ステッカー的な追加画像。位置/サイズ/回転はアバター配置
+//      モードと同じ移動+拡縮(アス比固定)+回転ギズモ。レイヤー順はDecalLayerStrip上の
 //      並び順そのもの(右ほど手前)で、削除できない「アバター」マーカー(null
 //      エントリ)より左に動かすとアバターの後ろに合成される。再編集は削除して
 //      追加し直す運用(既存デカールをもう一度ドラッグ編集するモードは無い)。
@@ -23,6 +23,7 @@ public partial class ControlPanelWindow
         public required ImageAdjustment.PixelBuffer Pixels { get; init; }
         public required BitmapSource Thumbnail { get; init; }
         public double X, Y, Width, Height; // full-res photo-pixel space, same convention as _compositePlaceX/Y/Width/Height
+        public double Rotation; // degrees, same convention (positive = clockwise) as _compositeRotation
     }
 
     // null = 削除不可の「アバター」マーカー。これより前(手前=右に置く前)の
@@ -288,17 +289,30 @@ public partial class ControlPanelWindow
         DecalPlacementHighlight.Width = width;
         DecalPlacementHighlight.Height = height;
         DecalPlacementHighlight.Margin = new Thickness(marginX, marginY, 0, 0);
+        DecalPlacementHighlightRotate.CenterX = width / 2;
+        DecalPlacementHighlightRotate.CenterY = height / 2;
+        DecalPlacementHighlightRotate.Angle = decal.Rotation;
         DecalPlacementHighlight.Visibility = Visibility.Visible;
 
         DecalHandlesLayer.Margin = new Thickness(marginX, marginY, 0, 0);
         DecalHandlesLayer.Width = width;
         DecalHandlesLayer.Height = height;
+        DecalHandlesRotateTransform.Angle = decal.Rotation;
 
         double half = AvatarHandleSize / 2;
         PlaceAvatarHandle(DecalHandleTL, -half, -half);
         PlaceAvatarHandle(DecalHandleTR, width - half, -half);
         PlaceAvatarHandle(DecalHandleBL, -half, height - half);
         PlaceAvatarHandle(DecalHandleBR, width - half, height - half);
+
+        double gizmoHalf = AvatarRotateGizmoSize / 2;
+        double gizmoCenterY = -AvatarRotateGizmoOffset;
+        DecalRotateGizmoLine.X1 = width / 2;
+        DecalRotateGizmoLine.Y1 = 0;
+        DecalRotateGizmoLine.X2 = width / 2;
+        DecalRotateGizmoLine.Y2 = gizmoCenterY + gizmoHalf;
+        PlaceAvatarHandle(DecalRotateGizmoHandle, width / 2 - gizmoHalf, gizmoCenterY - gizmoHalf);
+
         DecalHandlesLayer.Visibility = Visibility.Visible;
     }
 
@@ -322,9 +336,9 @@ public partial class ControlPanelWindow
         e.Handled = true;
     }
 
-    /// <summary>アバター用(AvatarHandle_MouseMove)と同じ、角の対角方向へ
-    /// 射影して1つの連続したスケール値を得るロック済みアス比リサイズだが、
-    /// デカールは回転しないので事前の逆回転ステップが不要な分シンプル。</summary>
+    /// <summary>アバター用(AvatarHandle_MouseMove)と全く同じ、画面座標系の
+    /// ドラッグ量をデカール自身のローカル軸へ逆回転してから角の対角方向へ
+    /// 射影して1つの連続したスケール値を得るロック済みアス比リサイズ。</summary>
     private void DecalHandle_MouseMove(object sender, MouseEventArgs e)
     {
         if (!_isDraggingDecalHandle || _placingDecal is not { } decal || _photoPixelBuffer is not { } photo) return;
@@ -333,8 +347,13 @@ public partial class ControlPanelWindow
         if (scale <= 0) return;
 
         var current = e.GetPosition(PreviewBorder);
-        double dx = (current.X - _decalHandleDragStartMouse.X) / scale;
-        double dy = (current.Y - _decalHandleDragStartMouse.Y) / scale;
+        double screenDx = (current.X - _decalHandleDragStartMouse.X) / scale;
+        double screenDy = (current.Y - _decalHandleDragStartMouse.Y) / scale;
+
+        double rad = -decal.Rotation * Math.PI / 180.0;
+        double rotCos = Math.Cos(rad), rotSin = Math.Sin(rad);
+        double dx = screenDx * rotCos - screenDy * rotSin;
+        double dy = screenDx * rotSin + screenDy * rotCos;
 
         bool left = _decalDragHandle is CropHandleCorner.TopLeft or CropHandleCorner.BottomLeft;
         bool top = _decalDragHandle is CropHandleCorner.TopLeft or CropHandleCorner.TopRight;
@@ -368,6 +387,48 @@ public partial class ControlPanelWindow
     {
         _isDraggingDecalHandle = false;
         ((UIElement)sender).ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
+    private bool _isDraggingDecalRotateGizmo;
+    private double _decalRotateGizmoStartAngle;
+    private double _decalRotateGizmoStartRotation;
+
+    private void DecalRotateGizmo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_placingDecal is not { } decal || _photoPixelBuffer is not { } photo) return;
+        _isDraggingDecalRotateGizmo = true;
+        var crop = GetDisplayedCropRect(photo.Width, photo.Height);
+        double scale = PreviewBorder.Width / crop.Width;
+        double centerX = (decal.X + decal.Width / 2 - crop.Left) * scale;
+        double centerY = (decal.Y + decal.Height / 2 - crop.Top) * scale;
+        var mouse = e.GetPosition(PreviewBorder);
+        _decalRotateGizmoStartAngle = Math.Atan2(mouse.Y - centerY, mouse.X - centerX) * 180.0 / Math.PI;
+        _decalRotateGizmoStartRotation = decal.Rotation;
+        DecalRotateGizmoHandle.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void DecalRotateGizmo_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingDecalRotateGizmo || _placingDecal is not { } decal || _photoPixelBuffer is not { } photo) return;
+        var crop = GetDisplayedCropRect(photo.Width, photo.Height);
+        double scale = PreviewBorder.Width / crop.Width;
+        double centerX = (decal.X + decal.Width / 2 - crop.Left) * scale;
+        double centerY = (decal.Y + decal.Height / 2 - crop.Top) * scale;
+        var mouse = e.GetPosition(PreviewBorder);
+        double currentAngle = Math.Atan2(mouse.Y - centerY, mouse.X - centerX) * 180.0 / Math.PI;
+        double newRotation = _decalRotateGizmoStartRotation + (currentAngle - _decalRotateGizmoStartAngle);
+        decal.Rotation = SoftSnap(newRotation, 5, -180, -90, 0, 90, 180);
+
+        UpdateDecalHandles();
+        ScheduleCompositeRender();
+    }
+
+    private void DecalRotateGizmo_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingDecalRotateGizmo = false;
+        DecalRotateGizmoHandle.ReleaseMouseCapture();
         e.Handled = true;
     }
 
@@ -428,11 +489,11 @@ public partial class ControlPanelWindow
     //      DecalLayer参照のままバックグラウンドへ渡すとレンダー中の値と
     //      競合し得る。 ----
 
-    private readonly record struct DecalRenderEntry(ImageAdjustment.PixelBuffer Pixels, double X, double Y, double Width, double Height);
+    private readonly record struct DecalRenderEntry(ImageAdjustment.PixelBuffer Pixels, double X, double Y, double Width, double Height, double Rotation);
 
     private List<DecalRenderEntry> CaptureBehindAvatarDecals() =>
         _decalLayerOrder.TakeWhile(l => l is not null)
-            .Select(l => new DecalRenderEntry(l!.Pixels, l.X, l.Y, l.Width, l.Height))
+            .Select(l => new DecalRenderEntry(l!.Pixels, l.X, l.Y, l.Width, l.Height, l.Rotation))
             .ToList();
 
     private List<DecalRenderEntry> CaptureInFrontOfAvatarDecals()
@@ -440,7 +501,7 @@ public partial class ControlPanelWindow
         int avatarIndex = _decalLayerOrder.IndexOf(null);
         var after = avatarIndex < 0 ? _decalLayerOrder : _decalLayerOrder.Skip(avatarIndex + 1);
         return after.Where(l => l is not null)
-            .Select(l => new DecalRenderEntry(l!.Pixels, l.X, l.Y, l.Width, l.Height))
+            .Select(l => new DecalRenderEntry(l!.Pixels, l.X, l.Y, l.Width, l.Height, l.Rotation))
             .ToList();
     }
 
@@ -486,35 +547,49 @@ public partial class ControlPanelWindow
     }
 
     /// <summary>最近傍サンプリングでdecal.Pixelsを(x,y,width,height)(destと
-    /// 同じスケールの座標系)へ普通のアルファ合成(over)で描き込む。破棄前提の
-    /// 一時バッファに書くだけなので専用のアンチエイリアス/バイリニアは
-    /// 見送り -- デカールは静止画像なので、動く実写系のエフェクトほど
-    /// 補間品質がシビアにならない。</summary>
+    /// 同じスケールの座標系、回転はdecal.Rotation度・中心基準)へ普通の
+    /// アルファ合成(over)で描き込む。破棄前提の一時バッファに書くだけなので
+    /// 専用のアンチエイリアス/バイリニアは見送り -- デカールは静止画像
+    /// なので、動く実写系のエフェクトほど補間品質がシビアにならない。
+    /// 各destピクセルを中心基準で逆回転してデカール自身のローカル(未回転)
+    /// 矩形に写像するアプローチ -- AvatarHandle_MouseMove/DecalHandle_MouseMove
+    /// のドラッグ量の逆回転と同じ考え方をピクセル単位でやっている。</summary>
     private static void BlendDecalOnto(ImageAdjustment.PixelBuffer dest, DecalRenderEntry decal, double x, double y, double width, double height)
     {
         var src = decal.Pixels;
-        int dstX0 = (int)Math.Round(x);
-        int dstY0 = (int)Math.Round(y);
-        int dstW = Math.Max(1, (int)Math.Round(width));
-        int dstH = Math.Max(1, (int)Math.Round(height));
+        double centerX = x + width / 2;
+        double centerY = y + height / 2;
+        double halfW = width / 2, halfH = height / 2;
+        double rad = decal.Rotation * Math.PI / 180.0;
+        double cos = Math.Cos(rad), sin = Math.Sin(rad);
 
-        int xStart = Math.Max(0, -dstX0);
-        int yStart = Math.Max(0, -dstY0);
-        int xEnd = Math.Min(dstW, dest.Width - dstX0);
-        int yEnd = Math.Min(dstH, dest.Height - dstY0);
-        if (xEnd <= xStart || yEnd <= yStart) return;
+        // Rotated bounding box to iterate over -- same padding formula
+        // ImageAdjustment.RenderOverlayForComposite uses for the avatar's
+        // own rotated bounds.
+        double boundHalfW = Math.Abs(halfW * cos) + Math.Abs(halfH * sin);
+        double boundHalfH = Math.Abs(halfW * sin) + Math.Abs(halfH * cos);
 
-        for (int dyOff = yStart; dyOff < yEnd; dyOff++)
+        int xStart = Math.Max(0, (int)Math.Floor(centerX - boundHalfW));
+        int yStart = Math.Max(0, (int)Math.Floor(centerY - boundHalfH));
+        int xEnd = Math.Min(dest.Width, (int)Math.Ceiling(centerX + boundHalfW));
+        int yEnd = Math.Min(dest.Height, (int)Math.Ceiling(centerY + boundHalfH));
+        if (xEnd <= xStart || yEnd <= yStart || halfW <= 0 || halfH <= 0) return;
+
+        for (int dy = yStart; dy < yEnd; dy++)
         {
-            int dy = dstY0 + dyOff;
-            int srcY = Math.Clamp((int)((dyOff + 0.5) / dstH * src.Height), 0, src.Height - 1);
+            double relY = dy + 0.5 - centerY;
             int destRow = dy * dest.Stride;
-            int srcRow = srcY * src.Stride;
-            for (int dxOff = xStart; dxOff < xEnd; dxOff++)
+            for (int dx = xStart; dx < xEnd; dx++)
             {
-                int dx = dstX0 + dxOff;
-                int srcX = Math.Clamp((int)((dxOff + 0.5) / dstW * src.Width), 0, src.Width - 1);
-                int srcIdx = srcRow + srcX * 4;
+                double relX = dx + 0.5 - centerX;
+                // Inverse-rotate (screen space -> decal's own local space).
+                double localX = relX * cos + relY * sin;
+                double localY = -relX * sin + relY * cos;
+                if (localX < -halfW || localX >= halfW || localY < -halfH || localY >= halfH) continue;
+
+                int srcX = Math.Clamp((int)((localX + halfW) / width * src.Width), 0, src.Width - 1);
+                int srcY = Math.Clamp((int)((localY + halfH) / height * src.Height), 0, src.Height - 1);
+                int srcIdx = srcY * src.Stride + srcX * 4;
                 byte sa = src.Pixels[srcIdx + 3];
                 if (sa == 0) continue;
                 int dstIdx = destRow + dx * 4;

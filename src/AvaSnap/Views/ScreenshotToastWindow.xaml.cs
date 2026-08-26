@@ -21,23 +21,14 @@ public partial class ScreenshotToastWindow : Window
 
     public string Path => _path;
 
-    /// <summary>VRChat's own OSC-reported camera orientation at the moment
-    /// this screenshot was detected (null if VRChat hasn't reported one yet).
-    /// Captured here, at detection time, rather than read fresh when the
-    /// user eventually clicks "合成する" -- the camera may already be back
-    /// in a different orientation by then. See
-    /// ControlPanelWindow.LoadPhotoForCompositeFromNotification.</summary>
-    public bool? WasLandscape { get; }
-
     private readonly string _path;
     private static readonly TimeSpan AutoDismissAfter = TimeSpan.FromSeconds(8);
     private readonly DispatcherTimer _dismissTimer;
 
-    public ScreenshotToastWindow(string path, bool? wasLandscape)
+    public ScreenshotToastWindow(string path)
     {
         InitializeComponent();
         _path = path;
-        WasLandscape = wasLandscape;
         FileNameText.Text = System.IO.Path.GetFileName(path);
 
         try

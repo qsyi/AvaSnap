@@ -88,15 +88,11 @@ public static class ImageAdjustment
         return new PixelBuffer(newPixels, newWidth, newHeight, newStride);
     }
 
-    /// <summary>Rotates the whole photo 90° counter-clockwise, swapping
-    /// width/height -- used by the 配置 card's photo rotate button (each
-    /// press turns the background image another quarter turn) and by the
-    /// automatic one-time correction applied when compositing straight from
-    /// a screenshot notification taken while VRChat's in-game camera was in
-    /// portrait orientation (see ControlPanelWindow.LoadPhotoForCompositeFromNotification).
-    /// Source pixel (x, y) lands at (y, W-1-x) in the rotated (H x W)
-    /// buffer.</summary>
-    public static PixelBuffer RotateCounterClockwise90(PixelBuffer source)
+    /// <summary>Rotates the whole photo 90° clockwise, swapping width/height
+    /// -- used by the 配置 card's photo rotate button (each press turns the
+    /// background image another quarter turn). Source pixel (x, y) lands at
+    /// (H-1-y, x) in the rotated (H x W) buffer.</summary>
+    public static PixelBuffer RotateClockwise90(PixelBuffer source)
     {
         int width = source.Width, height = source.Height;
         int newWidth = height, newHeight = width;
@@ -106,12 +102,11 @@ public static class ImageAdjustment
         Parallel.For(0, height, y =>
         {
             int srcRowBase = y * source.Stride;
-            int dstX = y;
+            int dstX = newWidth - 1 - y;
             for (int x = 0; x < width; x++)
             {
                 int srcIndex = srcRowBase + x * 4;
-                int dstY = width - 1 - x;
-                int dstIndex = dstY * newStride + dstX * 4;
+                int dstIndex = x * newStride + dstX * 4;
                 dst[dstIndex] = source.Pixels[srcIndex];
                 dst[dstIndex + 1] = source.Pixels[srcIndex + 1];
                 dst[dstIndex + 2] = source.Pixels[srcIndex + 2];

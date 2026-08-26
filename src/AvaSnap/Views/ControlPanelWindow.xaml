@@ -1731,16 +1731,25 @@
                                              Cursor="Hand"
                                              MouseLeftButtonDown="AvatarRotateGizmo_MouseLeftButtonDown" MouseMove="AvatarRotateGizmo_MouseMove" MouseLeftButtonUp="AvatarRotateGizmo_MouseLeftButtonUp" />
                                 </Canvas>
-                                <!-- デカール配置中の枠+角ハンドル。アバター用と違い
-                                     回転が無いのでRotateTransform類は無し。Margin/
-                                     Width/Heightはコード側(UpdateDecalHandles)で
-                                     _placingDecalの位置に合わせて毎回設定する。 -->
+                                <!-- デカール配置中の枠+角ハンドル+回転ギズモ。アバター用と
+                                     同じくRenderTransformOrigin=0.5,0.5のRotateTransformを
+                                     枠自体とハンドル層に掛け、各ハンドルはローカル(未回転)
+                                     オフセットのまま置く(UpdateDecalHandles)。Margin/
+                                     Width/Heightはコード側でその都度_placingDecalの位置に
+                                     合わせて設定する。 -->
                                 <Border x:Name="DecalPlacementHighlight" BorderBrush="{DynamicResource PrimaryBrush}"
                                         BorderThickness="2" Background="#334A58C4"
                                         HorizontalAlignment="Left" VerticalAlignment="Top"
-                                        IsHitTestVisible="False" Visibility="Collapsed" />
-                                <Canvas x:Name="DecalHandlesLayer" Visibility="Collapsed"
+                                        IsHitTestVisible="False" Visibility="Collapsed">
+                                    <Border.RenderTransform>
+                                        <RotateTransform x:Name="DecalPlacementHighlightRotate" />
+                                    </Border.RenderTransform>
+                                </Border>
+                                <Canvas x:Name="DecalHandlesLayer" RenderTransformOrigin="0.5,0.5" Visibility="Collapsed"
                                         HorizontalAlignment="Left" VerticalAlignment="Top">
+                                    <Canvas.RenderTransform>
+                                        <RotateTransform x:Name="DecalHandlesRotateTransform" />
+                                    </Canvas.RenderTransform>
                                     <Rectangle x:Name="DecalHandleTL" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
                                                Cursor="SizeNWSE" Tag="TopLeft"
                                                MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
@@ -1753,6 +1762,10 @@
                                     <Rectangle x:Name="DecalHandleBR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
                                                Cursor="SizeNWSE" Tag="BottomRight"
                                                MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <Line x:Name="DecalRotateGizmoLine" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" IsHitTestVisible="False" />
+                                    <Ellipse x:Name="DecalRotateGizmoHandle" Width="16" Height="16" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                             Cursor="Hand"
+                                             MouseLeftButtonDown="DecalRotateGizmo_MouseLeftButtonDown" MouseMove="DecalRotateGizmo_MouseMove" MouseLeftButtonUp="DecalRotateGizmo_MouseLeftButtonUp" />
                                 </Canvas>
                                 <!-- Dims the part of the photo the current 切り抜き
                                      crop would throw away, while 切り抜き幅/位置X/Y
@@ -2019,13 +2032,11 @@
                                              ToolTip="縦の比率"
                                              TextChanged="CanvasAspectCustomRatio_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
-                                <!-- 背景写真そのものを-90°ずつ回転(幅と高さが入れ替わる)。
+                                <!-- 背景写真そのものを90°ずつ回転(幅と高さが入れ替わる)。
                                      縦横を間違えて撮ったスクリーンショットの向きを直す用途。
                                      アバターの回転(_compositeRotationのフリー角度)とは別物。
                                      回すとアバター配置・デカール位置は新しい写真の向きに
-                                     合わせて初期化し直される(RotatePhotoButton_Click)。
-                                     通知("合成する")から縦向きカメラの写真を開いた場合は、
-                                     この-90°補正が自動で1回かかる(LoadPhotoForCompositeFromNotification)。 -->
+                                     合わせて初期化し直される(RotatePhotoButton_Click)。 -->
                                 <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -2033,13 +2044,13 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="写真の向き" Style="{StaticResource SliderRowLabel}" Width="Auto"
-                                               VerticalAlignment="Center" ToolTip="背景写真を-90°ずつ回転します" />
+                                               VerticalAlignment="Center" ToolTip="背景写真を90°ずつ回転します" />
                                     <Button Grid.Column="2" x:Name="RotatePhotoButton" Style="{StaticResource RotateIconButton}"
-                                            Click="RotatePhotoButton_Click" ToolTip="背景写真を-90°回転します">
+                                            Click="RotatePhotoButton_Click" ToolTip="背景写真を90°回転します">
                                         <Viewbox Width="13" Height="13">
                                             <Canvas Width="24" Height="24">
-                                                <Path Data="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                                                <Path Data="M3 3v5h5" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M21 3v5h-5" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
                                             </Canvas>
                                         </Viewbox>
                                     </Button>

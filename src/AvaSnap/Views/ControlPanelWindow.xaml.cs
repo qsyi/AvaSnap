@@ -2840,19 +2840,14 @@ public partial class ControlPanelWindow : Window
         return true;
     }
 
-    /// <summary>配置カードの回転ボタン -- 押すたびに背景写真を-90°ずつ回転
-    /// (幅と高さが入れ替わる)。</summary>
-    private void RotatePhotoButton_Click(object sender, RoutedEventArgs e) => RotatePhotoCounterClockwise90();
-
-    /// <summary>背景写真を-90°回転する共通処理 -- 配置カードの回転ボタンと、
-    /// 通知からの合成時の自動補正(LoadPhotoForCompositeFromNotification)の
-    /// 両方から呼ばれる。アバター配置・デカール位置は回転前の写真の画素座標系
-    /// のままでは意味を失うので、新しい写真を読み込んだ時(TryLoadPhotoPixels)
-    /// と同じ理由で初期化し直す。</summary>
-    private void RotatePhotoCounterClockwise90()
+    /// <summary>配置カードの回転ボタン -- 押すたびに背景写真を90°ずつ回転
+    /// (幅と高さが入れ替わる)。アバター配置・デカール位置は回転前の写真の
+    /// 画素座標系のままでは意味を失うので、新しい写真を読み込んだ時
+    /// (TryLoadPhotoPixels)と同じ理由で初期化し直す。</summary>
+    private void RotatePhotoButton_Click(object sender, RoutedEventArgs e)
     {
         if (_photoPixelBuffer is not { } photo) return;
-        _photoPixelBuffer = ImageAdjustment.RotateCounterClockwise90(photo);
+        _photoPixelBuffer = ImageAdjustment.RotateClockwise90(photo);
         ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
         _compositePlacementInitialized = false;
         _decalLayerOrder.RemoveAll(l => l is not null);
@@ -2890,28 +2885,6 @@ public partial class ControlPanelWindow : Window
         RefreshPhotoLookUI();
         ClearCompositeSaveStatus();
         ShowComposite();
-    }
-
-    /// <summary>Same as <see cref="LoadPhotoForComposite"/>, but for the
-    /// screenshot-notification ("合成する") path specifically: VRChat's
-    /// camera screenshots come out needing a -90° correction when they were
-    /// taken with the in-game camera in portrait ("縦") orientation, so this
-    /// applies that one-time fix automatically based on the orientation OSC
-    /// reported at the moment the screenshot was detected (captured on the
-    /// toast itself -- see ScreenshotToastWindow.WasLandscape -- rather than
-    /// read fresh here, since the camera may already be back in landscape by
-    /// the time the user actually clicks the toast). Not applied to the
-    /// manual picker or recent-photos paths, which go through
-    /// LoadPhotoForComposite directly: a manually-chosen file has no
-    /// associated capture-time orientation to correct from.</summary>
-    public void LoadPhotoForCompositeFromNotification(string path, bool? wasLandscape)
-    {
-        LoadPhotoForComposite(path);
-        // _photoPath only ends up equal to path if TryLoadPhotoPixels actually
-        // succeeded -- on failure LoadPhotoForComposite returns early having
-        // left whatever photo (if any) was already loaded untouched, and
-        // rotating THAT one instead would be wrong.
-        if (wasLandscape is false && _photoPath == path) RotatePhotoCounterClockwise90();
     }
 
     /// <summary>Restores the last-used composite photo at startup -- silently,
