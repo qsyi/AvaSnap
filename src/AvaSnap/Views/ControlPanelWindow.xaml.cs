@@ -2906,62 +2906,126 @@ public partial class ControlPanelWindow : Window
         }
     }
 
-    private const int BlankCanvasSize = 2048;
+    private const int BlankCanvasFallbackSize = 2048;
     private byte _blankCanvasR = 255, _blankCanvasG = 255, _blankCanvasB = 255;
+    private double _blankCanvasHue, _blankCanvasSat;
 
-    private void BlankCanvasButton_Click(object sender, RoutedEventArgs e)
+    // ---- 背景の色: アバター画像側のティント色(CompositeColorTintButton)
+    //      と全く同じ色相環+RGB+hexのUI/ロジック(GetColorWheelBitmap/
+    //      RgbToHsv/HsvToRgb/PositionColorWheelCursorは共通ヘルパーとして
+    //      再利用)。ティントと違い_state(永続/Undo対象)には乗らない --
+    //      「背景なしで作成」を押すまでは意味を持たない一時的な選択値。 ----
+
+    private void BlankCanvasColorButton_Click(object sender, RoutedEventArgs e)
     {
+        BlankCanvasColorWheel.Source = GetColorWheelBitmap();
+        _suppressEvents = true;
         SyncBlankCanvasColorUI(_blankCanvasR, _blankCanvasG, _blankCanvasB);
+        _suppressEvents = false;
         BlankCanvasColorPopup.IsOpen = true;
     }
 
-    private void BlankCanvasColorPreset_Click(object sender, RoutedEventArgs e)
+    private void BlankCanvasColorEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.BlankCanvas);
+
+    private bool _isDraggingBlankCanvasColorWheel;
+
+    private void BlankCanvasColorWheel_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        var brush = (SolidColorBrush)((Button)sender).Background;
-        SetBlankCanvasColor(brush.Color.R, brush.Color.G, brush.Color.B);
+        _isDraggingBlankCanvasColorWheel = true;
+        BlankCanvasColorWheel.CaptureMouse();
+        UpdateBlankCanvasColorFromWheelPosition(e.GetPosition(BlankCanvasColorWheel));
     }
 
-    private void BlankCanvasColorRSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+    private void BlankCanvasColorWheel_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingBlankCanvasColorWheel) return;
+        UpdateBlankCanvasColorFromWheelPosition(e.GetPosition(BlankCanvasColorWheel));
+    }
+
+    private void BlankCanvasColorWheel_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingBlankCanvasColorWheel = false;
+        BlankCanvasColorWheel.ReleaseMouseCapture();
+    }
+
+    private void UpdateBlankCanvasColorFromWheelPosition(Point p)
+    {
+        double center = (ColorWheelSize - 1) / 2.0;
+        double dx = p.X - center, dy = p.Y - center;
+        double dist = Math.Sqrt(dx * dx + dy * dy) / center;
+        _blankCanvasHue = (Math.Atan2(dy, dx) * 180.0 / Math.PI + 360) % 360;
+        _blankCanvasSat = Math.Clamp(dist, 0, 1);
+        var (r, g, b) = HsvToRgb(_blankCanvasHue, _blankCanvasSat, BlankCanvasColorValueSlider.Value / 100.0);
+        SetBlankCanvasColor(r, g, b);
+    }
+
+    private void BlankCanvasColorValueSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        var (r, g, b) = HsvToRgb(_blankCanvasHue, _blankCanvasSat, BlankCanvasColorValueSlider.Value / 100.0);
+        SetBlankCanvasColor(r, g, b);
+    }
+
+    private void BlankCanvasColorRSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
         SetBlankCanvasColor((byte)Math.Round(BlankCanvasColorRSlider.Value), _blankCanvasG, _blankCanvasB);
+    }
 
-    private void BlankCanvasColorGSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+    private void BlankCanvasColorGSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
         SetBlankCanvasColor(_blankCanvasR, (byte)Math.Round(BlankCanvasColorGSlider.Value), _blankCanvasB);
+    }
 
-    private void BlankCanvasColorBSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+    private void BlankCanvasColorBSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
         SetBlankCanvasColor(_blankCanvasR, _blankCanvasG, (byte)Math.Round(BlankCanvasColorBSlider.Value));
+    }
 
     private void BlankCanvasColorRBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_suppressEvents) return;
         if (!TryParse(BlankCanvasColorRBox.Text, out var v)) return;
         SetBlankCanvasColor((byte)Math.Clamp(v, 0, 255), _blankCanvasG, _blankCanvasB);
     }
 
     private void BlankCanvasColorGBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_suppressEvents) return;
         if (!TryParse(BlankCanvasColorGBox.Text, out var v)) return;
         SetBlankCanvasColor(_blankCanvasR, (byte)Math.Clamp(v, 0, 255), _blankCanvasB);
     }
 
     private void BlankCanvasColorBBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_suppressEvents) return;
         if (!TryParse(BlankCanvasColorBBox.Text, out var v)) return;
         SetBlankCanvasColor(_blankCanvasR, _blankCanvasG, (byte)Math.Clamp(v, 0, 255));
     }
 
     private void BlankCanvasColorHexBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_suppressEvents) return;
         if (!TryParseHexColor(BlankCanvasColorHexBox.Text, out var r, out var g, out var b)) return;
         SetBlankCanvasColor(r, g, b);
     }
 
     private void SyncBlankCanvasColorUI(byte r, byte g, byte b)
     {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        _blankCanvasSat = s;
+        if (s > 0.001) _blankCanvasHue = h;
+
         BlankCanvasColorRSlider.Value = r;
         BlankCanvasColorRBox.Text = r.ToString(CultureInfo.InvariantCulture);
         BlankCanvasColorGSlider.Value = g;
         BlankCanvasColorGBox.Text = g.ToString(CultureInfo.InvariantCulture);
         BlankCanvasColorBSlider.Value = b;
         BlankCanvasColorBBox.Text = b.ToString(CultureInfo.InvariantCulture);
+        BlankCanvasColorValueSlider.Value = v * 100;
+        PositionColorWheelCursor(BlankCanvasColorWheelCursor, _blankCanvasHue, _blankCanvasSat);
         BlankCanvasColorPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         BlankCanvasColorHexBox.Text = ToHexColor(r, g, b);
     }
@@ -2971,7 +3035,30 @@ public partial class ControlPanelWindow : Window
         _blankCanvasR = r;
         _blankCanvasG = g;
         _blankCanvasB = b;
+
+        _suppressEvents = true;
         SyncBlankCanvasColorUI(r, g, b);
+        _suppressEvents = false;
+
+        BlankCanvasColorSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+    }
+
+    /// <summary>アバター画像・(既に読み込まれている)背景写真のうち、解像度が
+    /// 高い方に合わせる -- どちらも無ければBlankCanvasFallbackSizeの正方形。
+    /// 高い方の実サイズ(幅と高さ両方)をそのまま使うので、正方形とは限らない。</summary>
+    private (int Width, int Height) GetDefaultBlankCanvasSize()
+    {
+        Size? avatarSize = _overlayWindow.ImageNativeSize is { Width: > 0, Height: > 0 } a ? a : null;
+        Size? photoSize = _photoPixelBuffer is { } p ? new Size(p.Width, p.Height) : null;
+
+        Size chosen = (avatarSize, photoSize) switch
+        {
+            ({ } av, { } ph) => av.Width * av.Height >= ph.Width * ph.Height ? av : ph,
+            ({ } av, null) => av,
+            (null, { } ph) => ph,
+            _ => new Size(BlankCanvasFallbackSize, BlankCanvasFallbackSize),
+        };
+        return (Math.Max(1, (int)Math.Round(chosen.Width)), Math.Max(1, (int)Math.Round(chosen.Height)));
     }
 
     /// <summary>実写真を使わず、選んだ色で塗った合成用の仮想写真を作る --
@@ -2981,8 +3068,8 @@ public partial class ControlPanelWindow : Window
     /// スキップされる -- App.xaml.cs参照)。</summary>
     private void CreateBlankCanvasButton_Click(object sender, RoutedEventArgs e)
     {
-        BlankCanvasColorPopup.IsOpen = false;
-        _photoPixelBuffer = ImageAdjustment.CreateSolidColor(BlankCanvasSize, BlankCanvasSize, _blankCanvasR, _blankCanvasG, _blankCanvasB);
+        var (width, height) = GetDefaultBlankCanvasSize();
+        _photoPixelBuffer = ImageAdjustment.CreateSolidColor(width, height, _blankCanvasR, _blankCanvasG, _blankCanvasB);
         ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
         _compositePlacementInitialized = false;
         _photoPath = null;
@@ -6262,7 +6349,7 @@ public partial class ControlPanelWindow : Window
     //      in-app preview image (not the whole screen) -- simplest to build
     //      and needs no OS-level screen-capture permissions. ----
 
-    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark }
+    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas }
 
     private ColorPickTarget _colorPickTarget = ColorPickTarget.None;
 
@@ -6332,6 +6419,7 @@ public partial class ControlPanelWindow : Window
             case ColorPickTarget.PhotoTint: SetPhotoColorTint(r, g, b); break;
             case ColorPickTarget.ToneGradientLight: SetToneGradientLightColor(r, g, b); break;
             case ColorPickTarget.ToneGradientDark: SetToneGradientDarkColor(r, g, b); break;
+            case ColorPickTarget.BlankCanvas: SetBlankCanvasColor(r, g, b); break;
         }
     }
 
