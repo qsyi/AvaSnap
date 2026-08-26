@@ -2836,6 +2836,7 @@ public partial class ControlPanelWindow : Window
         // しまわないよう、ここでガードを倒しておく)。
         _isBlankCanvasActive = false;
         BlankCanvasColorPanel.Visibility = Visibility.Collapsed;
+        RefreshBlankCanvasActiveUI();
         // デカールの位置は今の写真の画素座標系そのものなので、別の写真に
         // 差し替えたら意味を持たなくなる -- 新しい写真ごとにリセット
         // (アバターマーカーだけ残す)。
@@ -3283,6 +3284,7 @@ public partial class ControlPanelWindow : Window
         _blankCanvasGradientDirection = 0;
         _blankCanvasGradientEnabled = false;
         _isBlankCanvasActive = true;
+        RefreshBlankCanvasActiveUI();
 
         _photoPixelBuffer = ImageAdjustment.CreateSolidColor(width, height, _blankCanvasR, _blankCanvasG, _blankCanvasB);
         ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
@@ -3810,11 +3812,32 @@ public partial class ControlPanelWindow : Window
     /// <summary>Keeps CompositeSkipAvatarButton's enabled state/label in sync
     /// with <see cref="_compositeSkipAvatar"/> -- needed because the flag
     /// also changes programmatically (LoadImageFile clearing it when an
-    /// avatar is (re-)loaded), not just from the button's own click.</summary>
+    /// avatar is (re-)loaded), not just from the button's own click. Also
+    /// grays out AvatarLookCard (nothing to adjust with no avatar) and
+    /// disables BlankCanvasButton -- アバターなし and 背景なし are mutually
+    /// exclusive (an avatar-less blank canvas has nothing left to composite
+    /// at all), the other half of this exclusion lives in
+    /// RefreshBlankCanvasActiveUI.</summary>
     private void RefreshSkipAvatarUI()
     {
-        CompositeSkipAvatarButton.IsEnabled = !_compositeSkipAvatar;
+        CompositeSkipAvatarButton.IsEnabled = !_compositeSkipAvatar && !_isBlankCanvasActive;
         CompositeSkipAvatarButtonText.Text = _compositeSkipAvatar ? "アバターなしで進行中" : "アバターなしにする";
+        AvatarLookCard.IsEnabled = !_compositeSkipAvatar;
+        BlankCanvasButton.IsEnabled = !_compositeSkipAvatar;
+    }
+
+    /// <summary>The other half of the アバターなし/背景なし mutual exclusion
+    /// -- called from CreateBlankCanvasButton_Click and TryLoadPhotoPixels
+    /// whenever <see cref="_isBlankCanvasActive"/> changes. Grays out
+    /// PhotoLookCard while a blank canvas is active (mirroring
+    /// AvatarLookCard's own graying-out while no avatar is loaded) and
+    /// keeps CompositeSkipAvatarButton's combined enabled condition
+    /// (RefreshSkipAvatarUI computes the same expression from the other
+    /// side) correct regardless of which flag changed last.</summary>
+    private void RefreshBlankCanvasActiveUI()
+    {
+        PhotoLookCard.IsEnabled = !_isBlankCanvasActive;
+        CompositeSkipAvatarButton.IsEnabled = !_compositeSkipAvatar && !_isBlankCanvasActive;
     }
 
     /// <summary>Extracts an overlay-rendered bitmap's raw BGRA32 pixels --

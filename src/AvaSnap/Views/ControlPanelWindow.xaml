@@ -231,6 +231,19 @@
                  comment), not elevation shading. -->
         </Style>
 
+        <!-- CardのIsEnabled=False版。プレーンなBorderはIsEnabled=Falseでも
+             見た目が変わらない(内部のSlider/TextBox個々が既定テーマの
+             薄い無効表示になるだけ)ので、カード全体をグレーアウトして
+             見せたいAvatarLookCard/PhotoLookCard用に不透明度を落とす
+             トリガーを足す(SecondaryPillButtonDimmableと同じ考え方)。 -->
+        <Style x:Key="DimmableCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="ModernTextBox" TargetType="TextBox">
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}" />
@@ -2263,7 +2276,7 @@
                          row; 境界ぼかし has no photo-side counterpart, so it's
                          kept separate at the bottom instead of breaking that
                          alignment. -->
-                    <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
+                    <Border x:Name="AvatarLookCard" Grid.Row="1" Grid.Column="0" Style="{StaticResource DimmableCard}" Padding="12" Margin="0,0,0,8">
                         <!-- Grid (not a plain StackPanel) so the reset button
                              pins to this Border's own bottom edge, not just
                              the end of this column's own content: the two
@@ -2271,7 +2284,12 @@
                              comment above), so whichever column has less
                              content gets stretched taller by its sibling,
                              leaving blank space below a StackPanel-stacked
-                             button instead of true bottom. -->
+                             button instead of true bottom.
+
+                             IsEnabled is toggled from RefreshSkipAvatarUI:
+                             grayed out while _compositeSkipAvatar is on,
+                             since none of these sliders have anything to
+                             adjust with no avatar loaded. -->
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
@@ -3122,12 +3140,18 @@
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
+                    <Border x:Name="PhotoLookCard" Grid.Row="1" Grid.Column="2" Style="{StaticResource DimmableCard}" Padding="12" Margin="0,0,0,8">
                         <!-- Grid (not a plain StackPanel), matching the
                              avatar-look card's own fix: pins the reset
                              button to this Border's own bottom edge instead
                              of leaving blank space below it when this
-                             column's content is shorter than its row-mate. -->
+                             column's content is shorter than its row-mate.
+
+                             IsEnabled is toggled from CreateBlankCanvasButton_Click/
+                             TryLoadPhotoPixels: grayed out while a blank
+                             canvas (no real photo) is active, matching the
+                             avatar-look card's own graying-out while no
+                             avatar is loaded. -->
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
