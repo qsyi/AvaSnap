@@ -2870,109 +2870,27 @@
                             </Button>
                             <TextBlock x:Name="PhotoPathText" Text="(背景写真未選択)" TextWrapping="Wrap"
                                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" Margin="0,0,0,6" />
-                            <!-- 実写真を使わず単色で塗った合成用の写真を作る
-                                 (CreateBlankCanvasButton_Click)。以降は通常の
-                                 写真読み込みと全く同じパイプライン(クロップ/
-                                 配置/デカール/仕上げエフェクト)を通るので、色/
-                                 グラデーション/図形デカールだけでシェイプ背景を
-                                 組み立てられる。色UIはアバター画像側のティント色
-                                 (CompositeColorTintButton)と全く同じ構成、
-                                 スウォッチボタン(クリックで色相環ポップアップ)+
-                                 スポイト(BeginColorPick)+カラーコード。 -->
-                            <Grid Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="背景の色" Style="{StaticResource SliderRowLabel}" Width="Auto"
-                                           VerticalAlignment="Center" ToolTip="「背景なしで作成」で塗りつぶす色を選択" />
-                                <Button Grid.Column="1" x:Name="BlankCanvasColorButton" Style="{StaticResource ColorSwatchBarButton}"
-                                        Margin="8,0,0,0" Click="BlankCanvasColorButton_Click" ToolTip="背景の色を選択">
-                                    <Border x:Name="BlankCanvasColorSwatch" CornerRadius="5"
-                                            Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
-                                </Button>
-                                <Button Grid.Column="2" x:Name="BlankCanvasColorEyedropperButton" Style="{StaticResource RotateIconButton}"
-                                        Margin="6,0,0,0" Click="BlankCanvasColorEyedropperButton_Click" ToolTip="プレビューから色を拾う">
-                                    <Viewbox Width="13" Height="13">
-                                        <Canvas Width="24" Height="24">
-                                            <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                                            <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                                            <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                                        </Canvas>
-                                    </Viewbox>
-                                </Button>
-                                <TextBox Grid.Column="3" x:Name="BlankCanvasColorHexBox" Style="{StaticResource SliderRowBox}" Width="100"
-                                         Margin="6,0,0,0" ToolTip="カラーコード(#RRGGBB)"
-                                         TextChanged="BlankCanvasColorHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                <Popup x:Name="BlankCanvasColorPopup" PlacementTarget="{Binding ElementName=BlankCanvasColorButton}"
-                                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
-                                    <Border Style="{StaticResource Card}" Padding="12" Width="220">
-                                        <StackPanel>
-                                            <TextBlock Text="背景の色" Style="{StaticResource SectionHeader}" />
-                                            <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
-                                                <Image x:Name="BlankCanvasColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
-                                                       MouseLeftButtonDown="BlankCanvasColorWheel_MouseDown"
-                                                       MouseMove="BlankCanvasColorWheel_MouseMove"
-                                                       MouseLeftButtonUp="BlankCanvasColorWheel_MouseUp" />
-                                                <Border x:Name="BlankCanvasColorWheelCursor" Width="12" Height="12" CornerRadius="6"
-                                                        BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
-                                                        HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
-                                            </Grid>
-                                            <Grid Margin="0,0,0,4">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="34" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                <Slider Grid.Column="1" x:Name="BlankCanvasColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                        ValueChanged="BlankCanvasColorValueSlider_ValueChanged" />
-                                            </Grid>
-                                            <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
-                                            <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
-                                            <Grid Margin="0,0,0,4">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="20" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
-                                                <Slider Grid.Column="1" x:Name="BlankCanvasColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
-                                                        ValueChanged="BlankCanvasColorRSlider_ValueChanged" />
-                                                <TextBox Grid.Column="2" x:Name="BlankCanvasColorRBox" Style="{StaticResource SliderRowBox}"
-                                                         TextChanged="BlankCanvasColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                            </Grid>
-                                            <Grid Margin="0,0,0,4">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="20" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
-                                                <Slider Grid.Column="1" x:Name="BlankCanvasColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
-                                                        ValueChanged="BlankCanvasColorGSlider_ValueChanged" />
-                                                <TextBox Grid.Column="2" x:Name="BlankCanvasColorGBox" Style="{StaticResource SliderRowBox}"
-                                                         TextChanged="BlankCanvasColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                            </Grid>
-                                            <Grid Margin="0,0,0,10">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="20" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
-                                                <Slider Grid.Column="1" x:Name="BlankCanvasColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
-                                                        ValueChanged="BlankCanvasColorBSlider_ValueChanged" />
-                                                <TextBox Grid.Column="2" x:Name="BlankCanvasColorBBox" Style="{StaticResource SliderRowBox}"
-                                                         TextChanged="BlankCanvasColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                            </Grid>
-                                            <Border x:Name="BlankCanvasColorPreviewLarge" Height="28" CornerRadius="6"
-                                                    Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
-                                        </StackPanel>
-                                    </Border>
-                                </Popup>
-                            </Grid>
+                            <!-- Populated in code (see RefreshRecentPhotosUI)
+                                 with as many of the newest PNGs actually
+                                 sitting in the screenshot watch folder as
+                                 this row's own width allows, most-recent-
+                                 first (see SizeChanged above and
+                                 CalculateRecentThumbnailFitCount). -->
+                            <StackPanel x:Name="RecentPhotosPanel" Orientation="Horizontal"
+                                        SizeChanged="RecentPhotosPanel_SizeChanged" />
+                            <!-- 実写真を使わず単色(またはグラデーション)で塗った
+                                 合成用の写真を作る(CreateBlankCanvasButton_Click)。
+                                 以降は通常の写真読み込みと全く同じパイプライン
+                                 (クロップ/配置/デカール/仕上げエフェクト)を通るので、
+                                 色/グラデーション/図形デカールだけでシェイプ背景を
+                                 組み立てられる。押すたびに白(グラデーションoff)で
+                                 作り直し、その下の色UIが現れる。色UI自体は常時
+                                 表示ではなく「作成」した後にだけ意味を持つので、
+                                 押すまではCollapsed。色UIの各項目はアバター画像側の
+                                 ティント色(CompositeColorTintButton)と全く同じ構成
+                                 (スウォッチ+色相環ポップアップ+スポイト+カラー
+                                 コード)で、変更するたびに今の解像度のまま塗り直して
+                                 即座にプレビューへ反映する(RegenerateBlankCanvas)。 -->
                             <Button x:Name="BlankCanvasButton" Style="{StaticResource SecondaryPillButton}"
                                     HorizontalAlignment="Stretch" Margin="0,0,0,8" Click="CreateBlankCanvasButton_Click">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
@@ -2984,14 +2902,223 @@
                                             <TextBlock Text="背景なしで作成" />
                                         </StackPanel>
                             </Button>
-                            <!-- Populated in code (see RefreshRecentPhotosUI)
-                                 with as many of the newest PNGs actually
-                                 sitting in the screenshot watch folder as
-                                 this row's own width allows, most-recent-
-                                 first (see SizeChanged above and
-                                 CalculateRecentThumbnailFitCount). -->
-                            <StackPanel x:Name="RecentPhotosPanel" Orientation="Horizontal"
-                                        SizeChanged="RecentPhotosPanel_SizeChanged" />
+                            <StackPanel x:Name="BlankCanvasColorPanel" Visibility="Collapsed">
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" x:Name="BlankCanvasColorLabel" Text="背景の色" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="背景の塗りつぶし色を選択" />
+                                    <Button Grid.Column="1" x:Name="BlankCanvasColorButton" Style="{StaticResource ColorSwatchBarButton}"
+                                            Margin="8,0,0,0" Click="BlankCanvasColorButton_Click" ToolTip="背景の色を選択">
+                                        <Border x:Name="BlankCanvasColorSwatch" CornerRadius="5"
+                                                Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                    </Button>
+                                    <Button Grid.Column="2" x:Name="BlankCanvasColorEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                            Margin="6,0,0,0" Click="BlankCanvasColorEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                        <Viewbox Width="13" Height="13">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBox Grid.Column="3" x:Name="BlankCanvasColorHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                             Margin="6,0,0,0" ToolTip="カラーコード(#RRGGBB)"
+                                             TextChanged="BlankCanvasColorHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    <Popup x:Name="BlankCanvasColorPopup" PlacementTarget="{Binding ElementName=BlankCanvasColorButton}"
+                                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                        <Border Style="{StaticResource Card}" Padding="12" Width="220">
+                                            <StackPanel>
+                                                <TextBlock Text="背景の色" Style="{StaticResource SectionHeader}" />
+                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                    <Image x:Name="BlankCanvasColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
+                                                           MouseLeftButtonDown="BlankCanvasColorWheel_MouseDown"
+                                                           MouseMove="BlankCanvasColorWheel_MouseMove"
+                                                           MouseLeftButtonUp="BlankCanvasColorWheel_MouseUp" />
+                                                    <Border x:Name="BlankCanvasColorWheelCursor" Width="12" Height="12" CornerRadius="6"
+                                                            BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
+                                                            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="34" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColorValueSlider_ValueChanged" />
+                                                </Grid>
+                                                <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
+                                                <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColorRSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="BlankCanvasColorRBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="BlankCanvasColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColorGSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="BlankCanvasColorGBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="BlankCanvasColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColorBSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="BlankCanvasColorBBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="BlankCanvasColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Border x:Name="BlankCanvasColorPreviewLarge" Height="28" CornerRadius="6"
+                                                        Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+                                <!-- 背景の色2: グラデーションon時のみ表示。UI/ロジックは
+                                     色1と全く同じ構成をそのまま複製(BlankCanvasColor2*)。 -->
+                                <Grid x:Name="BlankCanvasColor2Row" Margin="0,0,0,4" Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="背景の色2" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="グラデーションのもう一方の色を選択" />
+                                    <Button Grid.Column="1" x:Name="BlankCanvasColor2Button" Style="{StaticResource ColorSwatchBarButton}"
+                                            Margin="8,0,0,0" Click="BlankCanvasColor2Button_Click" ToolTip="背景の色2を選択">
+                                        <Border x:Name="BlankCanvasColor2Swatch" CornerRadius="5"
+                                                Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                    </Button>
+                                    <Button Grid.Column="2" x:Name="BlankCanvasColor2EyedropperButton" Style="{StaticResource RotateIconButton}"
+                                            Margin="6,0,0,0" Click="BlankCanvasColor2EyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                        <Viewbox Width="13" Height="13">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBox Grid.Column="3" x:Name="BlankCanvasColor2HexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                             Margin="6,0,0,0" ToolTip="カラーコード(#RRGGBB)"
+                                             TextChanged="BlankCanvasColor2HexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    <Popup x:Name="BlankCanvasColor2Popup" PlacementTarget="{Binding ElementName=BlankCanvasColor2Button}"
+                                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                        <Border Style="{StaticResource Card}" Padding="12" Width="220">
+                                            <StackPanel>
+                                                <TextBlock Text="背景の色2" Style="{StaticResource SectionHeader}" />
+                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                    <Image x:Name="BlankCanvasColor2Wheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
+                                                           MouseLeftButtonDown="BlankCanvasColor2Wheel_MouseDown"
+                                                           MouseMove="BlankCanvasColor2Wheel_MouseMove"
+                                                           MouseLeftButtonUp="BlankCanvasColor2Wheel_MouseUp" />
+                                                    <Border x:Name="BlankCanvasColor2WheelCursor" Width="12" Height="12" CornerRadius="6"
+                                                            BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
+                                                            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="34" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColor2ValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColor2ValueSlider_ValueChanged" />
+                                                </Grid>
+                                                <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
+                                                <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColor2RSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColor2RSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="BlankCanvasColor2RBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="BlankCanvasColor2RBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColor2GSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColor2GSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="BlankCanvasColor2GBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="BlankCanvasColor2GBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColor2BSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            ValueChanged="BlankCanvasColor2BSlider_ValueChanged" />
+                                                    <TextBox Grid.Column="2" x:Name="BlankCanvasColor2BBox" Style="{StaticResource SliderRowBox}"
+                                                             TextChanged="BlankCanvasColor2BBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                                </Grid>
+                                                <Border x:Name="BlankCanvasColor2PreviewLarge" Height="28" CornerRadius="6"
+                                                        Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="グラデーション" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="背景の色1と色2の間をグラデーションにします" />
+                                    <ToggleButton Grid.Column="1" x:Name="BlankCanvasGradientToggle" Style="{StaticResource SwitchToggleButton}"
+                                                  HorizontalAlignment="Left" Margin="8,0,0,0"
+                                                  Checked="BlankCanvasGradientToggle_Changed" Unchecked="BlankCanvasGradientToggle_Changed"
+                                                  ToolTip="背景の色1と色2の間をグラデーションにします" />
+                                </Grid>
+                                <Grid x:Name="BlankCanvasGradientDirectionRow" Margin="0,0,0,6" Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="方向" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="グラデーションの向き(度)" />
+                                    <Slider Grid.Column="1" x:Name="BlankCanvasGradientDirectionSlider" Margin="8,0,0,0" Minimum="0" Maximum="360" VerticalAlignment="Center"
+                                            ValueChanged="BlankCanvasGradientDirectionSlider_ValueChanged" />
+                                    <TextBox Grid.Column="2" x:Name="BlankCanvasGradientDirectionBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="BlankCanvasGradientDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

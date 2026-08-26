@@ -2831,6 +2831,11 @@ public partial class ControlPanelWindow : Window
         _compositePlacementInitialized = false; // a new photo needs its own fresh placement guess
         _photoPath = path;
         PhotoPathText.Text = Path.GetFileName(path);
+        // 実写真に切り替えたら「背景なしで作成」の色/グラデーションUIは
+        // もう意味を持たない(RegenerateBlankCanvasが実写真を上書きして
+        // しまわないよう、ここでガードを倒しておく)。
+        _isBlankCanvasActive = false;
+        BlankCanvasColorPanel.Visibility = Visibility.Collapsed;
         // デカールの位置は今の写真の画素座標系そのものなので、別の写真に
         // 差し替えたら意味を持たなくなる -- 新しい写真ごとにリセット
         // (アバターマーカーだけ残す)。
@@ -2909,12 +2914,25 @@ public partial class ControlPanelWindow : Window
     private const int BlankCanvasFallbackSize = 2048;
     private byte _blankCanvasR = 255, _blankCanvasG = 255, _blankCanvasB = 255;
     private double _blankCanvasHue, _blankCanvasSat;
+    private byte _blankCanvasR2, _blankCanvasG2, _blankCanvasB2;
+    private double _blankCanvasHue2, _blankCanvasSat2;
+    private bool _blankCanvasGradientEnabled;
+    private double _blankCanvasGradientDirection;
+
+    /// <summary>「背景なしで作成」で作った合成用の仮想写真が今アクティブか
+    /// -- これがtrueの間だけ色/グラデーションUIの変更が_photoPixelBufferを
+    /// その場で塗り直す(RegenerateBlankCanvas)。実写真を読み込むと
+    /// TryLoadPhotoPixels側でfalseに戻り、色UI自体も隠れる(以後の色UI操作は
+    /// 何もしない -- そのための現在アクティブかどうかのガード)。</summary>
+    private bool _isBlankCanvasActive;
 
     // ---- 背景の色: アバター画像側のティント色(CompositeColorTintButton)
     //      と全く同じ色相環+RGB+hexのUI/ロジック(GetColorWheelBitmap/
     //      RgbToHsv/HsvToRgb/PositionColorWheelCursorは共通ヘルパーとして
-    //      再利用)。ティントと違い_state(永続/Undo対象)には乗らない --
-    //      「背景なしで作成」を押すまでは意味を持たない一時的な選択値。 ----
+    //      再利用)。ティントと違い_state(永続/Undo対象)には乗らない。
+    //      「背景なしで作成」を押すまでは色UI自体がCollapsedなので操作
+    //      できない -- 押した後は変更するたびにRegenerateBlankCanvasで
+    //      即座に塗り直してプレビューへ反映する。 ----
 
     private void BlankCanvasColorButton_Click(object sender, RoutedEventArgs e)
     {
@@ -3041,6 +3059,193 @@ public partial class ControlPanelWindow : Window
         _suppressEvents = false;
 
         BlankCanvasColorSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        if (_isBlankCanvasActive) RegenerateBlankCanvas();
+    }
+
+    // ---- 背景の色2: グラデーションon時のみ意味を持つもう一方の色。
+    //      UI/ロジックは色1(BlankCanvasColor*)と全く同じ構成をそのまま
+    //      複製しているだけ。 ----
+
+    private void BlankCanvasColor2Button_Click(object sender, RoutedEventArgs e)
+    {
+        BlankCanvasColor2Wheel.Source = GetColorWheelBitmap();
+        _suppressEvents = true;
+        SyncBlankCanvasColor2UI(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2);
+        _suppressEvents = false;
+        BlankCanvasColor2Popup.IsOpen = true;
+    }
+
+    private void BlankCanvasColor2EyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.BlankCanvas2);
+
+    private bool _isDraggingBlankCanvasColor2Wheel;
+
+    private void BlankCanvasColor2Wheel_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingBlankCanvasColor2Wheel = true;
+        BlankCanvasColor2Wheel.CaptureMouse();
+        UpdateBlankCanvasColor2FromWheelPosition(e.GetPosition(BlankCanvasColor2Wheel));
+    }
+
+    private void BlankCanvasColor2Wheel_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isDraggingBlankCanvasColor2Wheel) return;
+        UpdateBlankCanvasColor2FromWheelPosition(e.GetPosition(BlankCanvasColor2Wheel));
+    }
+
+    private void BlankCanvasColor2Wheel_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        _isDraggingBlankCanvasColor2Wheel = false;
+        BlankCanvasColor2Wheel.ReleaseMouseCapture();
+    }
+
+    private void UpdateBlankCanvasColor2FromWheelPosition(Point p)
+    {
+        double center = (ColorWheelSize - 1) / 2.0;
+        double dx = p.X - center, dy = p.Y - center;
+        double dist = Math.Sqrt(dx * dx + dy * dy) / center;
+        _blankCanvasHue2 = (Math.Atan2(dy, dx) * 180.0 / Math.PI + 360) % 360;
+        _blankCanvasSat2 = Math.Clamp(dist, 0, 1);
+        var (r, g, b) = HsvToRgb(_blankCanvasHue2, _blankCanvasSat2, BlankCanvasColor2ValueSlider.Value / 100.0);
+        SetBlankCanvasColor2(r, g, b);
+    }
+
+    private void BlankCanvasColor2ValueSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        var (r, g, b) = HsvToRgb(_blankCanvasHue2, _blankCanvasSat2, BlankCanvasColor2ValueSlider.Value / 100.0);
+        SetBlankCanvasColor2(r, g, b);
+    }
+
+    private void BlankCanvasColor2RSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetBlankCanvasColor2((byte)Math.Round(BlankCanvasColor2RSlider.Value), _blankCanvasG2, _blankCanvasB2);
+    }
+
+    private void BlankCanvasColor2GSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetBlankCanvasColor2(_blankCanvasR2, (byte)Math.Round(BlankCanvasColor2GSlider.Value), _blankCanvasB2);
+    }
+
+    private void BlankCanvasColor2BSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        SetBlankCanvasColor2(_blankCanvasR2, _blankCanvasG2, (byte)Math.Round(BlankCanvasColor2BSlider.Value));
+    }
+
+    private void BlankCanvasColor2RBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(BlankCanvasColor2RBox.Text, out var v)) return;
+        SetBlankCanvasColor2((byte)Math.Clamp(v, 0, 255), _blankCanvasG2, _blankCanvasB2);
+    }
+
+    private void BlankCanvasColor2GBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(BlankCanvasColor2GBox.Text, out var v)) return;
+        SetBlankCanvasColor2(_blankCanvasR2, (byte)Math.Clamp(v, 0, 255), _blankCanvasB2);
+    }
+
+    private void BlankCanvasColor2BBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(BlankCanvasColor2BBox.Text, out var v)) return;
+        SetBlankCanvasColor2(_blankCanvasR2, _blankCanvasG2, (byte)Math.Clamp(v, 0, 255));
+    }
+
+    private void BlankCanvasColor2HexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(BlankCanvasColor2HexBox.Text, out var r, out var g, out var b)) return;
+        SetBlankCanvasColor2(r, g, b);
+    }
+
+    private void SyncBlankCanvasColor2UI(byte r, byte g, byte b)
+    {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        _blankCanvasSat2 = s;
+        if (s > 0.001) _blankCanvasHue2 = h;
+
+        BlankCanvasColor2RSlider.Value = r;
+        BlankCanvasColor2RBox.Text = r.ToString(CultureInfo.InvariantCulture);
+        BlankCanvasColor2GSlider.Value = g;
+        BlankCanvasColor2GBox.Text = g.ToString(CultureInfo.InvariantCulture);
+        BlankCanvasColor2BSlider.Value = b;
+        BlankCanvasColor2BBox.Text = b.ToString(CultureInfo.InvariantCulture);
+        BlankCanvasColor2ValueSlider.Value = v * 100;
+        PositionColorWheelCursor(BlankCanvasColor2WheelCursor, _blankCanvasHue2, _blankCanvasSat2);
+        BlankCanvasColor2PreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        BlankCanvasColor2HexBox.Text = ToHexColor(r, g, b);
+    }
+
+    private void SetBlankCanvasColor2(byte r, byte g, byte b)
+    {
+        _blankCanvasR2 = r;
+        _blankCanvasG2 = g;
+        _blankCanvasB2 = b;
+
+        _suppressEvents = true;
+        SyncBlankCanvasColor2UI(r, g, b);
+        _suppressEvents = false;
+
+        BlankCanvasColor2Swatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        if (_isBlankCanvasActive) RegenerateBlankCanvas();
+    }
+
+    // ---- グラデーションon/off: onの間は背景の色が色1/色2の2つに増え、
+    //      方向スライダーも現れる。 ----
+
+    private void BlankCanvasGradientToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        _blankCanvasGradientEnabled = BlankCanvasGradientToggle.IsChecked == true;
+        RefreshBlankCanvasGradientUI();
+        if (_isBlankCanvasActive) RegenerateBlankCanvas();
+    }
+
+    private void RefreshBlankCanvasGradientUI()
+    {
+        BlankCanvasColorLabel.Text = _blankCanvasGradientEnabled ? "背景の色1" : "背景の色";
+        BlankCanvasColor2Row.Visibility = _blankCanvasGradientEnabled ? Visibility.Visible : Visibility.Collapsed;
+        BlankCanvasGradientDirectionRow.Visibility = _blankCanvasGradientEnabled ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void BlankCanvasGradientDirectionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        double rounded = Math.Round(BlankCanvasGradientDirectionSlider.Value);
+        _suppressEvents = true;
+        BlankCanvasGradientDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEvents = false;
+        if (rounded == _blankCanvasGradientDirection) return;
+        _blankCanvasGradientDirection = rounded;
+        if (_isBlankCanvasActive) RegenerateBlankCanvas();
+    }
+
+    private void BlankCanvasGradientDirectionBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(BlankCanvasGradientDirectionBox.Text, out var v)) return;
+        _blankCanvasGradientDirection = Math.Clamp(v, 0, 360);
+        _suppressEvents = true;
+        BlankCanvasGradientDirectionSlider.Value = _blankCanvasGradientDirection;
+        _suppressEvents = false;
+        if (_isBlankCanvasActive) RegenerateBlankCanvas();
+    }
+
+    /// <summary>色/グラデーションのon-off/方向が変わるたびに呼ばれる --
+    /// 解像度はいじらず(_photoPixelBufferの今の幅高さのまま)、中身だけ
+    /// 単色かグラデーションで塗り直して再描画をスケジュールする。</summary>
+    private void RegenerateBlankCanvas()
+    {
+        if (_photoPixelBuffer is not { } current) return;
+        _photoPixelBuffer = _blankCanvasGradientEnabled
+            ? ImageAdjustment.CreateLinearGradient(current.Width, current.Height,
+                _blankCanvasR, _blankCanvasG, _blankCanvasB, _blankCanvasR2, _blankCanvasG2, _blankCanvasB2, _blankCanvasGradientDirection)
+            : ImageAdjustment.CreateSolidColor(current.Width, current.Height, _blankCanvasR, _blankCanvasG, _blankCanvasB);
+        ScheduleCompositeRender();
     }
 
     /// <summary>アバター画像・(既に読み込まれている)背景写真のうち、解像度が
@@ -3061,14 +3266,24 @@ public partial class ControlPanelWindow : Window
         return (Math.Max(1, (int)Math.Round(chosen.Width)), Math.Max(1, (int)Math.Round(chosen.Height)));
     }
 
-    /// <summary>実写真を使わず、選んだ色で塗った合成用の仮想写真を作る --
+    /// <summary>実写真を使わず、白一色で塗った合成用の仮想写真を作る --
     /// 以降のクロップ/配置/デカール/仕上げエフェクトは通常の写真読み込みと
     /// 全く同じパイプラインをそのまま通る。_photoPathはnullのまま(実体
     /// ファイルが無いので、次回起動時の自動復元処理はFile.Existsで自然に
-    /// スキップされる -- App.xaml.cs参照)。</summary>
+    /// スキップされる -- App.xaml.cs参照)。押すたびに白・グラデーションoff
+    /// にリセットして作り直す(「作成」は毎回まっさらな状態からやり直す
+    /// 操作として扱う)。作成後、下の色/グラデーションUIが現れ、以後は
+    /// そこを触るたびにRegenerateBlankCanvasが同じ解像度のまま塗り直す。</summary>
     private void CreateBlankCanvasButton_Click(object sender, RoutedEventArgs e)
     {
         var (width, height) = GetDefaultBlankCanvasSize();
+
+        _blankCanvasR = _blankCanvasG = _blankCanvasB = 255;
+        _blankCanvasR2 = _blankCanvasG2 = _blankCanvasB2 = 0;
+        _blankCanvasGradientDirection = 0;
+        _blankCanvasGradientEnabled = false;
+        _isBlankCanvasActive = true;
+
         _photoPixelBuffer = ImageAdjustment.CreateSolidColor(width, height, _blankCanvasR, _blankCanvasG, _blankCanvasB);
         ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
         _compositePlacementInitialized = false;
@@ -3083,6 +3298,19 @@ public partial class ControlPanelWindow : Window
         _photoHighlights = _photoShadows = _photoWhites = _photoBlacks = 0;
         RefreshPhotoLookUI();
         ClearCompositeSaveStatus();
+
+        _suppressEvents = true;
+        SyncBlankCanvasColorUI(_blankCanvasR, _blankCanvasG, _blankCanvasB);
+        SyncBlankCanvasColor2UI(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2);
+        BlankCanvasColorSwatch.Background = new SolidColorBrush(Color.FromRgb(_blankCanvasR, _blankCanvasG, _blankCanvasB));
+        BlankCanvasColor2Swatch.Background = new SolidColorBrush(Color.FromRgb(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2));
+        BlankCanvasGradientToggle.IsChecked = false;
+        BlankCanvasGradientDirectionSlider.Value = 0;
+        BlankCanvasGradientDirectionBox.Text = "0";
+        _suppressEvents = false;
+        RefreshBlankCanvasGradientUI();
+
+        BlankCanvasColorPanel.Visibility = Visibility.Visible;
         ShowComposite();
     }
 
@@ -6349,7 +6577,7 @@ public partial class ControlPanelWindow : Window
     //      in-app preview image (not the whole screen) -- simplest to build
     //      and needs no OS-level screen-capture permissions. ----
 
-    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas }
+    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2 }
 
     private ColorPickTarget _colorPickTarget = ColorPickTarget.None;
 
@@ -6420,6 +6648,7 @@ public partial class ControlPanelWindow : Window
             case ColorPickTarget.ToneGradientLight: SetToneGradientLightColor(r, g, b); break;
             case ColorPickTarget.ToneGradientDark: SetToneGradientDarkColor(r, g, b); break;
             case ColorPickTarget.BlankCanvas: SetBlankCanvasColor(r, g, b); break;
+            case ColorPickTarget.BlankCanvas2: SetBlankCanvasColor2(r, g, b); break;
         }
     }
 

@@ -78,6 +78,44 @@ public static class ImageAdjustment
         return new PixelBuffer(pixels, width, height, stride);
     }
 
+    /// <summary>A two-color linear-gradient buffer, same purpose as
+    /// <see cref="CreateSolidColor"/> (a stand-in "photo" for the 背景写真
+    /// card's blank-canvas mode) but blending color1 -&gt; color2 along
+    /// <paramref name="angleDegrees"/> (0 = top-to-bottom, positive =
+    /// clockwise, matching every other rotation/direction control in this
+    /// app). Independent of the finishing-effect トーングラデーション
+    /// overlay (GpuToneGradient) -- this fills the base canvas itself
+    /// rather than blending over an existing photo.</summary>
+    public static PixelBuffer CreateLinearGradient(int width, int height,
+        byte r1, byte g1, byte b1, byte r2, byte g2, byte b2, double angleDegrees)
+    {
+        int stride = width * 4;
+        var pixels = new byte[stride * height];
+
+        double rad = angleDegrees * Math.PI / 180.0;
+        double axisX = -Math.Sin(rad), axisY = Math.Cos(rad);
+        double cx = width / 2.0, cy = height / 2.0;
+        double halfExtent = Math.Abs(cx * axisX) + Math.Abs(cy * axisY);
+        if (halfExtent <= 0) halfExtent = 1;
+
+        Parallel.For(0, height, y =>
+        {
+            int rowStart = y * stride;
+            double ry = y + 0.5 - cy;
+            for (int x = 0; x < width; x++)
+            {
+                double rx = x + 0.5 - cx;
+                double t = Math.Clamp((rx * axisX + ry * axisY) / halfExtent / 2 + 0.5, 0, 1);
+                int i = rowStart + x * 4;
+                pixels[i] = (byte)Math.Round(b1 + (b2 - b1) * t);
+                pixels[i + 1] = (byte)Math.Round(g1 + (g2 - g1) * t);
+                pixels[i + 2] = (byte)Math.Round(r1 + (r2 - r1) * t);
+                pixels[i + 3] = 255;
+            }
+        });
+        return new PixelBuffer(pixels, width, height, stride);
+    }
+
     /// <summary>A cheap nearest-neighbor-downscaled copy, capped to
     /// <paramref name="maxDimension"/> on its longer side. Used to keep
     /// ComputeDominantClusters' k-means sampling cheap (see
