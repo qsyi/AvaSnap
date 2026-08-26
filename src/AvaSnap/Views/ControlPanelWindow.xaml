@@ -2228,6 +2228,8 @@
                             </Button>
                             <TextBlock x:Name="CompositeImagePathText" Text="(アバター画像未読み込み)" TextWrapping="Wrap"
                                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" Margin="0,0,0,6" />
+                            <StackPanel x:Name="CompositeRecentAvatarsPanel" Orientation="Horizontal" Margin="0,0,0,8"
+                                        SizeChanged="CompositeRecentAvatarsPanel_SizeChanged" />
                             <!-- 背景写真側の「背景なしで作成」ボタンと見た目を
                                  揃えたアイコン+テキストのピル型ボタン。一度きりの
                                  操作(押すと無効化されたままになる)なので
@@ -2251,8 +2253,6 @@
                                             <TextBlock x:Name="CompositeSkipAvatarButtonText" Text="アバターなしにする" />
                                         </StackPanel>
                             </Button>
-                            <StackPanel x:Name="CompositeRecentAvatarsPanel" Orientation="Horizontal"
-                                        SizeChanged="CompositeRecentAvatarsPanel_SizeChanged" />
                         </StackPanel>
                     </Border>
 
@@ -2876,7 +2876,7 @@
                                  this row's own width allows, most-recent-
                                  first (see SizeChanged above and
                                  CalculateRecentThumbnailFitCount). -->
-                            <StackPanel x:Name="RecentPhotosPanel" Orientation="Horizontal"
+                            <StackPanel x:Name="RecentPhotosPanel" Orientation="Horizontal" Margin="0,0,0,8"
                                         SizeChanged="RecentPhotosPanel_SizeChanged" />
                             <!-- 実写真を使わず単色(またはグラデーション)で塗った
                                  合成用の写真を作る(CreateBlankCanvasButton_Click)。
