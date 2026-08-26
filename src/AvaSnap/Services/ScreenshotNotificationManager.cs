@@ -11,20 +11,24 @@ namespace AvaSnap.Services;
 public sealed class ScreenshotNotificationManager
 {
     /// <summary>Raised when the user clicks "合成する" on a toast, with the
-    /// screenshot's full path.</summary>
-    public event Action<string>? PhotoSelected;
+    /// screenshot's full path and the camera orientation VRChat's OSC output
+    /// last reported at the moment that screenshot was detected (see
+    /// ScreenshotToastWindow.WasLandscape).</summary>
+    public event Action<string, bool?>? PhotoSelected;
 
     private const double Gap = 8;
     private readonly List<ScreenshotToastWindow> _toasts = new();
+    private readonly VrChatOscListener _oscListener;
 
-    public ScreenshotNotificationManager(ScreenshotWatcherService watcher)
+    public ScreenshotNotificationManager(ScreenshotWatcherService watcher, VrChatOscListener oscListener)
     {
+        _oscListener = oscListener;
         watcher.ScreenshotDetected += OnScreenshotDetected;
     }
 
     private void OnScreenshotDetected(string path)
     {
-        var toast = new ScreenshotToastWindow(path);
+        var toast = new ScreenshotToastWindow(path, _oscListener.IsLandscape);
         toast.OpenRequested += Toast_OpenRequested;
         toast.DismissRequested += Toast_DismissRequested;
         _toasts.Add(toast);
@@ -34,7 +38,7 @@ public sealed class ScreenshotNotificationManager
 
     private void Toast_OpenRequested(ScreenshotToastWindow toast)
     {
-        PhotoSelected?.Invoke(toast.Path);
+        PhotoSelected?.Invoke(toast.Path, toast.WasLandscape);
         Remove(toast);
     }
 

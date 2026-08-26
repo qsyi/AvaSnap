@@ -113,7 +113,7 @@ public partial class App : Application
         _screenshotWatcher = new ScreenshotWatcherService(Dispatcher);
         _screenshotWatcher.ManualFolder = saved?.ScreenshotFolderPath;
         _screenshotWatcher.Start();
-        _screenshotNotifications = new ScreenshotNotificationManager(_screenshotWatcher);
+        _screenshotNotifications = new ScreenshotNotificationManager(_screenshotWatcher, _oscListener);
 
         // Position/size are never persisted -- a screen coordinate (and a
         // camera-frame-fitted width/height) from a previous session are both
@@ -145,7 +145,7 @@ public partial class App : Application
         _controlPanelWindow = new ControlPanelWindow(_state, _overlayWindow, _undoManager, _oscListener, _screenshotWatcher, _unityCameraGuide);
         _controlPanelWindow.Closed += (_, _) => Shutdown();
         _controlPanelWindow.Show();
-        _screenshotNotifications.PhotoSelected += path => _controlPanelWindow.LoadPhotoForComposite(path);
+        _screenshotNotifications.PhotoSelected += (path, wasLandscape) => _controlPanelWindow.LoadPhotoForCompositeFromNotification(path, wasLandscape);
 
         // Now that ControlPanelWindow has subscribed to DataUpdated (the
         // only remaining subscriber -- OverlayWindow reads GuideManualFov/
