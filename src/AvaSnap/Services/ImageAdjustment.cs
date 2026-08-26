@@ -53,6 +53,31 @@ public static class ImageAdjustment
         return new PixelBuffer(pixels, width, height, stride);
     }
 
+    /// <summary>A flat, fully-opaque single-color buffer -- used by the
+    /// 背景写真 card's "背景なしで作成" button as a stand-in "photo" so the
+    /// rest of the composite pipeline (crop, avatar placement, decals,
+    /// finishing effects) needs no changes to work with no real photo at
+    /// all: a solid color plus shape decals is enough to build a plain
+    /// background from scratch.</summary>
+    public static PixelBuffer CreateSolidColor(int width, int height, byte r, byte g, byte b)
+    {
+        int stride = width * 4;
+        var pixels = new byte[stride * height];
+        Parallel.For(0, height, y =>
+        {
+            int rowStart = y * stride;
+            for (int x = 0; x < width; x++)
+            {
+                int i = rowStart + x * 4;
+                pixels[i] = b;
+                pixels[i + 1] = g;
+                pixels[i + 2] = r;
+                pixels[i + 3] = 255;
+            }
+        });
+        return new PixelBuffer(pixels, width, height, stride);
+    }
+
     /// <summary>A cheap nearest-neighbor-downscaled copy, capped to
     /// <paramref name="maxDimension"/> on its longer side. Used to keep
     /// ComputeDominantClusters' k-means sampling cheap (see

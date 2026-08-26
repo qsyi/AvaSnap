@@ -2877,6 +2877,87 @@
                             </Button>
                             <TextBlock x:Name="PhotoPathText" Text="(背景写真未選択)" TextWrapping="Wrap"
                                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" Margin="0,0,0,6" />
+                            <!-- 実写真を使わず単色で塗った合成用の写真を作る
+                                 (CreateBlankCanvas)。以降は通常の写真読み込みと
+                                 全く同じパイプライン(クロップ/配置/デカール/
+                                 仕上げエフェクト)を通るので、色/グラデーション/
+                                 図形デカールだけでシェイプ背景を組み立てられる。
+                                 ライトリーク等の色ピッカーと違い一度きりの
+                                 「作成」操作なので、色相環は省いてプリセット+
+                                 RGB+hexだけの軽量な構成にしてある。 -->
+                            <Button x:Name="BlankCanvasButton" Style="{StaticResource SecondaryPillButton}"
+                                    HorizontalAlignment="Stretch" Margin="0,0,0,8" Click="BlankCanvasButton_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Viewbox Width="14" Height="14" Margin="0,0,6,0">
+                                                <Canvas Width="24" Height="24">
+                                                    <Rectangle Canvas.Left="3" Canvas.Top="3" Width="18" Height="18" RadiusX="3" RadiusY="3" Fill="White" />
+                                                </Canvas>
+                                            </Viewbox>
+                                            <TextBlock Text="背景なしで作成" />
+                                        </StackPanel>
+                            </Button>
+                            <Popup x:Name="BlankCanvasColorPopup" PlacementTarget="{Binding ElementName=BlankCanvasButton}"
+                                   Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                <Border Style="{StaticResource Card}" Padding="12" Width="220">
+                                    <StackPanel>
+                                        <TextBlock Text="背景の色" Style="{StaticResource SectionHeader}" />
+                                        <UniformGrid Columns="4" Margin="0,0,0,10">
+                                            <Button Style="{StaticResource ColorPresetButton}" Background="#FFFFFF" Click="BlankCanvasColorPreset_Click" ToolTip="白" />
+                                            <Button Style="{StaticResource ColorPresetButton}" Background="#808080" Click="BlankCanvasColorPreset_Click" ToolTip="グレー" />
+                                            <Button Style="{StaticResource ColorPresetButton}" Background="#000000" Click="BlankCanvasColorPreset_Click" ToolTip="黒" />
+                                            <Button Style="{StaticResource ColorPresetButton}" Background="#5AAAFF" Click="BlankCanvasColorPreset_Click" ToolTip="青" />
+                                        </UniformGrid>
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="20" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                            <Slider Grid.Column="1" x:Name="BlankCanvasColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                    ValueChanged="BlankCanvasColorRSlider_ValueChanged" />
+                                            <TextBox Grid.Column="2" x:Name="BlankCanvasColorRBox" Style="{StaticResource SliderRowBox}"
+                                                     TextChanged="BlankCanvasColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                        </Grid>
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="20" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                            <Slider Grid.Column="1" x:Name="BlankCanvasColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                    ValueChanged="BlankCanvasColorGSlider_ValueChanged" />
+                                            <TextBox Grid.Column="2" x:Name="BlankCanvasColorGBox" Style="{StaticResource SliderRowBox}"
+                                                     TextChanged="BlankCanvasColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                        </Grid>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="20" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
+                                            <Slider Grid.Column="1" x:Name="BlankCanvasColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                    ValueChanged="BlankCanvasColorBSlider_ValueChanged" />
+                                            <TextBox Grid.Column="2" x:Name="BlankCanvasColorBBox" Style="{StaticResource SliderRowBox}"
+                                                     TextChanged="BlankCanvasColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                        </Grid>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="#RRGGBB" Style="{StaticResource SliderRowLabel}" Width="Auto" VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="1" x:Name="BlankCanvasColorHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                                     TextChanged="BlankCanvasColorHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                        </Grid>
+                                        <Border x:Name="BlankCanvasColorPreviewLarge" Height="28" CornerRadius="6" Margin="0,0,0,10"
+                                                Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                        <Button Content="作成" Style="{StaticResource PillButton}" HorizontalAlignment="Stretch" Click="CreateBlankCanvasButton_Click" />
+                                    </StackPanel>
+                                </Border>
+                            </Popup>
                             <!-- Populated in code (see RefreshRecentPhotosUI)
                                  with as many of the newest PNGs actually
                                  sitting in the screenshot watch folder as

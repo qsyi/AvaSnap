@@ -2906,6 +2906,99 @@ public partial class ControlPanelWindow : Window
         }
     }
 
+    private const int BlankCanvasSize = 2048;
+    private byte _blankCanvasR = 255, _blankCanvasG = 255, _blankCanvasB = 255;
+
+    private void BlankCanvasButton_Click(object sender, RoutedEventArgs e)
+    {
+        SyncBlankCanvasColorUI(_blankCanvasR, _blankCanvasG, _blankCanvasB);
+        BlankCanvasColorPopup.IsOpen = true;
+    }
+
+    private void BlankCanvasColorPreset_Click(object sender, RoutedEventArgs e)
+    {
+        var brush = (SolidColorBrush)((Button)sender).Background;
+        SetBlankCanvasColor(brush.Color.R, brush.Color.G, brush.Color.B);
+    }
+
+    private void BlankCanvasColorRSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+        SetBlankCanvasColor((byte)Math.Round(BlankCanvasColorRSlider.Value), _blankCanvasG, _blankCanvasB);
+
+    private void BlankCanvasColorGSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+        SetBlankCanvasColor(_blankCanvasR, (byte)Math.Round(BlankCanvasColorGSlider.Value), _blankCanvasB);
+
+    private void BlankCanvasColorBSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+        SetBlankCanvasColor(_blankCanvasR, _blankCanvasG, (byte)Math.Round(BlankCanvasColorBSlider.Value));
+
+    private void BlankCanvasColorRBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!TryParse(BlankCanvasColorRBox.Text, out var v)) return;
+        SetBlankCanvasColor((byte)Math.Clamp(v, 0, 255), _blankCanvasG, _blankCanvasB);
+    }
+
+    private void BlankCanvasColorGBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!TryParse(BlankCanvasColorGBox.Text, out var v)) return;
+        SetBlankCanvasColor(_blankCanvasR, (byte)Math.Clamp(v, 0, 255), _blankCanvasB);
+    }
+
+    private void BlankCanvasColorBBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!TryParse(BlankCanvasColorBBox.Text, out var v)) return;
+        SetBlankCanvasColor(_blankCanvasR, _blankCanvasG, (byte)Math.Clamp(v, 0, 255));
+    }
+
+    private void BlankCanvasColorHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!TryParseHexColor(BlankCanvasColorHexBox.Text, out var r, out var g, out var b)) return;
+        SetBlankCanvasColor(r, g, b);
+    }
+
+    private void SyncBlankCanvasColorUI(byte r, byte g, byte b)
+    {
+        BlankCanvasColorRSlider.Value = r;
+        BlankCanvasColorRBox.Text = r.ToString(CultureInfo.InvariantCulture);
+        BlankCanvasColorGSlider.Value = g;
+        BlankCanvasColorGBox.Text = g.ToString(CultureInfo.InvariantCulture);
+        BlankCanvasColorBSlider.Value = b;
+        BlankCanvasColorBBox.Text = b.ToString(CultureInfo.InvariantCulture);
+        BlankCanvasColorPreviewLarge.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        BlankCanvasColorHexBox.Text = ToHexColor(r, g, b);
+    }
+
+    private void SetBlankCanvasColor(byte r, byte g, byte b)
+    {
+        _blankCanvasR = r;
+        _blankCanvasG = g;
+        _blankCanvasB = b;
+        SyncBlankCanvasColorUI(r, g, b);
+    }
+
+    /// <summary>実写真を使わず、選んだ色で塗った合成用の仮想写真を作る --
+    /// 以降のクロップ/配置/デカール/仕上げエフェクトは通常の写真読み込みと
+    /// 全く同じパイプラインをそのまま通る。_photoPathはnullのまま(実体
+    /// ファイルが無いので、次回起動時の自動復元処理はFile.Existsで自然に
+    /// スキップされる -- App.xaml.cs参照)。</summary>
+    private void CreateBlankCanvasButton_Click(object sender, RoutedEventArgs e)
+    {
+        BlankCanvasColorPopup.IsOpen = false;
+        _photoPixelBuffer = ImageAdjustment.CreateSolidColor(BlankCanvasSize, BlankCanvasSize, _blankCanvasR, _blankCanvasG, _blankCanvasB);
+        ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
+        _compositePlacementInitialized = false;
+        _photoPath = null;
+        PhotoPathText.Text = "(背景なし)";
+        _decalLayerOrder.RemoveAll(l => l is not null);
+        ExitDecalPlacementMode();
+        RebuildDecalStrip();
+
+        _photoBrightness = _photoContrast = _photoSaturation = 0;
+        _photoVibrance = _photoTemperature = _photoTint = _photoHue = 0;
+        _photoHighlights = _photoShadows = _photoWhites = _photoBlacks = 0;
+        RefreshPhotoLookUI();
+        ClearCompositeSaveStatus();
+        ShowComposite();
+    }
+
     /// <summary>Where on the photo (as fractions of the photo's own pixel
     /// dimensions) the aligned overlay should land: the live preview places
     /// the overlay at _state.X/Y/Width/Height relative to the estimated
