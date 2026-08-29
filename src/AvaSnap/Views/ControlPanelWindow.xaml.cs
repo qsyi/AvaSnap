@@ -44,7 +44,12 @@ public sealed record CompositeSnapshot(
     ImageAdjustment.DropShadowBlendMode DropShadowBlendMode,
     double? CanvasAspectRatio, double CanvasCropOffsetX, double CanvasCropOffsetY, double CanvasCropWidthPercent, double CanvasCropHeightPercent,
     double CompositePlaceX, double CompositePlaceY, double CompositePlaceWidth, double CompositePlaceHeight,
-    double CompositeRotation);
+    double CompositeRotation,
+    EquatableArray<DecalEntrySnapshot> Decals,
+    byte BlankCanvasR, byte BlankCanvasG, byte BlankCanvasB,
+    byte BlankCanvasR2, byte BlankCanvasG2, byte BlankCanvasB2,
+    bool BlankCanvasGradientEnabled, double BlankCanvasGradientDirection, bool IsBlankCanvasActive,
+    ImageAdjustment.PixelBuffer? PhotoBuffer);
 
 public partial class ControlPanelWindow : Window
 {
@@ -916,6 +921,27 @@ public partial class ControlPanelWindow : Window
             BeginColorPick(_colorPickTarget);
             e.Handled = true;
             return;
+        }
+
+        // 選択中デカールの矢印移動 / Delete 削除。値編集コントロールに
+        // フォーカスがある間は横取りしない(スライダーの値変更・キャレット移動を優先)。
+        if (_isDecalPlacementModeActive && _placingDecal is { } editDecal && !IsTextEntryFocused())
+        {
+            if (e.Key is Key.Delete or Key.Back)
+            {
+                RemoveDecal(editDecal);
+                e.Handled = true;
+                return;
+            }
+            double nudge = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 10 : 1;
+            double ndx = e.Key switch { Key.Left => -nudge, Key.Right => nudge, _ => 0 };
+            double ndy = e.Key switch { Key.Up => -nudge, Key.Down => nudge, _ => 0 };
+            if (ndx != 0 || ndy != 0)
+            {
+                NudgeDecal(editDecal, ndx, ndy);
+                e.Handled = true;
+                return;
+            }
         }
 
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
@@ -2733,7 +2759,12 @@ public partial class ControlPanelWindow : Window
         _dropShadowBlendMode,
         _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent, _canvasCropHeightPercent,
         _compositePlaceX, _compositePlaceY, _compositePlaceWidth, _compositePlaceHeight,
-        _compositeRotation);
+        _compositeRotation,
+        CaptureDecalSnapshot(),
+        _blankCanvasR, _blankCanvasG, _blankCanvasB,
+        _blankCanvasR2, _blankCanvasG2, _blankCanvasB2,
+        _blankCanvasGradientEnabled, _blankCanvasGradientDirection, _isBlankCanvasActive,
+        _photoPixelBuffer);
 
     private void ApplyCompositeSnapshot(object? snapshot)
     {
@@ -2796,6 +2827,36 @@ public partial class ControlPanelWindow : Window
         _compositePlaceWidth = s.CompositePlaceWidth;
         _compositePlaceHeight = s.CompositePlaceHeight;
         _compositeRotation = s.CompositeRotation;
+
+        // #2 背景写真の +90°回転: スナップショット時点の(可能なら回転済みの)
+        // ピクセルバッファ参照をそのまま戻す。回転のみが _photoPixelBuffer を
+        // Undo 対象で差し替える操作なので、静止した写真では全スナップショットが
+        // 同じ参照を共有し、メモリ増も等価判定の誤検知も無い。
+        if (s.PhotoBuffer is { } pb && !ReferenceEquals(pb, _photoPixelBuffer))
+        {
+            _photoPixelBuffer = pb;
+            ImageAdjustment.PrecomputeFilmGrainNoise(pb.Width, pb.Height);
+        }
+
+        // #1 「背景なしで作成」の色/グラデーション。
+        bool blankChanged =
+            _blankCanvasR != s.BlankCanvasR || _blankCanvasG != s.BlankCanvasG || _blankCanvasB != s.BlankCanvasB ||
+            _blankCanvasR2 != s.BlankCanvasR2 || _blankCanvasG2 != s.BlankCanvasG2 || _blankCanvasB2 != s.BlankCanvasB2 ||
+            _blankCanvasGradientEnabled != s.BlankCanvasGradientEnabled ||
+            _blankCanvasGradientDirection != s.BlankCanvasGradientDirection ||
+            _isBlankCanvasActive != s.IsBlankCanvasActive;
+        _blankCanvasR = s.BlankCanvasR; _blankCanvasG = s.BlankCanvasG; _blankCanvasB = s.BlankCanvasB;
+        _blankCanvasR2 = s.BlankCanvasR2; _blankCanvasG2 = s.BlankCanvasG2; _blankCanvasB2 = s.BlankCanvasB2;
+        _blankCanvasGradientEnabled = s.BlankCanvasGradientEnabled;
+        _blankCanvasGradientDirection = s.BlankCanvasGradientDirection;
+        _isBlankCanvasActive = s.IsBlankCanvasActive;
+        if (blankChanged)
+        {
+            RefreshBlankCanvasUI();
+            if (_isBlankCanvasActive) RegenerateBlankCanvas(); // #2 で戻したバッファと同じ寸法で塗り直す
+        }
+
+        ApplyDecalSnapshot(s.Decals);
         RefreshPhotoLookUI();
         RefreshFinishUI();
         RefreshCompositePlacementUI();
@@ -2843,6 +2904,11 @@ public partial class ControlPanelWindow : Window
         _decalLayerOrder.RemoveAll(l => l is not null);
         ExitDecalPlacementMode();
         RebuildDecalStrip();
+        // 別の写真に切り替えたら Undo 履歴は無効(配置/look/デカール/背景色は
+        // その写真に対してのみ意味を持つ)。モード入場スナップショットも同様。
+        _undo.Clear();
+        _cropModeEntrySnapshot = null;
+        _avatarPlacementModeEntrySnapshot = null;
         return true;
     }
 
@@ -2853,18 +2919,23 @@ public partial class ControlPanelWindow : Window
     private void RotatePhotoButton_Click(object sender, RoutedEventArgs e)
     {
         if (_photoPixelBuffer is not { } photo) return;
+        // Undo/Redo に乗せる: 回転前のバッファ参照(CompositeSnapshot.PhotoBuffer)と
+        // 巻き添えで消えるデカール(CompositeSnapshot.Decals)がスナップショットに
+        // 入るので、Ctrl+Z で向き・デカールごと戻る。
+        _undo.BeginChange();
         _photoPixelBuffer = ImageAdjustment.RotateClockwise90(photo);
         ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
         _compositePlacementInitialized = false;
         _decalLayerOrder.RemoveAll(l => l is not null);
         ExitDecalPlacementMode();
         RebuildDecalStrip();
-        // SizePreviewToImage() isn't called here directly -- RenderCompositePreview
-        // (triggered below) calls it itself once the re-render actually lands a
-        // new PreviewImage.Source with the swapped width/height, same as every
-        // other handler that just calls ScheduleCompositeRender() and lets the
-        // completed render resize the preview border.
-        ScheduleCompositeRender();
+        // 配置の推定し直し(_compositePlacementInitialized=false)を CommitChange の
+        // 前に確定させたいので、ScheduleCompositeRender ではなく同期的に走らせる
+        // (ResetCompositePlacementButton_Click と同じ理由・同じやり方)。
+        // SizePreviewToImage は RenderCompositePreview 側が入れ替わった幅高さで呼ぶ。
+        _ = RenderCompositePreview();
+        RefreshCompositePlacementUI();
+        _undo.CommitChange();
     }
 
     /// <summary>Loads a photo (from the manual picker or a screenshot-watcher
@@ -2951,6 +3022,7 @@ public partial class ControlPanelWindow : Window
     private void BlankCanvasColorWheel_MouseDown(object sender, MouseButtonEventArgs e)
     {
         _isDraggingBlankCanvasColorWheel = true;
+        _undo.BeginChange();
         BlankCanvasColorWheel.CaptureMouse();
         UpdateBlankCanvasColorFromWheelPosition(e.GetPosition(BlankCanvasColorWheel));
     }
@@ -2963,8 +3035,10 @@ public partial class ControlPanelWindow : Window
 
     private void BlankCanvasColorWheel_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (!_isDraggingBlankCanvasColorWheel) return;
         _isDraggingBlankCanvasColorWheel = false;
         BlankCanvasColorWheel.ReleaseMouseCapture();
+        _undo.CommitChange();
     }
 
     private void UpdateBlankCanvasColorFromWheelPosition(Point p)
@@ -3083,6 +3157,7 @@ public partial class ControlPanelWindow : Window
     private void BlankCanvasColor2Wheel_MouseDown(object sender, MouseButtonEventArgs e)
     {
         _isDraggingBlankCanvasColor2Wheel = true;
+        _undo.BeginChange();
         BlankCanvasColor2Wheel.CaptureMouse();
         UpdateBlankCanvasColor2FromWheelPosition(e.GetPosition(BlankCanvasColor2Wheel));
     }
@@ -3095,8 +3170,10 @@ public partial class ControlPanelWindow : Window
 
     private void BlankCanvasColor2Wheel_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (!_isDraggingBlankCanvasColor2Wheel) return;
         _isDraggingBlankCanvasColor2Wheel = false;
         BlankCanvasColor2Wheel.ReleaseMouseCapture();
+        _undo.CommitChange();
     }
 
     private void UpdateBlankCanvasColor2FromWheelPosition(Point p)
@@ -3201,9 +3278,11 @@ public partial class ControlPanelWindow : Window
     private void BlankCanvasGradientToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (_suppressEvents) return;
+        _undo.BeginChange();
         _blankCanvasGradientEnabled = BlankCanvasGradientToggle.IsChecked == true;
         RefreshBlankCanvasGradientUI();
         if (_isBlankCanvasActive) RegenerateBlankCanvas();
+        _undo.CommitChange();
     }
 
     private void RefreshBlankCanvasGradientUI()
@@ -3313,6 +3392,11 @@ public partial class ControlPanelWindow : Window
         RefreshBlankCanvasGradientUI();
 
         BlankCanvasColorPanel.Visibility = Visibility.Visible;
+        // 新しい合成用キャンバスなので Undo 履歴は無効(TryLoadPhotoPixels と同様)。
+        // 以後の色/グラデーション編集からが Undo 対象。
+        _undo.Clear();
+        _cropModeEntrySnapshot = null;
+        _avatarPlacementModeEntrySnapshot = null;
         ShowComposite();
     }
 
@@ -3499,11 +3583,11 @@ public partial class ControlPanelWindow : Window
         }
         // Also mutually exclusive with デカール配置中 -- unlike the other two
         // modes this one has no toggle of its own (it's entered by adding a
-        // decal), so there's no ToggleButton to uncheck; just cancel the
-        // in-progress placement the same way its own キャンセル would.
+        // decal). 既存デカールの再編集なら確定して抜ける、新規未確定なら破棄。
         if (_isCropModeActive && _isDecalPlacementModeActive)
         {
-            CancelDecalPlacement();
+            if (_editingExistingDecal) ExitDecalPlacementMode();
+            else CancelDecalPlacement();
         }
         ScheduleCompositeRender();
         // Also update immediately rather than waiting for the (debounced)
@@ -3545,7 +3629,8 @@ public partial class ControlPanelWindow : Window
         }
         if (_isAvatarPlacementModeActive && _isDecalPlacementModeActive)
         {
-            CancelDecalPlacement();
+            if (_editingExistingDecal) ExitDecalPlacementMode();
+            else CancelDecalPlacement();
         }
 
         AvatarPlacementModeLabel.Foreground = _isAvatarPlacementModeActive
@@ -3575,10 +3660,15 @@ public partial class ControlPanelWindow : Window
     /// itself.</summary>
     private void RefreshSliderLockState()
     {
-        bool locked = _isCropModeActive || _isAvatarPlacementModeActive || _isDecalPlacementModeActive;
-        CompositeCardsScrollViewer.IsEnabled = !locked;
-        SliderLockNotice.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
-        PreviewModeConfirmBar.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
+        // クロップ/アバター配置はプレビューのドラッグを独占するのでカード列
+        // 全体を止める。デカール配置は「デカール」カードの図形プロパティ
+        // (色/太さ)を位置確定前に触りたい & 右列をスクロールしたいので、
+        // カード列は生かしたまま確定バーだけ出す(ロック通知は出さない)。
+        bool hardLocked = _isCropModeActive || _isAvatarPlacementModeActive;
+        bool anyMode = hardLocked || _isDecalPlacementModeActive;
+        CompositeCardsScrollViewer.IsEnabled = !hardLocked;
+        SliderLockNotice.Visibility = hardLocked ? Visibility.Visible : Visibility.Collapsed;
+        PreviewModeConfirmBar.Visibility = anyMode ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Snapshot taken the moment each mode's toggle flips OFF->ON
@@ -3840,6 +3930,26 @@ public partial class ControlPanelWindow : Window
         CompositeSkipAvatarButton.IsEnabled = !_compositeSkipAvatar && !_isBlankCanvasActive;
     }
 
+    /// <summary>Undo/Redo で <see cref="ApplyCompositeSnapshot"/> が背景なし
+    /// キャンバスのフィールドを書き戻したあと、色1/色2/グラデーション関連の
+    /// コントロールをその値に合わせて一括同期する。</summary>
+    private void RefreshBlankCanvasUI()
+    {
+        bool prevSuppress = _suppressEvents;
+        _suppressEvents = true;
+        SyncBlankCanvasColorUI(_blankCanvasR, _blankCanvasG, _blankCanvasB);
+        SyncBlankCanvasColor2UI(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2);
+        BlankCanvasColorSwatch.Background = new SolidColorBrush(Color.FromRgb(_blankCanvasR, _blankCanvasG, _blankCanvasB));
+        BlankCanvasColor2Swatch.Background = new SolidColorBrush(Color.FromRgb(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2));
+        BlankCanvasGradientToggle.IsChecked = _blankCanvasGradientEnabled;
+        BlankCanvasGradientDirectionSlider.Value = _blankCanvasGradientDirection;
+        BlankCanvasGradientDirectionBox.Text = _blankCanvasGradientDirection.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEvents = prevSuppress;
+        RefreshBlankCanvasGradientUI();
+        RefreshBlankCanvasActiveUI();
+        BlankCanvasColorPanel.Visibility = _isBlankCanvasActive ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>Extracts an overlay-rendered bitmap's raw BGRA32 pixels --
     /// the one piece CompositeOverlayOntoPhoto used to do internally before
     /// it was changed to take raw pixels instead of a BitmapSource (see its
@@ -4055,8 +4165,8 @@ public partial class ControlPanelWindow : Window
                 : photoBuffer;
             var photoAdjustments = PhotoAdjustments;
             var snap = CaptureCompositeSnapshot();
-            var behindDecalsNoAvatar = CaptureBehindAvatarDecals();
-            var frontDecalsNoAvatar = CaptureInFrontOfAvatarDecals();
+            var behindDecalsNoAvatar = CaptureBehindAvatarDecals(photoOnlyScale, dragging);
+            var frontDecalsNoAvatar = CaptureInFrontOfAvatarDecals(photoOnlyScale, dragging);
             renderPhotoBuffer = ApplyBehindAvatarDecals(renderPhotoBuffer, behindDecalsNoAvatar, photoOnlyScale, snap.PhotoBlurAmount, photoOnlyScale);
             double effectivePhotoBlurAmountNoAvatar = EffectivePhotoBlurAmount(snap.PhotoBlurAmount, behindDecalsNoAvatar);
 
@@ -4123,8 +4233,8 @@ public partial class ControlPanelWindow : Window
         var scaledPhotoBuffer = previewScale < 1.0
             ? GetDownscaledPhoto(photoBuffer, (int)Math.Round(photoBuffer.Width * previewScale), (int)Math.Round(photoBuffer.Height * previewScale))
             : photoBuffer;
-        var behindDecals = CaptureBehindAvatarDecals();
-        var frontDecals = CaptureInFrontOfAvatarDecals();
+        var behindDecals = CaptureBehindAvatarDecals(previewScale, dragging);
+        var frontDecals = CaptureInFrontOfAvatarDecals(previewScale, dragging);
 
         double placeLeft = _compositePlaceX * previewScale;
         double placeTop = _compositePlaceY * previewScale;
@@ -4311,8 +4421,8 @@ public partial class ControlPanelWindow : Window
         WriteableBitmap result;
         try
         {
-            var behindDecals = CaptureBehindAvatarDecals();
-            var frontDecals = CaptureInFrontOfAvatarDecals();
+            var behindDecals = CaptureBehindAvatarDecals(1.0, dragging: false);
+            var frontDecals = CaptureInFrontOfAvatarDecals(1.0, dragging: false);
             // "Before" never applies photo blur (see the CompositeOverlayOntoPhoto
             // calls just below, which omit photoBlurAmount entirely -- it's the
             // untouched photo for comparison), so there's no background blur to
@@ -6600,7 +6710,7 @@ public partial class ControlPanelWindow : Window
     //      in-app preview image (not the whole screen) -- simplest to build
     //      and needs no OS-level screen-capture permissions. ----
 
-    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2 }
+    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2, ShapeDecal }
 
     private ColorPickTarget _colorPickTarget = ColorPickTarget.None;
 
@@ -6662,6 +6772,7 @@ public partial class ControlPanelWindow : Window
         if (!TryImagePixelFromScreen(e.GetPosition(PreviewBorder), out var bmp, out var px, out var py)) return;
         if (!TryGetPixelColor(bmp, px, py, out var r, out var g, out var b)) return;
 
+        _undo.BeginChange(); // スポイトでの色確定を1 Undo ステップに(全ターゲット共通)
         switch (target)
         {
             case ColorPickTarget.DropShadow: SetDropShadowColor(r, g, b); break;
@@ -6672,7 +6783,9 @@ public partial class ControlPanelWindow : Window
             case ColorPickTarget.ToneGradientDark: SetToneGradientDarkColor(r, g, b); break;
             case ColorPickTarget.BlankCanvas: SetBlankCanvasColor(r, g, b); break;
             case ColorPickTarget.BlankCanvas2: SetBlankCanvasColor2(r, g, b); break;
+            case ColorPickTarget.ShapeDecal: SetShapeDecalColor(r, g, b); break;
         }
+        _undo.CommitChange();
     }
 
     private static bool TryGetPixelColor(BitmapSource source, int x, int y, out byte r, out byte g, out byte b)

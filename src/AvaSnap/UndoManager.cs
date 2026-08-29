@@ -127,6 +127,20 @@ public sealed class UndoManager
         ApplyExtra?.Invoke(s.Extra);
     }
 
+    /// <summary>Wipes both stacks (and any half-open pending change). Called
+    /// when the composite's photo source itself changes -- a newly loaded
+    /// screenshot or a fresh "背景なしで作成" canvas -- because every snapshot's
+    /// placement / look / decal / blank-canvas state is meaningful only against
+    /// the photo it was captured over; letting Ctrl+Z carry back across that
+    /// boundary would restore nonsense for the wrong image.</summary>
+    public void Clear()
+    {
+        _undoStack.Clear();
+        _redoStack.Clear();
+        _pendingBefore = null;
+        _depth = 0;
+    }
+
     public void BeginChange()
     {
         if (_depth == 0) _pendingBefore = Capture();

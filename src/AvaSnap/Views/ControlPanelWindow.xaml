@@ -894,6 +894,57 @@
             </Setter>
         </Style>
 
+        <!-- 明度専用の縦スライダー(全カラーピッカー共通)。白(上)→黒(下)の
+             グラデーション帯そのものをトラックにして、その上を丸つまみ
+             (SliderThumbStyle)が滑る。色相環の右に Height=140 で置く前提。
+             既定の Slider テンプレートは横用にレイアウトが固定されていて、
+             Orientation=Vertical にすると丸が 24px 枠内に留まってグラデーション
+             とずれるので、縦専用テンプレートにする。IsDirectionReversed=True で
+             上=最大(明るい)= グラデーションの白側に合わせる。 -->
+        <Style x:Key="BrightnessSliderVertical" TargetType="Slider">
+            <Setter Property="Orientation" Value="Vertical" />
+            <Setter Property="Width" Value="22" />
+            <Setter Property="IsMoveToPointEnabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid>
+                            <Border Width="12" HorizontalAlignment="Center" CornerRadius="6"
+                                    BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Offset="0" Color="White" />
+                                        <GradientStop Offset="1" Color="Black" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <!-- Track.Orientation は Slider の既定テンプレートが
+                                 縦横で別テンプレートを持つように、TemplatedParent
+                                 からは自動で来ないため明示が必要。既定の縦 Track
+                                 (IsDirectionReversed=false)は最小=下・最大=上なので、
+                                 明度100(明るい)がグラデーションの白い上端に一致する。 -->
+                            <Track x:Name="PART_Track" Orientation="Vertical">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource SliderEmptyRepeatButton}" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource SliderEmptyRepeatButton}" />
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource SliderThumbStyle}" />
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ScrollBar: a thin floating pill (HairlineBrush at rest, darkening
              on hover/drag), no arrow buttons, matching the same rounded/flat
              visual language as SliderThumbStyle above instead of Windows'
@@ -1751,6 +1802,20 @@
                                     <Rectangle x:Name="DecalHandleBR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
                                                Cursor="SizeNWSE" Tag="BottomRight"
                                                MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <!-- 辺ハンドル(枠線デカールのみ表示・UpdateDecalHandles)。
+                                         角=アス比固定、辺=その軸だけ変更。 -->
+                                    <Rectangle x:Name="DecalHandleT" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNS" Tag="Top" Visibility="Collapsed"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="DecalHandleB" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeNS" Tag="Bottom" Visibility="Collapsed"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="DecalHandleL" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeWE" Tag="Left" Visibility="Collapsed"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
+                                    <Rectangle x:Name="DecalHandleR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                               Cursor="SizeWE" Tag="Right" Visibility="Collapsed"
+                                               MouseLeftButtonDown="DecalHandle_MouseLeftButtonDown" MouseMove="DecalHandle_MouseMove" MouseLeftButtonUp="DecalHandle_MouseLeftButtonUp" />
                                     <Line x:Name="DecalRotateGizmoLine" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" IsHitTestVisible="False" />
                                     <Ellipse x:Name="DecalRotateGizmoHandle" Width="16" Height="16" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
                                              Cursor="Hand"
@@ -2520,7 +2585,8 @@
                                         <Border Style="{StaticResource Card}" Padding="12" Width="220">
                                             <StackPanel>
                                                 <TextBlock Text="ティント色" Style="{StaticResource SectionHeader}" />
-                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                     <Image x:Name="CompositeColorTintWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                            MouseLeftButtonDown="CompositeColorTintWheel_MouseDown"
                                                            MouseMove="CompositeColorTintWheel_MouseMove"
@@ -2529,15 +2595,10 @@
                                                             BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                 </Grid>
-                                                <Grid Margin="0,0,0,4">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="34" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                    <Slider Grid.Column="1" x:Name="CompositeColorTintValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                            ValueChanged="CompositeColorTintValueSlider_ValueChanged" />
-                                                </Grid>
+                                                            <Slider x:Name="CompositeColorTintValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    ValueChanged="CompositeColorTintValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                 <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                 <Grid Margin="0,0,0,4">
@@ -2707,7 +2768,8 @@
                                                      which just scales the picked hue/saturation's
                                                      RGB rather than needing the wheel bitmap itself
                                                      regenerated. -->
-                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                     <Image x:Name="DropShadowColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                            MouseLeftButtonDown="DropShadowColorWheel_MouseDown"
                                                            MouseMove="DropShadowColorWheel_MouseMove"
@@ -2716,15 +2778,10 @@
                                                             BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                 </Grid>
-                                                <Grid Margin="0,0,0,4">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="34" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                    <Slider Grid.Column="1" x:Name="DropShadowColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                            ValueChanged="DropShadowColorValueSlider_ValueChanged" />
-                                                </Grid>
+                                                            <Slider x:Name="DropShadowColorValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    ValueChanged="DropShadowColorValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                 <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                 <Grid Margin="0,0,0,4">
@@ -2953,7 +3010,8 @@
                                         <Border Style="{StaticResource Card}" Padding="12" Width="220">
                                             <StackPanel>
                                                 <TextBlock Text="背景の色" Style="{StaticResource SectionHeader}" />
-                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                     <Image x:Name="BlankCanvasColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                            MouseLeftButtonDown="BlankCanvasColorWheel_MouseDown"
                                                            MouseMove="BlankCanvasColorWheel_MouseMove"
@@ -2962,15 +3020,11 @@
                                                             BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                 </Grid>
-                                                <Grid Margin="0,0,0,4">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="34" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                            ValueChanged="BlankCanvasColorValueSlider_ValueChanged" />
-                                                </Grid>
+                                                            <Slider x:Name="BlankCanvasColorValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
+                                                                    ValueChanged="BlankCanvasColorValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                 <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                 <Grid Margin="0,0,0,4">
@@ -2981,6 +3035,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
                                                     <Slider Grid.Column="1" x:Name="BlankCanvasColorRSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
                                                             ValueChanged="BlankCanvasColorRSlider_ValueChanged" />
                                                     <TextBox Grid.Column="2" x:Name="BlankCanvasColorRBox" Style="{StaticResource SliderRowBox}"
                                                              TextChanged="BlankCanvasColorRBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
@@ -2993,6 +3048,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
                                                     <Slider Grid.Column="1" x:Name="BlankCanvasColorGSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
                                                             ValueChanged="BlankCanvasColorGSlider_ValueChanged" />
                                                     <TextBox Grid.Column="2" x:Name="BlankCanvasColorGBox" Style="{StaticResource SliderRowBox}"
                                                              TextChanged="BlankCanvasColorGBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
@@ -3005,6 +3061,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
                                                     <Slider Grid.Column="1" x:Name="BlankCanvasColorBSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
                                                             ValueChanged="BlankCanvasColorBSlider_ValueChanged" />
                                                     <TextBox Grid.Column="2" x:Name="BlankCanvasColorBBox" Style="{StaticResource SliderRowBox}"
                                                              TextChanged="BlankCanvasColorBBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
@@ -3049,7 +3106,8 @@
                                         <Border Style="{StaticResource Card}" Padding="12" Width="220">
                                             <StackPanel>
                                                 <TextBlock Text="背景の色2" Style="{StaticResource SectionHeader}" />
-                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                     <Image x:Name="BlankCanvasColor2Wheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                            MouseLeftButtonDown="BlankCanvasColor2Wheel_MouseDown"
                                                            MouseMove="BlankCanvasColor2Wheel_MouseMove"
@@ -3058,15 +3116,11 @@
                                                             BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                 </Grid>
-                                                <Grid Margin="0,0,0,4">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="34" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                    <Slider Grid.Column="1" x:Name="BlankCanvasColor2ValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                            ValueChanged="BlankCanvasColor2ValueSlider_ValueChanged" />
-                                                </Grid>
+                                                            <Slider x:Name="BlankCanvasColor2ValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
+                                                                    ValueChanged="BlankCanvasColor2ValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                 <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                 <Grid Margin="0,0,0,4">
@@ -3077,6 +3131,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="R" Style="{StaticResource SliderRowLabel}" Width="20" />
                                                     <Slider Grid.Column="1" x:Name="BlankCanvasColor2RSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
                                                             ValueChanged="BlankCanvasColor2RSlider_ValueChanged" />
                                                     <TextBox Grid.Column="2" x:Name="BlankCanvasColor2RBox" Style="{StaticResource SliderRowBox}"
                                                              TextChanged="BlankCanvasColor2RBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
@@ -3089,6 +3144,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="G" Style="{StaticResource SliderRowLabel}" Width="20" />
                                                     <Slider Grid.Column="1" x:Name="BlankCanvasColor2GSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
                                                             ValueChanged="BlankCanvasColor2GSlider_ValueChanged" />
                                                     <TextBox Grid.Column="2" x:Name="BlankCanvasColor2GBox" Style="{StaticResource SliderRowBox}"
                                                              TextChanged="BlankCanvasColor2GBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
@@ -3101,6 +3157,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="B" Style="{StaticResource SliderRowLabel}" Width="20" />
                                                     <Slider Grid.Column="1" x:Name="BlankCanvasColor2BSlider" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
                                                             ValueChanged="BlankCanvasColor2BSlider_ValueChanged" />
                                                     <TextBox Grid.Column="2" x:Name="BlankCanvasColor2BBox" Style="{StaticResource SliderRowBox}"
                                                              TextChanged="BlankCanvasColor2BBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
@@ -3132,6 +3189,7 @@
                                     <TextBlock Grid.Column="0" Text="方向" Style="{StaticResource SliderRowLabel}" Width="Auto"
                                                VerticalAlignment="Center" ToolTip="グラデーションの向き(度)" />
                                     <Slider Grid.Column="1" x:Name="BlankCanvasGradientDirectionSlider" Margin="8,0,0,0" Minimum="0" Maximum="360" VerticalAlignment="Center"
+                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
                                             ValueChanged="BlankCanvasGradientDirectionSlider_ValueChanged" />
                                     <TextBox Grid.Column="2" x:Name="BlankCanvasGradientDirectionBox" Style="{StaticResource SliderRowBox}"
                                              TextChanged="BlankCanvasGradientDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
@@ -3371,7 +3429,8 @@
                                         <Border Style="{StaticResource Card}" Padding="12" Width="220">
                                             <StackPanel>
                                                 <TextBlock Text="ティント色" Style="{StaticResource SectionHeader}" />
-                                                <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                     <Image x:Name="PhotoColorTintWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                            MouseLeftButtonDown="PhotoColorTintWheel_MouseDown"
                                                            MouseMove="PhotoColorTintWheel_MouseMove"
@@ -3380,15 +3439,10 @@
                                                             BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                 </Grid>
-                                                <Grid Margin="0,0,0,4">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="34" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                    <Slider Grid.Column="1" x:Name="PhotoColorTintValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                            ValueChanged="PhotoColorTintValueSlider_ValueChanged" />
-                                                </Grid>
+                                                            <Slider x:Name="PhotoColorTintValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    ValueChanged="PhotoColorTintValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                 <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                 <Grid Margin="0,0,0,4">
@@ -3749,7 +3803,8 @@
                                             <Border Style="{StaticResource Card}" Padding="12" Width="220">
                                                 <StackPanel>
                                                     <TextBlock Text="明色" Style="{StaticResource SectionHeader}" />
-                                                    <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                         <Image x:Name="ToneGradientLightColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                                MouseLeftButtonDown="ToneGradientLightColorWheel_MouseDown"
                                                                MouseMove="ToneGradientLightColorWheel_MouseMove"
@@ -3758,15 +3813,10 @@
                                                                 BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                                 HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                     </Grid>
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="34" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                        <Slider Grid.Column="1" x:Name="ToneGradientLightColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                                ValueChanged="ToneGradientLightColorValueSlider_ValueChanged" />
-                                                    </Grid>
+                                                            <Slider x:Name="ToneGradientLightColorValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    ValueChanged="ToneGradientLightColorValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                     <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                     <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                     <Grid Margin="0,0,0,4">
@@ -3843,7 +3893,8 @@
                                             <Border Style="{StaticResource Card}" Padding="12" Width="220">
                                                 <StackPanel>
                                                     <TextBlock Text="暗色" Style="{StaticResource SectionHeader}" />
-                                                    <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                         <Image x:Name="ToneGradientDarkColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                                MouseLeftButtonDown="ToneGradientDarkColorWheel_MouseDown"
                                                                MouseMove="ToneGradientDarkColorWheel_MouseMove"
@@ -3852,15 +3903,10 @@
                                                                 BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                                 HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                     </Grid>
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="34" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                        <Slider Grid.Column="1" x:Name="ToneGradientDarkColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                                ValueChanged="ToneGradientDarkColorValueSlider_ValueChanged" />
-                                                    </Grid>
+                                                            <Slider x:Name="ToneGradientDarkColorValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    ValueChanged="ToneGradientDarkColorValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                     <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                     <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                     <Grid Margin="0,0,0,4">
@@ -3965,7 +4011,8 @@
                                                         <Button Style="{StaticResource ColorPresetButton}" Background="#5AAAFF" Click="LightLeakColorPreset_Click" ToolTip="寒色" />
                                                         <Button Style="{StaticResource ColorPresetButton}" Background="#FFFFFF" Click="LightLeakColorPreset_Click" ToolTip="白" />
                                                     </UniformGrid>
-                                                    <Grid Width="140" Height="140" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                            <Grid Width="140" Height="140">
                                                         <Image x:Name="LightLeakColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
                                                                MouseLeftButtonDown="LightLeakColorWheel_MouseDown"
                                                                MouseMove="LightLeakColorWheel_MouseMove"
@@ -3974,15 +4021,10 @@
                                                                 BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
                                                                 HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
                                                     </Grid>
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="34" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="明度" Style="{StaticResource SliderRowLabel}" Width="34" />
-                                                        <Slider Grid.Column="1" x:Name="LightLeakColorValueSlider" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                                ValueChanged="LightLeakColorValueSlider_ValueChanged" />
-                                                    </Grid>
+                                                            <Slider x:Name="LightLeakColorValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                                    Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                                    ValueChanged="LightLeakColorValueSlider_ValueChanged" />
+                                                        </StackPanel>
                                                     <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,8" />
                                                     <TextBlock Text="サブ: RGB" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Opacity="0.7" Margin="0,0,0,4" />
                                                     <Grid Margin="0,0,0,4">
@@ -4097,6 +4139,118 @@
                                 <Button Grid.Column="1" Content="画像を追加" Style="{StaticResource SecondaryPillButton}"
                                         FontSize="13" Padding="14,6" Click="AddDecalButton_Click" />
                             </Grid>
+                            <!-- 図形デカールは「枠線」のみ(ShapeRasterizer)。追加後は
+                                 画像デカールと同じ配置モードに乗り、角=アス比固定の
+                                 拡縮 / 辺=その軸だけ変更、で編集する。下の図形プロパティ
+                                 (色/太さ)も参照。 -->
+                            <Button HorizontalAlignment="Left" Margin="0,0,0,8"
+                                    Style="{StaticResource SecondaryPillButton}" FontSize="13" Padding="14,6"
+                                    Click="AddRectangleFrameDecal_Click" ToolTip="写真の縁取り用の枠線を追加">
+                                <StackPanel Orientation="Horizontal">
+                                    <Viewbox Width="14" Height="14" Margin="0,0,6,0">
+                                        <Rectangle Width="16" Height="13" Stroke="White" StrokeThickness="2" />
+                                    </Viewbox>
+                                    <TextBlock Text="枠線を追加" />
+                                </StackPanel>
+                            </Button>
+                            <!-- デカール(画像/枠線とも)配置中に表示。個別の不透明度。 -->
+                            <Grid x:Name="DecalOpacityRow" Visibility="Collapsed" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="不透明度" Style="{StaticResource SliderRowLabel}" Width="60"
+                                           VerticalAlignment="Center" ToolTip="このデカールの不透明度" />
+                                <Slider Grid.Column="1" x:Name="DecalOpacitySlider" Margin="8,0,0,0" Minimum="0" Maximum="100"
+                                        VerticalAlignment="Center"
+                                        PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
+                                        ValueChanged="DecalOpacitySlider_ValueChanged" />
+                                <TextBlock Grid.Column="2" Text="%" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                           VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </Grid>
+                            <!-- 図形デカール配置中のみ表示(UpdateShapeDecalPanel)。
+                                 色UIはアプリ内の他ピッカーと同じ色相環+明度+hex+
+                                 スポイト+プリセット。 -->
+                            <StackPanel x:Name="ShapeDecalPanel" Visibility="Collapsed" Margin="0,0,0,8">
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="図形の色" Style="{StaticResource SliderRowLabel}" Width="60"
+                                               VerticalAlignment="Center" ToolTip="図形の色を選択" />
+                                    <Button Grid.Column="1" x:Name="ShapeDecalColorButton" Style="{StaticResource ColorSwatchBarButton}"
+                                            Click="ShapeDecalColorButton_Click" ToolTip="図形の色を選択">
+                                        <Border x:Name="ShapeDecalColorSwatch" CornerRadius="5"
+                                                Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                    </Button>
+                                    <Button Grid.Column="2" x:Name="ShapeDecalColorEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                            Margin="6,0,0,0" Click="ShapeDecalColorEyedropperButton_Click" ToolTip="プレビューから色を拾う">
+                                        <Viewbox Width="13" Height="13">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="m2 22 1-1h3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="M3 21v-3l9-9" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                                <Path Data="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBox Grid.Column="3" x:Name="ShapeDecalColorHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                             Margin="6,0,0,0" ToolTip="カラーコード(#RRGGBB)"
+                                             TextChanged="ShapeDecalColorHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    <Popup x:Name="ShapeDecalColorPopup" PlacementTarget="{Binding ElementName=ShapeDecalColorButton}"
+                                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                        <Border Style="{StaticResource Card}" Padding="12" Width="220">
+                                            <StackPanel>
+                                                <TextBlock Text="図形の色" Style="{StaticResource SectionHeader}" />
+                                                <UniformGrid Columns="4" Margin="0,0,0,10">
+                                                    <Button Style="{StaticResource ColorPresetButton}" Background="#FFFFFF" Tag="#FFFFFF" Click="ShapeDecalColorPreset_Click" ToolTip="白" />
+                                                    <Button Style="{StaticResource ColorPresetButton}" Background="#000000" Tag="#000000" Click="ShapeDecalColorPreset_Click" ToolTip="黒" />
+                                                    <Button Style="{StaticResource ColorPresetButton}" Background="#FF4D4D" Tag="#FF4D4D" Click="ShapeDecalColorPreset_Click" ToolTip="赤" />
+                                                    <Button Style="{StaticResource ColorPresetButton}" Background="#4D8CFF" Tag="#4D8CFF" Click="ShapeDecalColorPreset_Click" ToolTip="青" />
+                                                </UniformGrid>
+                                                <!-- 色相環 と、その右に縦の明度スライダー(共通スタイル
+                                                     BrightnessSliderVertical: グラデーション帯そのものが
+                                                     トラック)。上=明るい/下=暗い。 -->
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                    <Grid Width="140" Height="140">
+                                                        <Image x:Name="ShapeDecalColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
+                                                               MouseLeftButtonDown="ShapeDecalColorWheel_MouseDown"
+                                                               MouseMove="ShapeDecalColorWheel_MouseMove"
+                                                               MouseLeftButtonUp="ShapeDecalColorWheel_MouseUp" />
+                                                        <Border x:Name="ShapeDecalColorWheelCursor" Width="12" Height="12" CornerRadius="6"
+                                                                BorderBrush="White" BorderThickness="2" IsHitTestVisible="False"
+                                                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="64,64,0,0" />
+                                                    </Grid>
+                                                    <Slider x:Name="ShapeDecalColorValueSlider" Style="{StaticResource BrightnessSliderVertical}"
+                                                            Height="140" Margin="12,0,0,0" Minimum="0" Maximum="100" ToolTip="明度"
+                                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
+                                                            ValueChanged="ShapeDecalColorValueSlider_ValueChanged" />
+                                                </StackPanel>
+                                                <Border x:Name="ShapeDecalColorPreviewLarge" Height="28" CornerRadius="6"
+                                                        Background="White" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+                                <Grid x:Name="ShapeDecalStrokeRow" Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="線の太さ" Style="{StaticResource SliderRowLabel}" Width="60"
+                                               VerticalAlignment="Center" ToolTip="短辺に対する線幅(%)" />
+                                    <Slider Grid.Column="1" x:Name="ShapeDecalStrokeSlider" Margin="8,0,0,0" Minimum="0.5" Maximum="20"
+                                            VerticalAlignment="Center"
+                                            PreviewMouseLeftButtonDown="Field_MouseDown" PreviewMouseLeftButtonUp="Field_MouseUp"
+                                            ValueChanged="ShapeDecalStrokeSlider_ValueChanged" />
+                                    <TextBlock Grid.Column="2" Text="%" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" Margin="6,0,0,0" />
+                                </Grid>
+                            </StackPanel>
                             <TextBlock Text="右にあるほど手前に表示されます。ドラッグで並べ替え、「アバター」より左に動かすとアバターの後ろに配置されます。"
                                        FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                                        TextWrapping="Wrap" Margin="0,0,0,8" />
