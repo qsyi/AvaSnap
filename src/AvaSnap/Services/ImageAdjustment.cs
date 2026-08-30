@@ -7,27 +7,19 @@ using System.Windows.Media.Imaging;
 
 namespace AvaSnap.Services;
 
-/// <summary>
-/// Pixel-level adjustments applied to a copy of a bitmap, never the original --
-/// always reprocessed from the pristine source so repeated tweaks never
-/// compound/degrade quality. Shared between the align-mode PNG preview and the
-/// composite-mode photo preview: both need brightness/contrast/saturation,
-/// only the PNG additionally needs the alpha-only edge blur. Also handles
-/// rendering the adjusted PNG into pixels and compositing it onto a photo.
-/// </summary>
+/// <summary>ビットマップのコピー(原本ではない)へのピクセル単位調整。常に pristine な
+/// ソースから作り直すので、繰り返し調整しても劣化しない。位置合わせモードの PNG
+/// プレビューと合成モードの写真プレビューで共有(PNG だけアルファのみのエッジぼかしが
+/// 追加で要る)。調整済み PNG のピクセル化と写真への合成もここで扱う。</summary>
 public static class ImageAdjustment
 {
-    /// <summary>The source image pre-converted to a raw BGRA32 pixel buffer,
-    /// prepared once per image load and reused for every subsequent adjustment
-    /// tweak -- redoing the FormatConvertedBitmap + WriteableBitmap allocation
-    /// on every slider tick was needless work on top of the actual per-pixel
-    /// processing.</summary>
+    /// <summary>ソース画像を BGRA32 生バッファへ変換したもの。画像読み込み時に1回作り、
+    /// 以降の調整で使い回す(スライダーの tick ごとに変換し直すのは無駄)。</summary>
     public sealed record PixelBuffer(byte[] Pixels, int Width, int Height, int Stride);
 
-    /// <summary>Every per-pixel color adjustment bundled together, since the
-    /// avatar-image look and the background-photo look both use the exact
-    /// same set (just with independent values). All the -100..100 fields are
-    /// 0 = unchanged; Hue is degrees, 0 = unchanged.</summary>
+    /// <summary>per-pixel の色調整をまとめたもの。アバター画像のルックと背景写真の
+    /// ルックが同じセットを使う(値は独立)。-100..100 のフィールドは 0 = 変化なし、
+    /// Hue は度で 0 = 変化なし。</summary>
     public readonly record struct ColorAdjustments(
         double Brightness, double Contrast, double Saturation,
         double Vibrance, double Temperature, double Tint, double Hue,
@@ -53,12 +45,8 @@ public static class ImageAdjustment
         return new PixelBuffer(pixels, width, height, stride);
     }
 
-    /// <summary>A flat, fully-opaque single-color buffer -- used by the
-    /// 背景写真 card's "背景なしで作成" button as a stand-in "photo" so the
-    /// rest of the composite pipeline (crop, avatar placement, decals,
-    /// finishing effects) needs no changes to work with no real photo at
-    /// all: a solid color plus shape decals is enough to build a plain
-    /// background from scratch.</summary>
+    /// <summary>平坦・不透明な単色バッファ。「背景なしで作成」ボタンが代替「写真」として
+    /// 使い、合成パイプライン(切り抜き・配置・デカール・仕上げ)を無改造で回す。</summary>
     public static PixelBuffer CreateSolidColor(int width, int height, byte r, byte g, byte b)
     {
         int stride = width * 4;
@@ -78,14 +66,11 @@ public static class ImageAdjustment
         return new PixelBuffer(pixels, width, height, stride);
     }
 
-    /// <summary>A two-color linear-gradient buffer, same purpose as
-    /// <see cref="CreateSolidColor"/> (a stand-in "photo" for the 背景写真
-    /// card's blank-canvas mode) but blending color1 -&gt; color2 along
-    /// <paramref name="angleDegrees"/> (0 = top-to-bottom, positive =
-    /// clockwise, matching every other rotation/direction control in this
-    /// app). Independent of the finishing-effect トーングラデーション
-    /// overlay (GpuToneGradient) -- this fills the base canvas itself
-    /// rather than blending over an existing photo.</summary>
+    /// <summary>2色の線形グラデーションバッファ。<see cref="CreateSolidColor"/> と
+    /// 同じ用途(背景なしキャンバスの代替「写真」)だが、<paramref name="angleDegrees"/>
+    /// に沿って color1 → color2(0 = 上→下、正 = 時計回り)。仕上げエフェクトの
+    /// トーングラデーション(GpuToneGradient)とは別で、既存写真の上に重ねるのではなく
+    /// キャンバス自体を塗る。</summary>
     public static PixelBuffer CreateLinearGradient(int width, int height,
         byte r1, byte g1, byte b1, byte r2, byte g2, byte b2, double angleDegrees)
     {
@@ -116,11 +101,9 @@ public static class ImageAdjustment
         return new PixelBuffer(pixels, width, height, stride);
     }
 
-    /// <summary>A cheap nearest-neighbor-downscaled copy, capped to
-    /// <paramref name="maxDimension"/> on its longer side. Used to keep
-    /// ComputeDominantClusters' k-means sampling cheap (see
-    /// ClusterSampleMaxDimension) -- not a live-preview mechanism. Returns
-    /// the original unchanged if it's already small enough.</summary>
+    /// <summary>最近傍で縮小したコピー。長辺を <paramref name="maxDimension"/> で
+    /// 頭打ちにする。ComputeDominantClusters の k-means サンプリングを安く保つため
+    /// (ライブプレビュー用ではない)。既に十分小さければ原本をそのまま返す。</summary>
     public static PixelBuffer Downscale(PixelBuffer source, int maxDimension)
     {
         if (source.Width <= maxDimension && source.Height <= maxDimension) return source;
@@ -151,10 +134,8 @@ public static class ImageAdjustment
         return new PixelBuffer(newPixels, newWidth, newHeight, newStride);
     }
 
-    /// <summary>Rotates the whole photo 90° clockwise, swapping width/height
-    /// -- used by the 配置 card's photo rotate button (each press turns the
-    /// background image another quarter turn). Source pixel (x, y) lands at
-    /// (H-1-y, x) in the rotated (H x W) buffer.</summary>
+    /// <summary>写真全体を時計回りに 90° 回転(幅高さ入れ替え)。配置カードの回転
+    /// ボタン用。ソース (x, y) は回転後 (H×W) バッファの (H-1-y, x) へ。</summary>
     public static PixelBuffer RotateClockwise90(PixelBuffer source)
     {
         int width = source.Width, height = source.Height;
@@ -180,12 +161,9 @@ public static class ImageAdjustment
         return new PixelBuffer(dst, newWidth, newHeight, newStride);
     }
 
-    /// <summary>Edge-blur stage only (the expensive part): softens the
-    /// cutout's silhouette. Split out from color adjustment so a caller that
-    /// caches the result only needs to redo this when the blur radius itself
-    /// changes, not on every brightness/contrast/saturation tweak -- and, for
-    /// the live overlay, not on every tick of an in-progress slider drag
-    /// either (see OverlayWindow's edge-blur-dragging suppression).</summary>
+    /// <summary>エッジぼかしステージのみ(重い部分): 切り抜きのシルエットを柔らかく
+    /// する。色調整から分離してあるので、結果をキャッシュする呼び出し側は半径が
+    /// 変わった時だけ再実行すればよい(明るさ等の調整では不要)。</summary>
     public static PixelBuffer BlurPng(PixelBuffer original, double edgeBlurRadius)
     {
         if (edgeBlurRadius <= 0) return original;
@@ -194,10 +172,8 @@ public static class ImageAdjustment
         return original with { Pixels = pixels };
     }
 
-    /// <summary>Color stage only: color adjustments on top of an already
-    /// (optionally) blurred buffer -- cheap enough to re-run on every slider
-    /// tick without re-blurring. Called on every single tick of an avatar-
-    /// image color-slider drag (see OverlayWindow.ApplyImageAdjustments).</summary>
+    /// <summary>色ステージのみ: (任意で)ぼかし済みバッファへの色調整。ぼかし直しなしで
+    /// スライダーの tick ごとに再実行できる程度に安い。</summary>
     public static WriteableBitmap ApplyColor(PixelBuffer buffer, ColorAdjustments adjustments)
     {
         var pixels = (byte[])buffer.Pixels.Clone();
@@ -208,14 +184,10 @@ public static class ImageAdjustment
         return bitmap;
     }
 
-    /// <summary>The same color-adjustment work ApplyColor does,
-    /// but returns the raw <see cref="PixelBuffer"/> instead of wrapping it
-    /// in a WriteableBitmap. Used by the "match look" buttons' background-
-    /// thread computation (see ComputeLookStats/ComputeDominantClusters),
-    /// which only ever need the pixel data itself -- a WriteableBitmap is a
-    /// DispatcherObject with thread affinity to whoever creates it, so
-    /// building one on a background thread (via Task.Run) is exactly the
-    /// kind of thing that either throws or silently misbehaves later.</summary>
+    /// <summary>ApplyColor と同じ色調整だが、WriteableBitmap で包まず生の
+    /// <see cref="PixelBuffer"/> を返す。「ルック一致」ボタンのバックグラウンド計算用
+    /// (WriteableBitmap は生成スレッドに束縛される DispatcherObject なので、Task.Run で
+    /// 作ると後で例外/誤動作する)。</summary>
     public static PixelBuffer ApplyColorToPixelBuffer(PixelBuffer buffer, ColorAdjustments adjustments, double photoBlurAmount = 0)
     {
         var pixels = (byte[])buffer.Pixels.Clone();
@@ -224,17 +196,12 @@ public static class ImageAdjustment
         return buffer with { Pixels = pixels };
     }
 
-    // ---- "Match look" statistics: lets one layer's look be nudged toward
-    //      the other's (see SolveMatchAdjustments) by comparing aggregate
-    //      color statistics rather than any per-pixel/neural process. ----
+    // ---- 「ルック一致」統計: per-pixel やニューラルではなく、集計した色統計を
+    //      比較して一方のルックをもう一方へ寄せる(SolveMatchAdjustments)。 ----
 
-    /// <summary>Aggregate color statistics for one layer's pixels (the
-    /// opaque ones only, for the avatar cutout -- see
-    /// <paramref name="maskByAlpha"/> on <see cref="ComputeLookStats"/>),
-    /// used by <see cref="SolveMatchAdjustments"/> to derive slider values
-    /// that push one layer's look toward the other's. Raw accumulator sums
-    /// are kept (not pre-divided) so per-region means/weights can be derived
-    /// lazily below without re-scanning pixels.</summary>
+    /// <summary>1レイヤーの画素(アバターは不透明部のみ)の集計色統計。
+    /// <see cref="SolveMatchAdjustments"/> がスライダー値を導くのに使う。生の合計を
+    /// 保持し(除算前)、領域ごとの平均/重みを再走査なしで遅延計算できるようにしている。</summary>
     public readonly record struct LookStats(
         double MeanLuma, double VarLuma, double PixelCount,
         double MeanSaturation,
@@ -247,9 +214,8 @@ public static class ImageAdjustment
     {
         public double StdLuma => Math.Sqrt(Math.Max(VarLuma, 0));
 
-        /// <summary>Saturation-weighted circular mean hue, in degrees --
-        /// only meaningful when <see cref="HueWeightSum"/> isn't negligible
-        /// (a near-gray image has no reliable hue to match against).</summary>
+        /// <summary>彩度加重の円環平均色相(度)。<see cref="HueWeightSum"/> が
+        /// 無視できない時だけ意味がある(ほぼグレーの画像には合わせる色相が無い)。</summary>
         public double MeanHueDegrees
         {
             get
@@ -280,17 +246,10 @@ public static class ImageAdjustment
         public double BSumE, BSumE2, BSumELuma;
     }
 
-    /// <summary>Scans <paramref name="buffer"/> once, computing everything
-    /// <see cref="SolveMatchAdjustments"/> needs. <paramref name="maskByAlpha"/>
-    /// skips transparent/near-transparent pixels (alpha &lt; 128, the same
-    /// foreground threshold <see cref="BlurEdgePremultiplied"/> uses) -- the
-    /// avatar cutout's transparent surroundings would otherwise badly skew
-    /// its own statistics. A one-shot pass (called once per Match button
-    /// click, not per render), so the usual per-pixel-write Parallel.For
-    /// pattern used elsewhere in this file doesn't apply -- this instead
-    /// uses the standard local-accumulator-then-merge reduction form, since
-    /// every row contributes to the SAME running totals rather than writing
-    /// its own independent output pixels.</summary>
+    /// <summary><paramref name="buffer"/> を1回走査し、<see cref="SolveMatchAdjustments"/>
+    /// が要るものを全部計算する。<paramref name="maskByAlpha"/> は透明/半透明画素
+    /// (alpha &lt; 128)をスキップする(アバター切り抜きの透明部が統計を歪めないように)。
+    /// Match ボタンごとに1回だけの走査なので、行ごとにローカル集計してマージするリダクション形。</summary>
     public static LookStats ComputeLookStats(PixelBuffer buffer, bool maskByAlpha)
     {
         int width = buffer.Width, height = buffer.Height, stride = buffer.Stride;
@@ -323,9 +282,8 @@ public static class ImageAdjustment
                     local.SumRMinusB += r - b;
                     local.SumGOffset += g - (r + b) / 2.0;
 
-                    // Same tonal-region weighting AdjustColors itself uses,
-                    // so the regions being matched here are the same ones
-                    // Highlights/Shadows/Whites/Blacks actually shift.
+                    // AdjustColors と同じ階調領域の重み付け。ここで合わせる領域が
+                    // Highlights/Shadows/Whites/Blacks が実際に動かす領域と一致するように。
                     double lum01 = Math.Clamp(luma / 255.0, 0, 1);
                     double hw = Smoothstep(lum01, 0.25, 1.0);
                     double sw = 1.0 - Smoothstep(lum01, 0.0, 0.75);
@@ -376,36 +334,23 @@ public static class ImageAdjustment
             total.BSumE, total.BSumE2, total.BSumELuma);
     }
 
-    /// <summary>Derives slider values that push <paramref name="source"/>'s
-    /// (raw/unadjusted) look as close as this app's specific pipeline can
-    /// manage toward <paramref name="target"/>'s (the OTHER layer's current,
-    /// already-adjusted look). Brightness+Contrast are an exact affine mean/
-    /// standard-deviation match -- the same core idea as Reinhard, Adhikhmin,
-    /// Gooch &amp; Shirley's 2001 "Color Transfer between Images" (matching
-    /// per-channel mean and std-dev between a source and target image, there
-    /// applied directly to Lab's decorrelated axes; here applied to luminance
-    /// and mapped onto this app's own Contrast-then-Brightness pipeline
-    /// instead of a raw per-pixel affine transform, since that's the pair of
-    /// sliders that actually exist to scale/shift it). Saturation is a ratio
-    /// match of mean HSL saturation -- Vibrance is deliberately left at 0,
-    /// since its skin-tone-damped, diminishing-returns curve isn't a clean
-    /// linear knob to solve for, and Saturation alone already spans the same
-    /// range. Temperature/Tint approximate a gray-world white-balance match
-    /// (mean R-B / mean G-vs-(R+B)/2 channel-balance difference). Hue is the
-    /// saturation-weighted circular mean hue-angle difference. Highlights/
-    /// Shadows/Whites/Blacks each close the remaining gap in their own tonal
-    /// region (see SolveToneRegion) -- solved independently per region
-    /// (ignoring the small overlap between neighboring regions' weighting),
-    /// after accounting for what the Brightness/Contrast solved above would
-    /// already do to that region's mean on its own.</summary>
+    /// <summary><paramref name="source"/> の(未調整の)ルックを、このアプリの
+    /// パイプラインでできる範囲で <paramref name="target"/>(もう一方のレイヤーの
+    /// 現在の調整済みルック)へ寄せるスライダー値を求める。明るさ+コントラストは
+    /// 輝度の平均/標準偏差のアフィン一致(Reinhard らの "Color Transfer between Images"
+    /// と同じ発想を、このアプリの コントラスト→明るさ の順に写したもの)。彩度は
+    /// 平均 HSL 彩度の比一致(Vibrance は 0 のまま。肌色減衰の非線形カーブは素直に
+    /// 解けず、彩度だけで同じ範囲を張れるため)。色温度/色かぶりはグレーワールドの
+    /// ホワイトバランス近似。Hue は彩度加重の円環平均色相角の差。ハイライト/シャドウ/
+    /// 白/黒レベルは各階調領域の残差を個別に詰める(SolveToneRegion。明るさ/コントラストが
+    /// その領域平均に既に効く分を差し引いてから)。</summary>
     public static ColorAdjustments SolveMatchAdjustments(LookStats source, LookStats target)
     {
         double sourceStd = Math.Max(source.StdLuma, 1e-3);
         double contrastFactor = Math.Clamp(target.StdLuma / sourceStd, 0.1, 4.0);
         double contrast = Math.Clamp((contrastFactor - 1.0) * 100.0, -100, 100);
-        // Re-derive the factor from the CLAMPED slider value, so the
-        // brightness solve (and the tone-region ones below) match what will
-        // actually be applied, not the pre-clamp ideal.
+        // クランプ後のスライダー値から係数を出し直す。明るさ解(と下の階調領域解)が
+        // クランプ前の理想値ではなく実際に適用される値と一致するように。
         contrastFactor = 1 + contrast / 100.0;
         double meanAfterContrast = 128 + (source.MeanLuma - 128) * contrastFactor;
         double brightnessOffset255 = target.MeanLuma - meanAfterContrast;
@@ -439,17 +384,11 @@ public static class ImageAdjustment
             highlights, shadows, whites, blacks);
     }
 
-    /// <summary>One tonal region's share of the Highlights/Shadows/Whites/
-    /// Blacks solve: <paramref name="sourceRegionMean"/> is first carried
-    /// through the SAME Contrast+Brightness transform already solved above
-    /// (an exact linear operation, so it applies to a region's mean exactly
-    /// as well as to any single pixel), then the remaining gap to
-    /// <paramref name="targetRegionMean"/> is closed by the region's own
-    /// slider, scaled by <paramref name="sourceAvgWeight"/> (how strongly
-    /// this region's own weighting concentrates on itself -- see
-    /// LookStats.HighlightAvgWeight and friends) and by
-    /// <paramref name="maxAmt"/> (130 for Highlights/Shadows, 150 for
-    /// Whites/Blacks, matching AdjustColors' own constants).</summary>
+    /// <summary>ハイライト/シャドウ/白/黒レベル解の1領域ぶん。まず
+    /// <paramref name="sourceRegionMean"/> を上で解いた コントラスト+明るさ 変換に
+    /// 通し、残差を領域スライダーで詰める。スケールは
+    /// <paramref name="sourceAvgWeight"/>(その領域の重みがどれだけ自分に集中しているか)
+    /// と <paramref name="maxAmt"/>(ハイライト/シャドウ=130、白/黒=150。AdjustColors の定数)。</summary>
     private static double SolveToneRegion(double sourceRegionMean, double sourceAvgWeight, double targetRegionMean, double contrastFactor, double brightnessOffset255, double maxAmt)
     {
         if (sourceAvgWeight < 1e-4) return 0;
@@ -458,18 +397,11 @@ public static class ImageAdjustment
         return Math.Clamp(amt / maxAmt * 100.0, -100, 100);
     }
 
-    // ---- Cluster-based "match look": an upgrade to SolveMatchAdjustments
-    //      above -- instead of matching just two global moments (mean, std)
-    //      of the whole image, this reduces each layer down to its k=4
-    //      dominant colors (via k-means++ in the perceptually-uniform Lab
-    //      color space), pairs each source cluster with its nearest target
-    //      cluster, then fits the same slider parameters via a WEIGHTED
-    //      LEAST-SQUARES regression over those k paired anchor points
-    //      instead of just 2 moments. More robust to multi-modal color
-    //      distributions (e.g. an avatar with distinct skin/hair/clothing
-    //      colors matched against a photo with distinct sky/ground colors)
-    //      than a single global average, which would otherwise blend
-    //      everything into one muddy, unrepresentative number. ----
+    // ---- クラスタ版「ルック一致」: 上の SolveMatchAdjustments の改良版。画像全体の
+    //      2モーメント(平均・標準偏差)だけを合わせる代わりに、各レイヤーを Lab 空間の
+    //      k-means++ で k=4 の主要色へ落とし、各ソースクラスタを最近傍のターゲット
+    //      クラスタとペアにして、そのアンカー点上の加重最小二乗で同じスライダー値を
+    //      当てる。多峰の色分布(肌/髪/服 対 空/地面)に対して単一平均より頑健。 ----
 
     private static double SrgbToLinear(double c8)
     {
@@ -482,9 +414,8 @@ public static class ImageAdjustment
 
     private static double LabF(double t) => t > LabEpsilon ? Math.Cbrt(t) : t / LabKappaDenom + 4.0 / 29.0;
 
-    /// <summary>sRGB (0..255) to CIE L*a*b* (D65 white point) -- used only
-    /// as a perceptually-uniform distance metric for clustering/pairing
-    /// dominant colors below, not for rendering.</summary>
+    /// <summary>sRGB (0..255) → CIE L*a*b*(D65)。主要色のクラスタリング/ペアリングの
+    /// 知覚的に均一な距離尺度として使うだけ(描画用ではない)。</summary>
     private static void RgbToLab(double r, double g, double b, out double l, out double a, out double bb)
     {
         double rl = SrgbToLinear(r), gl = SrgbToLinear(g), bl = SrgbToLinear(b);
@@ -504,11 +435,9 @@ public static class ImageAdjustment
         return dl * dl + da * da + db * db;
     }
 
-    /// <summary>One dominant color cluster (see <see cref="ComputeDominantClusters"/>):
-    /// its Lab centroid (for distance/pairing) plus the same per-cluster
-    /// aggregate stats <see cref="LookStats"/> tracks globally (mean luma,
-    /// saturation, hue, white-balance channel deltas), already divided by
-    /// this cluster's own pixel weight except where noted.</summary>
+    /// <summary>主要色クラスタ1つ(<see cref="ComputeDominantClusters"/>): Lab 重心
+    /// (距離/ペアリング用)と、<see cref="LookStats"/> が全体で追うのと同じ集計統計
+    /// (平均輝度・彩度・色相・WB チャンネル差)。注記以外はクラスタの画素重みで除算済み。</summary>
     public readonly record struct LookCluster(
         double Weight,
         double LabL, double LabA, double LabB,
@@ -526,19 +455,13 @@ public static class ImageAdjustment
         }
     }
 
-    /// <summary>Longest side a buffer is downscaled to before clustering --
-    /// k-means only needs enough samples to find representative dominant
-    /// colors, not every pixel of a multi-megapixel photo, and running it
-    /// against millions of points would make every Match button click
-    /// noticeably slow for no real gain in the resulting clusters.</summary>
+    /// <summary>クラスタリング前に縮小する長辺。k-means は代表的な主要色が取れる
+    /// ぶんのサンプルがあれば十分で、数百万点で回しても Match のたびに重くなるだけ。</summary>
     private const int ClusterSampleMaxDimension = 200;
 
-    /// <summary>Reduces <paramref name="buffer"/> to its <paramref name="k"/>
-    /// dominant colors via k-means++ in Lab space (deterministic seed, so
-    /// repeated clicks on the same image give the same result). Returns
-    /// fewer than <paramref name="k"/> entries if the buffer has fewer
-    /// distinct samples than that (a tiny or heavily-masked avatar) or if a
-    /// cluster ends up empty after the final assignment pass.</summary>
+    /// <summary><paramref name="buffer"/> を Lab 空間の k-means++ で <paramref name="k"/>
+    /// 個の主要色へ落とす(seed 固定なので同じ画像で毎回同じ結果)。distinct サンプルが
+    /// k 未満、または最終割り当てで空クラスタになった場合は k 未満を返す。</summary>
     public static LookCluster[] ComputeDominantClusters(PixelBuffer buffer, bool maskByAlpha, int k)
     {
         var sample = Downscale(buffer, ClusterSampleMaxDimension);
@@ -585,11 +508,8 @@ public static class ImageAdjustment
         if (n == 0) return Array.Empty<LookCluster>();
         k = Math.Min(k, n);
 
-        // k-means++ initialization: first centroid uniform-random, each
-        // following one picked with probability proportional to its squared
-        // distance to the nearest centroid chosen so far -- spreads the
-        // initial centroids across the color distribution instead of
-        // risking several landing in the same cluster by chance.
+        // k-means++ 初期化: 最初の重心は一様ランダム、以降は「これまでの最近傍重心
+        // までの二乗距離」に比例する確率で選ぶ。初期重心が色分布に散る。
         var rng = new Random(20260101);
         var centroidL = new double[k];
         var centroidA = new double[k];
@@ -623,8 +543,7 @@ public static class ImageAdjustment
             }
         }
 
-        // Lloyd's algorithm: assign-then-recompute, until assignments stop
-        // changing (usually converges in well under 12 passes at k=4).
+        // Lloyd 法: 割り当て → 再計算 を割り当てが変わらなくなるまで(k=4 なら 12 パス未満で収束)。
         var assignment = new int[n];
         const int maxIterations = 12;
         for (int iter = 0; iter < maxIterations; iter++)
@@ -650,10 +569,8 @@ public static class ImageAdjustment
             }
             for (int c = 0; c < k; c++)
             {
-                // An empty cluster keeps its previous centroid rather than
-                // becoming NaN -- it'll simply stay unused (see the final
-                // weight-zero filter below) unless a later iteration's
-                // reassignment gives it members again.
+                // 空クラスタは NaN にせず前の重心を保つ。以降のイテレーションで
+                // メンバーが付かなければ、最後の weight=0 フィルタで捨てられる。
                 if (count[c] < 1) continue;
                 centroidL[c] = sumL[c] / count[c];
                 centroidA[c] = sumA[c] / count[c];
@@ -700,47 +617,26 @@ public static class ImageAdjustment
         return result.ToArray();
     }
 
-    /// <summary>Lab-distance falloff scale for cluster-pairing confidence
-    /// (see SolveMatchAdjustmentsClustered): a paired-but-still-far-apart
-    /// cluster (the "nearest" match wasn't actually close -- e.g. an
-    /// avatar's skin-tone cluster with nothing similar anywhere in the
-    /// photo) contributes less to the fit than a genuinely close pair,
-    /// rather than being trusted just as much as an exact match would be.</summary>
+    /// <summary>クラスタペアリングの信頼度の Lab 距離減衰スケール。ペアにはなったが
+    /// 遠いクラスタ(最近傍でも実際は近くない)は、近いペアより fit への寄与を下げる。</summary>
     private const double MatchPairConfidenceScale = 40.0;
 
-    // Per-slider damping applied to the fully-solved ("ideal") match value
-    // before it's ever shown to the user, per explicit request: Contrast/
-    // Temperature/Tint/Saturation are all cut back hard (these swing the
-    // hardest off a small stats mismatch), and everything else (Brightness/
-    // Hue/tone-regions) is applied at closer to full strength.
+    // 解いた「理想」一致値をユーザーに見せる前にかけるスライダーごとの減衰。
+    // コントラスト/色温度/色かぶり/彩度 は強めに抑える(小さな統計差で大きく振れる)、
+    // それ以外(明るさ/Hue/階調領域)はほぼフル。
     private const double MatchContrastStrength = 0.3;
     private const double MatchColorBalanceStrength = 0.2; // temperature, tint, saturation
     private const double MatchMinorStrength = 0.3; // brightness/hue/tone-regions
 
-    /// <summary>The cluster-based counterpart to
-    /// <see cref="SolveMatchAdjustments"/>: each <paramref name="sourceClusters"/>
-    /// entry is paired with its nearest <paramref name="targetClusters"/>
-    /// entry by Lab distance (many source clusters may pair with the same
-    /// target cluster -- that's fine, and expected whenever the target has
-    /// fewer distinct color regions than the source), then Brightness/
-    /// Contrast/Saturation/Hue are fit via a weighted least-squares
-    /// regression over those paired anchor points (weighted by each source
-    /// cluster's own pixel count AND by how close its pairing actually is --
-    /// see <see cref="MatchPairConfidenceScale"/>) instead of just the two
-    /// global moments <see cref="SolveMatchAdjustments"/> uses. Temperature/
-    /// Tint deliberately do NOT use the cluster pairing at all -- white
-    /// balance/color cast is a whole-scene lighting property, not something
-    /// that should vary by which color region happened to pair with which,
-    /// so they're solved from the plain global <paramref name="sourceRegionStats"/>/
-    /// <paramref name="targetRegionStats"/> instead (same formula
-    /// <see cref="SolveMatchAdjustments"/> uses). Highlights/Shadows/Whites/
-    /// Blacks are likewise unchanged from that method -- a luminance-band,
-    /// not color-cluster, concept. Falls back to
-    /// <see cref="SolveMatchAdjustments"/> entirely if either side has no
-    /// clusters at all (an empty/fully-transparent buffer). Every returned
-    /// field is finally scaled down by its own damping constant above --
-    /// the fully-solved value is treated as an upper bound, not the
-    /// delivered result.</summary>
+    /// <summary><see cref="SolveMatchAdjustments"/> のクラスタ版。各
+    /// <paramref name="sourceClusters"/> を Lab 距離で最近傍の
+    /// <paramref name="targetClusters"/> とペアにし(複数のソースが同じターゲットに
+    /// ペアしてよい)、明るさ/コントラスト/彩度/Hue をそのアンカー点上の加重最小二乗で
+    /// 当てる(重みは画素数 × ペアリングの近さ、<see cref="MatchPairConfidenceScale"/>)。
+    /// 色温度/色かぶりはクラスタペアを使わず(WB はシーン全体の性質)、色相バンド概念の
+    /// ハイライト/シャドウ/白/黒レベルも <see cref="SolveMatchAdjustments"/> と同じ。
+    /// どちらかにクラスタが無ければ <see cref="SolveMatchAdjustments"/> へフォールバック。
+    /// 返り値は上の減衰定数でスケールダウンする(解いた値は上限扱い)。</summary>
     public static ColorAdjustments SolveMatchAdjustmentsClustered(
         LookCluster[] sourceClusters, LookCluster[] targetClusters,
         LookStats sourceRegionStats, LookStats targetRegionStats)
@@ -769,10 +665,9 @@ public static class ImageAdjustment
                 pairConfidence[i] = 1.0 / (1.0 + bestDist / (MatchPairConfidenceScale * MatchPairConfidenceScale));
             }
 
-            // ---- Brightness + Contrast: weighted least-squares line
-            //      through the paired (sourceLuma-128, targetLuma-128)
-            //      points -- the k-anchor-point generalization of
-            //      SolveMatchAdjustments' 2-moment (mean/std) match. ----
+            // ---- 明るさ+コントラスト: ペア (sourceLuma-128, targetLuma-128) を通る
+            //      加重最小二乗の直線。SolveMatchAdjustments の 2モーメント一致を
+            //      k アンカー点へ一般化したもの。 ----
             double sumW = 0, sumX = 0, sumY = 0, sumXX = 0, sumXY = 0;
             for (int i = 0; i < sourceClusters.Length; i++)
             {
@@ -790,9 +685,7 @@ public static class ImageAdjustment
             double brightnessOffset255 = meanY - contrastFactor * meanX;
             double brightness = Math.Clamp(brightnessOffset255 / 255.0 * 100.0, -100, 100);
 
-            // ---- Saturation: weighted regression THROUGH THE ORIGIN (the
-            //      Saturation slider has no additive term, only a
-            //      multiplicative one), same weighting as above. ----
+            // ---- 彩度: 原点を通る加重回帰(彩度スライダーは乗算項のみ)。重みは上と同じ。 ----
             double satNum = 0, satDen = 0;
             for (int i = 0; i < sourceClusters.Length; i++)
             {
@@ -805,19 +698,14 @@ public static class ImageAdjustment
             double satFactor = Math.Clamp(satDen > 1e-6 ? satNum / satDen : 1.0, 0.1, 4.0);
             double saturation = Math.Clamp((satFactor - 1.0) * 100.0, -100, 100);
 
-            // ---- Temperature/Tint: plain global mean difference (NOT the
-            //      cluster pairing above) -- see the method doc comment for
-            //      why. ----
+            // ---- 色温度/色かぶり: クラスタペアではなく素の全体平均差(理由はメソッド doc)。 ----
             double tempShift = (targetRegionStats.MeanRMinusB - sourceRegionStats.MeanRMinusB) / 2.0;
             double temperature = Math.Clamp(tempShift / 40.0 * 100.0, -100, 100);
             double tintShift = targetRegionStats.MeanGOffset - sourceRegionStats.MeanGOffset;
             double tint = Math.Clamp(tintShift / 40.0 * 100.0, -100, 100);
 
-            // ---- Hue: circular weighted mean of each pair's hue
-            //      difference, weighted by pairing confidence AND by
-            //      whichever of the pair is LESS saturation-confident
-            //      (HueWeightSum) -- a near-gray cluster on either side
-            //      makes that pair's hue difference meaningless. ----
+            // ---- Hue: 各ペアの色相差の円環加重平均。重みはペアリング信頼度 × ペアのうち
+            //      彩度信頼度が低い方(HueWeightSum)。どちらかがほぼグレーだと無意味。 ----
             double hueSinSum = 0, hueCosSum = 0, hueWSum = 0;
             for (int i = 0; i < sourceClusters.Length; i++)
             {
@@ -855,16 +743,11 @@ public static class ImageAdjustment
             raw.Blacks * MatchMinorStrength);
     }
 
-    /// <summary>Renders the (already look-adjusted) overlay PNG at the given
-    /// on-screen size/rotation/opacity into actual pixels, matching exactly
-    /// what the live overlay window shows -- used to composite it onto a
-    /// still photo, where there's no Canvas + RenderTransform to rely on.
-    /// Rendered into a canvas padded to the rotated bounding box (not just
-    /// width x height) so a rotated corner doesn't get clipped off, the same
-    /// way it would visibly overflow the (unclipped) live overlay's box. The
-    /// returned offsets are how far the padded canvas's top-left sits from the
-    /// unrotated placement rect's top-left -- callers need this to position
-    /// the result correctly on the photo.</summary>
+    /// <summary>(ルック調整済みの)オーバーレイ PNG を指定の画面サイズ/回転/不透明度で
+    /// 実ピクセルへ描く。ライブのオーバーレイ表示と一致する。回転後のバウンディング
+    /// ボックスぶんパディングしたキャンバスに描くので、回転した角が切れない。返り値の
+    /// オフセットは、パディング済みキャンバス左上が未回転の配置矩形左上からどれだけ
+    /// ずれているか(写真上に正しく置くのに使う)。</summary>
     public static (WriteableBitmap Bitmap, double OffsetX, double OffsetY) RenderOverlayForComposite(
         BitmapSource pngSource, double width, double height, double rotationDegrees, double opacity)
     {
@@ -900,32 +783,20 @@ public static class ImageAdjustment
         var rendered = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
         rendered.Render(container);
         var bitmap = new WriteableBitmap(rendered);
-        // Frozen so the caller can hand it (and anything derived from its
-        // pixels) off to a background thread for the rest of the composite
-        // pipeline -- this method itself still needs the UI thread (it
-        // renders an actual WPF visual tree), but nothing downstream does.
+        // Frozen: 以降の合成パイプラインをバックグラウンドスレッドへ渡せるように
+        // (このメソッド自体は WPF ビジュアルを描くので UI スレッドが要る。下流は不要)。
         bitmap.Freeze();
         return (bitmap, offsetX, offsetY);
     }
 
-    /// <summary>Applies photo-level color adjustments to the photo, then
-    /// alpha-blends the already-rendered overlay (see
-    /// <see cref="RenderOverlayForComposite"/>) on top at the given position,
-    /// then finally film grain and vignette (see <see cref="ApplyFilmGrain"/>/
-    /// <see cref="ApplyVignette"/>) over the whole composited result -- these
-    /// two are the only adjustments that apply once to the finished photo
-    /// rather than per-layer. <paramref name="overlayLeft"/>/
-    /// <paramref name="overlayTop"/> are the padded overlay bitmap's top-left
-    /// in photo pixel coordinates (i.e. already offset by the render's
-    /// OffsetX/OffsetY). <paramref name="overlayPixels"/> is optional: when
-    /// null (no avatar image loaded), the blend step is skipped entirely and
-    /// every finishing effect still applies to the photo alone, so retouching
-    /// and saving a photo with no avatar works the same as with one. Takes
-    /// the overlay's raw BGRA32 pixels directly rather than a BitmapSource --
-    /// the one WPF-visual-tree-dependent step (RenderOverlayForComposite)
-    /// happens entirely in the caller, so this method touches nothing but
-    /// plain byte[]/PixelBuffer/primitive inputs and can safely run on any
-    /// thread, including a background one during a live slider drag.</summary>
+    /// <summary>写真に写真レベルの色調整をかけ、指定位置に描画済みオーバーレイ
+    /// (<see cref="RenderOverlayForComposite"/>)をアルファブレンドし、最後に合成結果
+    /// 全体へ仕上げエフェクトをかける。<paramref name="overlayLeft"/>/
+    /// <paramref name="overlayTop"/> はパディング済みオーバーレイ左上の写真ピクセル座標
+    /// (レンダーの OffsetX/OffsetY を含む)。<paramref name="overlayPixels"/> は任意で、
+    /// null(アバター未読込)ならブレンドを丸ごとスキップして写真だけに仕上げが乗る。
+    /// BitmapSource ではなく生 BGRA32 を受け取るので、このメソッドは byte[]/PixelBuffer/
+    /// プリミティブだけを触り、どのスレッドでも安全に走る。</summary>
     public static WriteableBitmap CompositeOverlayOntoPhoto(
         PixelBuffer photo, ColorAdjustments photoAdjustments,
         byte[]? overlayPixels = null, int overlayStride = 0, int overlayWidth = 0, int overlayHeight = 0,
@@ -944,20 +815,12 @@ public static class ImageAdjustment
         byte dropShadowColorB = 0, byte dropShadowColorG = 0, byte dropShadowColorR = 0, double dropShadowScale = 1.0,
         bool dropShadowTone = false, double dropShadowDotSize = 8, DropShadowBlendMode dropShadowBlendMode = DropShadowBlendMode.Multiply)
     {
-        // The entire effect chain below (color adjust, photo blur, drop
-        // shadow, avatar blend, softness/sharpness/clarity/fade/glow/light
-        // leak, tone gradient, chromatic aberration/color bleed, scanlines,
-        // vignette, film grain) runs as ONE GPU round trip via
-        // GpuCompositeChain -- see its own doc comment for why chaining
-        // through GPU-resident textures instead of each stage doing its own
-        // upload/download matters (measured: roughly half the total time
-        // at typical VRChat screenshot resolutions was pure transfer
-        // overhead before this). photo.Pixels is passed as the SOURCE (not
-        // cloned here) so the upload can be skipped on renders where only
-        // the adjustment amounts changed, not the photo itself -- see
-        // GpuTexturePool.RentUploaded. `pixels` itself starts uninitialized
-        // (no clone needed) since the GPU path fully overwrites it via its
-        // own download.
+        // 下のエフェクト連鎖(色調整・写真ぼかし・ドロップシャドウ・アバターブレンド・
+        // 仕上げ各種・トーングラデ・色収差/カラーブリード・走査線・ビネット・グレイン)は
+        // GpuCompositeChain 経由で GPU 往復1回にまとめて走る。photo.Pixels は SOURCE として
+        // (クローンせず)渡すので、効果量だけ変わった回はアップロードを省ける
+        // (GpuTexturePool.RentUploaded)。`pixels` は GPU ダウンロードで全上書きされるので
+        // 未初期化で始めてよい。
         var pixels = new byte[photo.Pixels.Length];
         int photoBlurRadius = photoBlurAmount > 0
             ? (int)Math.Round(Math.Clamp(photoBlurAmount, 0, 100) / 100.0 * MaxPhotoBlurRadius * photoBlurScale)
@@ -983,23 +846,11 @@ public static class ImageAdjustment
 
         var result = new WriteableBitmap(photo.Width, photo.Height, 96, 96, PixelFormats.Bgra32, null);
         result.WritePixels(new Int32Rect(0, 0, photo.Width, photo.Height), pixels, photo.Stride, 0);
-        // Frozen so this is safe to construct on (and hand back from) a
-        // background thread -- see this method's own doc comment.
+        // Frozen: バックグラウンドスレッドで構築して返せるように。
         result.Freeze();
         return result;
     }
 
-    /// <summary>Crops a finished composite down to a target aspect ratio as
-    /// the very last step (after every color/finishing effect already baked
-    /// in), centered by default and shiftable via <paramref name="offsetXPercent"/>/
-    /// <paramref name="offsetYPercent"/> (0..100, where the crop window sits
-    /// along whichever axis has slack -- 50 = centered). Whichever dimension
-    /// the target ratio is narrower than the source keeps its full extent;
-    /// the other gets trimmed. <paramref name="aspectRatio"/> null (or &lt;=0)
-    /// means 自由 (free): no ratio to lock to, so <paramref name="widthPercent"/>/
-    /// <paramref name="heightPercent"/> each shrink their own axis
-    /// independently against the FULL source dimensions instead of both
-    /// deriving from one ratio-fit box.</summary>
     /// <summary>切り抜き5パラメータ(アスペクト比 / 幅% / 高さ% / 位置X% / 位置Y%)
     /// からソース内の切り抜き矩形を求める。<see cref="CropToAspect"/> が実際に切り
     /// 出す矩形と、ハンドル/ガイド描画用の ControlPanelWindow.GetCanvasCropRect が
@@ -1027,22 +878,20 @@ public static class ImageAdjustment
             }
             maxCropWidth = Math.Min(maxCropWidth, srcWidth);
             maxCropHeight = Math.Min(maxCropHeight, srcHeight);
-            // Fixed-ratio mode: the SAME zoom factor scales both axes (each
-            // already ratio-fit above), so the ratio stays locked at any
-            // zoom level -- widthPercent alone drives both.
+            // 比率固定モード: 同じズーム係数で両軸をスケール(上で比率フィット済み)
+            // なので、どのズームでも比率が保たれる。widthPercent が両軸を駆動する。
             heightZoomPercent = widthPercent;
         }
         else
         {
-            // 自由 (free): each axis's own 100% is the full source extent,
-            // and the two knobs are independent -- no ratio to preserve.
+            // 自由: 各軸の 100% がソース全体で、2つのノブは独立(保つ比率が無い)。
             maxCropWidth = srcWidth;
             maxCropHeight = srcHeight;
             heightZoomPercent = heightPercent;
         }
 
-        // widthPercent/heightPercent shrink the crop box below its 100%
-        // size -- a zoom-in-place knob layered on top of the aspect-ratio pick.
+        // widthPercent/heightPercent は切り抜き枠を 100% より縮める(アス比選択の上に
+        // 乗るその場ズームのノブ)。
         double widthZoom = Math.Clamp(widthPercent, 1, 100) / 100.0;
         double heightZoom = Math.Clamp(heightZoomPercent, 1, 100) / 100.0;
         int cropWidth = Math.Max(1, (int)Math.Round(maxCropWidth * widthZoom));
@@ -1070,19 +919,16 @@ public static class ImageAdjustment
 
         var result = new WriteableBitmap(cropWidth, cropHeight, source.DpiX, source.DpiY, format, null);
         result.WritePixels(new Int32Rect(0, 0, cropWidth, cropHeight), buffer, cropStride, 0);
-        // Frozen for the same cross-thread-safety reason as
-        // CompositeOverlayOntoPhoto's own result -- this is the last step
-        // in the same pipeline.
+        // Frozen: CompositeOverlayOntoPhoto の結果と同じくクロススレッド安全のため
+        // (同じパイプラインの最後のステップ)。
         result.Freeze();
         return result;
     }
 
-    /// <summary>Splits two same-size composites into one image for a before/
-    /// after comparison slider: columns left of <paramref name="splitFraction"/>
-    /// (0..1, fraction of the width) come from <paramref name="before"/>,
-    /// columns at/after that come from <paramref name="after"/>. A plain
-    /// per-row byte copy -- no pixel math at all -- so it's cheap enough to
-    /// redo on every tick of the slider dragging it.</summary>
+    /// <summary>同サイズの2つの合成結果を、比較用スライダー1枚の画像に合成する。
+    /// <paramref name="splitFraction"/>(0..1)より左は <paramref name="before"/>、
+    /// 以降は <paramref name="after"/>。行ごとの byte コピーだけ(ピクセル演算なし)なので
+    /// スライダーの tick ごとに再実行できる。</summary>
     public static WriteableBitmap MergeBeforeAfter(BitmapSource before, BitmapSource after, double splitFraction)
     {
         int width = after.PixelWidth, height = after.PixelHeight;
@@ -1115,30 +961,18 @@ public static class ImageAdjustment
         bgra32.CopyPixels(buffer, stride, 0);
     }
 
-    /// <summary>The alpha level (0..255) at which a pixel counts as "solid"
-    /// for edge-blur boundary detection -- deliberately close to zero, not
-    /// the naive 50% midpoint. A midpoint threshold means any genuinely
-    /// semi-transparent DESIGN element (a translucent visor, glass, a
-    /// skirt drawn at partial opacity) that happens to sit below 50% gets
-    /// classified as "background," creating an artificial boundary at ITS
-    /// own edges too -- if that element is narrower than roughly 2x the
-    /// blur radius, its entire area then falls within "close to a
-    /// boundary" and gets feathered/blurred throughout, not just the
-    /// cutout's true outer silhouette. Treating only near-fully-transparent
-    /// pixels as "outside" means semi-transparent interior details are
-    /// classified as solid and left alone unless they're actually near the
-    /// real silhouette edge, while true silhouette boundaries (which fade
-    /// to fully 0 alpha, not just to some translucent value) are still
-    /// found correctly. Shared with GpuAvatarEdgeBlur's own copy of this
-    /// same threshold (as a normalized float) -- keep both in sync.</summary>
+    /// <summary>エッジぼかしの境界検出で画素を「不透明」とみなすアルファ閾値
+    /// (0..255)。素朴な 50% 中点ではなく 0 に近い値にしてある: 中点だと半透明の
+    /// デザイン要素(半透明バイザー等)が「背景」に分類され、その縁にも人工的な
+    /// 境界ができて、幅が狭ければ全面がぼける。ほぼ完全透明だけを「外」とすれば、
+    /// 半透明の内部ディテールは触られず、真のシルエット境界(完全に 0 まで落ちる)は
+    /// 正しく検出される。GpuAvatarEdgeBlur にも同じ閾値のコピーがある(要同期)。</summary>
     internal const int EdgeBlurForegroundAlphaThreshold = 10;
 
 
-    /// <summary>Applies white balance (temperature/tint), then hue rotation,
-    /// then vibrance, saturation, contrast, and brightness, to the RGB
-    /// channels of every pixel (alpha untouched) -- roughly the same pipeline
-    /// order a photo editor uses (correct the color cast first, then
-    /// grade/tone on top of that).</summary>
+    /// <summary>各画素の RGB(アルファは不変)に、ホワイトバランス(色温度/色かぶり)→
+    /// 色相回転 → 自然な彩度 → 彩度 → コントラスト → 明るさ の順で適用する
+    /// (写真編集ソフトと概ね同じ順。色被りを直してから調子を整える)。</summary>
     private static void AdjustColors(byte[] pixels, int stride, int width, int height, ColorAdjustments adj)
     {
         if (adj.IsIdentity) return;
@@ -1148,47 +982,29 @@ public static class ImageAdjustment
         double brightnessOffset = adj.Brightness / 100.0 * 255.0;
         double tempShift = adj.Temperature / 100.0 * 40.0;
         double tintShift = adj.Tint / 100.0 * 40.0;
-        // Scaled down from a straight 0..1 range: at vibranceAmt=1, boost =
-        // (1-s) alone would push EVERY pixel to fully saturated (s=1) since
-        // newS = s + (1-s) = 1 regardless of starting s -- far stronger than
-        // Saturation=100 (which only doubles each pixel's existing distance
-        // from gray, never forcing it to the max). 0.65 (raised from an
-        // earlier 0.5 -- see skinProtect below for the other half of this
-        // same rebalance) keeps Vibrance at its max closer to comparably
-        // strong to Saturation at its max instead of acting like an on/off
-        // "full saturation" switch.
+        // 0.65 係数: 素の (1-s) だけだと vibranceAmt=1 で全画素が s=1 まで飽和して
+        // しまい、彩度=100 より遥かに強い。0.65 で「彩度=100 と同程度の強さ」に寄せる。
         double vibranceAmt = adj.Vibrance / 100.0 * 0.65;
 
-        // Highlights/Shadows/Whites/Blacks: each is an additive shift scaled
-        // by a smooth luminance-based weight (0..1), not a hard tonal split --
-        // Shadows/Highlights weight the lower/upper half of the range with a
-        // broad, gentle ramp (matching Lightroom's own broad "midtone-ish"
-        // reach), while Whites/Blacks square that same ramp to concentrate
-        // their effect more narrowly at the very extremes (the clipping-point
-        // behavior their names imply). Magnitudes are hand-tuned to feel
-        // comparable in strength to Brightness at their own max, not derived
-        // from anything physical.
+        // ハイライト/シャドウ/白/黒レベル: ハードな階調分割ではなく、輝度ベースの
+        // なめらかな重み(0..1)でスケールした加算シフト。シャドウ/ハイライトは広く緩い
+        // ランプ、白/黒はそれを二乗して極端側へ集中させる。大きさは明るさ最大と同程度に
+        // 感じるよう手調整(物理的根拠は無い)。
         bool useToneRegions = adj.Highlights != 0 || adj.Shadows != 0 || adj.Whites != 0 || adj.Blacks != 0;
         double highlightsAmt = adj.Highlights / 100.0 * 130.0;
         double shadowsAmt = adj.Shadows / 100.0 * 130.0;
         double whitesAmt = adj.Whites / 100.0 * 150.0;
         double blacksAmt = adj.Blacks / 100.0 * 150.0;
 
-        // ティント: a luminance-preserving color wash toward ColorTintR/G/B,
-        // not a flat lerp toward a fixed RGB triple -- the target color is
-        // itself rescaled by each pixel's own luminance first (targetR =
-        // ColorTintR * lum01, etc.), so shadows tint toward a dark version of
-        // the chosen color and highlights toward a light version of it,
-        // preserving the image's tonal structure/detail even at
-        // ColorTintStrength=100 (where a flat lerp would flatten everything
-        // to one solid color) -- the same idea as classic sepia toning,
-        // generalized to any chosen color.
+        // ティント: 固定 RGB への平坦な lerp ではなく、輝度を保つ色被せ。ターゲット色を
+        // 各画素の輝度で先にスケール(targetR = ColorTintR * lum01)するので、シャドウは
+        // 暗い版・ハイライトは明るい版へ寄り、ColorTintStrength=100 でも階調が潰れない
+        // (セピア調と同じ発想を任意色へ一般化)。
         bool useColorTint = adj.ColorTintStrength != 0;
         double colorTintT = adj.ColorTintStrength / 100.0;
 
-        // Hue rotation matrix (rotates color around the gray/luminance axis),
-        // precomputed once outside the pixel loop -- the standard coefficients
-        // behind CSS's hue-rotate() filter / SVG feColorMatrix type="hueRotate".
+        // 色相回転行列(グレー/輝度軸まわりの回転)。ピクセルループ外で1回だけ算出。
+        // CSS hue-rotate() / SVG feColorMatrix hueRotate の標準係数。
         bool useHue = adj.Hue != 0;
         double hm00 = 1, hm01 = 0, hm02 = 0, hm10 = 0, hm11 = 1, hm12 = 0, hm20 = 0, hm21 = 0, hm22 = 1;
         if (useHue)
@@ -1234,21 +1050,11 @@ public static class ImageAdjustment
                 }
                 if (adj.Vibrance != 0)
                 {
-                    // True HSL saturation adjustment (not a channel-push
-                    // approximation): boosts saturation MORE on already-dull
-                    // pixels and LESS on already-vivid ones -- Adobe's own
-                    // description of Vibrance -- AND additionally damps the
-                    // effect further near skin-tone hues specifically, since
-                    // skin usually isn't very saturated to begin with and
-                    // would otherwise get the biggest boost of anything in a
-                    // portrait, oversaturating faces first. The floor here
-                    // (0.5, raised from an earlier 0.25) keeps that damping
-                    // from going so far that skin-toned pixels barely move
-                    // at all at Vibrance=100 while Saturation=100 visibly
-                    // grades the same pixels hard -- most of what this app's
-                    // avatar images actually ARE is skin-toned, so that gap
-                    // was the main reason the two sliders felt wildly
-                    // different in strength instead of just "a bit gentler".
+                    // 本物の HSL 彩度調整。くすんだ画素ほど強く、鮮やかな画素ほど弱く
+                    // 彩度を上げる(Adobe の Vibrance の定義)。さらに肌色近辺の色相では
+                    // 効果を減衰する(肌は元々彩度が低く、ポートレートで一番強くブーストされて
+                    // 顔から過飽和になりがちなため)。床 0.5 は、この減衰が効き過ぎて
+                    // Vibrance=100 でも肌色画素がほぼ動かない、という状態を防ぐ。
                     RgbToHsl(r, g, b, out double h, out double s, out double l);
                     double hueDist = Math.Abs(h - SkinHueDegrees);
                     hueDist = Math.Min(hueDist, 360.0 - hueDist);
@@ -1314,13 +1120,11 @@ public static class ImageAdjustment
         });
     }
 
-    /// <summary>Approximate hue (degrees) of typical skin tones on the color
-    /// wheel -- orange-ish -- used to damp Vibrance's boost near that hue.</summary>
+    /// <summary>典型的な肌色の概略色相(度、オレンジ寄り)。Vibrance の減衰に使う。</summary>
     private const double SkinHueDegrees = 30.0;
 
-    /// <summary>Standard smoothstep: 0 at/below <paramref name="edge0"/>, 1
-    /// at/above <paramref name="edge1"/>, eased in between. Used to build the
-    /// Highlights/Shadows/Whites/Blacks luminance masks above.</summary>
+    /// <summary>標準の smoothstep: <paramref name="edge0"/> 以下で 0、
+    /// <paramref name="edge1"/> 以上で 1、間はイージング。</summary>
     private static double Smoothstep(double x, double edge0, double edge1)
     {
         double t = Math.Clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
@@ -1369,25 +1173,18 @@ public static class ImageAdjustment
         b = (bn + m) * 255.0;
     }
 
-    // ---- Finishing effects: applied once to the final composite result only
-    //      (not per-layer), so a user compositing several photos with the
-    //      same avatar cutout gets one consistent "shot on film" look on the
-    //      output rather than compounding grain/vignette from each layer. ----
+    // ---- 仕上げエフェクト: 最終合成結果に1回だけ適用(レイヤーごとではない)。
+    //      同じアバターで複数写真を合成しても、出力が一貫した「フィルムで撮った」
+    //      見た目になる(各レイヤーからグレイン/ビネットが重畳しない)。 ----
 
     internal const int GrainSeed = 20260101;
 
-    /// <summary>Cache for <see cref="GenerateArNoise"/>, keyed by the buffer
-    /// size it was built for: the noise field is fully determined by
-    /// width/height/seed (all fixed per photo), so re-deriving it on every
-    /// single render -- including every tick of a grain-slider or placement
-    /// drag -- was pure waste. Capped defensively rather than sized
-    /// precisely.</summary>
+    /// <summary><see cref="GenerateArNoise"/> のキャッシュ。ノイズ場は
+    /// width/height/seed で完全に決まる(写真ごとに固定)ので、毎レンダー作り直すのは無駄。</summary>
     private static readonly Dictionary<(int Width, int Height, int Seed), double[]> GrainNoiseCache = new();
 
-    /// <summary>Builds and caches the film grain noise field for a given
-    /// buffer size ahead of time, so the first render at that size doesn't
-    /// pay for it. Called once per photo load (for both its full-res and
-    /// drag-preview sizes) -- see TryLoadPhotoPixels.</summary>
+    /// <summary>指定サイズのグレインノイズ場を前もって作りキャッシュする。そのサイズの
+    /// 初回レンダーでコストを払わないため。写真読み込みごとに1回呼ぶ。</summary>
     public static void PrecomputeFilmGrainNoise(int width, int height) => GetArNoise(width, height, GrainSeed);
 
     internal static double[] GetArNoise(int width, int height, int seed)
@@ -1400,13 +1197,10 @@ public static class ImageAdjustment
         return noise;
     }
 
-    /// <summary>Autoregressive noise field: each sample is a hashed random
-    /// impulse pulled toward its already-generated left/upper neighbors, the
-    /// same idea AV1's film grain synthesis uses an AR model for -- it makes
-    /// the noise clump into small organic blobs instead of looking like
-    /// independent per-pixel static. Raster scan with a genuine dependency on
-    /// the previous column/row, so unlike the rest of this file it can't be
-    /// parallelized across rows (same reasoning as ChamferDistance above).</summary>
+    /// <summary>自己回帰ノイズ場: 各サンプルはハッシュ乱数インパルスを、生成済みの
+    /// 左/上の近傍へ寄せたもの(AV1 のフィルムグレイン合成と同じ AR モデルの発想)。
+    /// per-pixel の砂嵐ではなく小さな有機的な塊になる。前の列/行に依存するラスタ走査
+    /// なので、このファイルの他と違い行並列化できない。</summary>
     private static double[] GenerateArNoise(int width, int height, int seed)
     {
         const double AlphaLeft = 0.22;
@@ -1428,9 +1222,8 @@ public static class ImageAdjustment
         return noise;
     }
 
-    /// <summary>Cheap deterministic pseudo-noise from integer coordinates --
-    /// stands in for a Random instance where per-pixel-parallel code can't
-    /// safely share one. Returns a value in -1..1.</summary>
+    /// <summary>整数座標からの安い決定的な擬似ノイズ。per-pixel 並列コードが Random を
+    /// 共有できない箇所の代わり。戻り値は -1..1。</summary>
     internal static double HashNoise(int x, int y, int seed)
     {
         unchecked
@@ -1442,8 +1235,7 @@ public static class ImageAdjustment
         }
     }
 
-    /// <summary>Radially darkens toward the corners. <paramref name="amount"/>
-    /// is 0..100, 0 = off.</summary>
+    /// <summary>四隅へ向かって放射状に暗くする。<paramref name="amount"/> は 0..100、0 = オフ。</summary>
     public static void ApplyVignette(byte[] pixels, int stride, int width, int height, double amount)
     {
         if (amount <= 0) return;
@@ -1471,10 +1263,9 @@ public static class ImageAdjustment
 
     internal const int MaxPhotoBlurRadius = 40;
 
-    /// <summary>Separable two-pass box blur (horizontal then vertical) over a
-    /// single int channel -- ApplyPhotoBlur's own blur primitive (see
-    /// ApplyColorToPixelBuffer, its only remaining caller now that the GPU
-    /// path handles this in the hot compositing loop).</summary>
+    /// <summary>単一 int チャンネルに対する分離2パス(横→縦)ボックスブラー。
+    /// ApplyPhotoBlur のブラープリミティブ(GPU 経路がホットループを担う今、
+    /// 呼び出し元は ApplyColorToPixelBuffer のみ)。</summary>
     private static int[] BoxBlur2D(int[] src, int width, int height, int radius)
     {
         var horizontal = new int[width * height];
@@ -1484,9 +1275,8 @@ public static class ImageAdjustment
         return vertical;
     }
 
-    /// <summary>Each row (horizontal pass) / column (vertical pass) is an
-    /// independent sliding-window sum, so this parallelizes cleanly across rows
-    /// or columns with no shared mutable state between iterations.</summary>
+    /// <summary>行(横パス)/列(縦パス)がそれぞれ独立のスライディング窓和なので、
+    /// 反復間で共有可変状態なしで行/列並列化できる。</summary>
     private static void BoxBlur1D(int[] src, int[] dst, int width, int height, int radius, bool horizontalPass)
     {
         int windowSize = radius * 2 + 1;
@@ -1529,21 +1319,13 @@ public static class ImageAdjustment
         }
     }
 
-    /// <summary>Blurs the WHOLE photo, not just an edge -- a simple depth-of-
-    /// field-style soft-background effect. Applied to the photo before the
-    /// avatar overlay is composited on top (see
-    /// <see cref="CompositeOverlayOntoPhoto"/>), so the avatar itself stays
-    /// sharp while the background behind it softens. A plain uniform box
-    /// blur (see <see cref="BoxBlur2D"/>).
-    /// <paramref name="amount"/> is 0..100, 0 = off. <paramref name="scale"/>
-    /// lets a caller working on a downscaled preview buffer (see
-    /// RenderCompositePreview's drag-time small buffer) shrink the pixel
-    /// radius proportionally, so the live preview doesn't look more blurred
-    /// than the eventual full-resolution result.</summary>
-    /// <summary>Same blur CompositeOverlayOntoPhoto's GPU chain applies to the
-    /// background, exposed for callers (decal behind-avatar compositing) that
-    /// need the background already blurred BEFORE something is pasted onto
-    /// it, so that something doesn't get blurred along with it.</summary>
+    /// <summary>エッジではなく写真全体をぼかす、簡易的な被写界深度風の背景ソフト効果。
+    /// アバターを重ねる前に写真へ適用するので、アバターはシャープなまま背景が柔らかくなる。
+    /// <paramref name="amount"/> は 0..100、0 = オフ。<paramref name="scale"/> は縮小
+    /// プレビューバッファで作業する呼び出し元がピクセル半径を比例縮小するためのもの。
+    ///
+    /// デカール(アバター背面)合成のように、何かを貼る「前」に背景をぼかしておきたい
+    /// 呼び出し元向けに公開する。</summary>
     internal static void ApplyPhotoBlurInPlace(PixelBuffer buffer, double amount, double scale) =>
         ApplyPhotoBlur(buffer.Pixels, buffer.Stride, buffer.Width, buffer.Height, amount, scale);
 
@@ -1590,11 +1372,9 @@ public static class ImageAdjustment
         });
     }
 
-    // Shared by both ApplySoftness and ApplySharpness -- they're the same
-    // local-contrast operation (pixel vs. a small-radius blur of itself)
-    // pushed in opposite directions, so they need to reference the same
-    // blur to actually read as each other's inverse rather than just two
-    // unrelated effects that happen to share a name.
+    // ApplySoftness と ApplySharpness の共通。両者は同じローカルコントラスト操作
+    // (画素 vs 小半径ぼかし)を逆方向に押すだけなので、同じぼかしを参照しないと
+    // 互いの逆として成立しない。
     internal const int FinishDetailRadius = 2;
 
     internal const double MaxFadeFloor = 60.0;
@@ -1613,15 +1393,11 @@ public static class ImageAdjustment
 
     internal const int MaxClarityRadius = 30;
 
-    /// <summary>How the drop shadow's color combines with whatever's already
-    /// on the photo -- Multiply darkens/tints the existing pixel (the
-    /// traditional "shadow" look), Normal paints a flat alpha-blended blob
-    /// of the shadow color (ignores what's underneath), Additive brightens
-    /// by adding the shadow color's light (a "glow" rather than a shadow,
-    /// but offered as a creative option alongside the other two). Values
-    /// match GpuDropShadow's own int encoding passed into
-    /// DropShadowBlendShader -- HLSL shader fields can't be C# enums, so the
-    /// GPU side receives <c>(int)</c> this instead.</summary>
+    /// <summary>ドロップシャドウの色を写真既存ピクセルへどう合成するか。Multiply は
+    /// 既存を暗く/色付け(伝統的な「影」)、Normal は影色を平坦にアルファブレンド
+    /// (下地無視)、Additive は影色の光を足して明るく(影というより「グロー」だが
+    /// 創作用に用意)。値は GpuDropShadow が DropShadowBlendShader へ渡す int と一致
+    /// (HLSL は enum 不可なので GPU 側は <c>(int)</c> で受ける)。</summary>
     public enum DropShadowBlendMode { Multiply = 0, Normal = 1, Additive = 2 }
 
 }
