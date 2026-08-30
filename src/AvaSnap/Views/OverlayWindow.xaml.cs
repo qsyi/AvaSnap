@@ -299,6 +299,23 @@ public partial class OverlayWindow : Window
     /// the exact same look onto a photo instead of the pristine original.</summary>
     public BitmapSource? AdjustedPngSource => OverlayImage.Source as BitmapSource;
 
+    /// <summary>エッジぼかしだけ適用した(色調補正前の)アバターバッファ。合成モードで
+    /// マスクによりアバターの色調補正を空間的に効かせる時、色違いを数枚焼くための元。
+    /// <see cref="ApplyImageAdjustments"/> と同じ遅延キャッシュ(半径が変われば焼き直す)。</summary>
+    public ImageAdjustment.PixelBuffer? EdgeBlurredPixelBuffer
+    {
+        get
+        {
+            if (_originalPixelBuffer is null) return null;
+            if (_blurredPixelBuffer is null || _blurredAtRadius != _state.EdgeBlurRadius)
+            {
+                _blurredPixelBuffer = ImageAdjustment.BlurPng(_originalPixelBuffer, _state.EdgeBlurRadius);
+                _blurredAtRadius = _state.EdgeBlurRadius;
+            }
+            return _blurredPixelBuffer;
+        }
+    }
+
     /// <summary>The pristine loaded PNG with none of the look adjustments
     /// applied (no edge blur, no color grading) -- used for Composite mode's
     /// before/after look-adjustment comparison slider, as the "before" half.</summary>

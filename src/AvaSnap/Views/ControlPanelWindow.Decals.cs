@@ -23,32 +23,8 @@ public sealed record DecalEntrySnapshot(
     ImageAdjustment.PixelBuffer? Pixels,
     System.Windows.Media.Imaging.BitmapSource? Thumbnail,
     double X, double Y, double Width, double Height, double Rotation,
-    ShapeKind? ShapeKind, byte ColorR, byte ColorG, byte ColorB, double StrokePercent,
+    bool IsFrame, byte ColorR, byte ColorG, byte ColorB, double StrokePercent,
     double Opacity);
-
-/// <summary>要素ごとの構造比較をする不変配列ラッパー。record の自動生成 Equals は
-/// 配列フィールドを参照比較してしまうため、<see cref="CompositeSnapshot"/> に
-/// 生 <c>T[]</c> を持たせると毎回の Capture が別インスタンスになり
-/// 「変化なし(before == after)」判定が壊れる。IEquatable を実装したこの struct を
-/// 挟むと record 側の自動等価がそのまま正しく動く(Roslyn ジェネレータ等で定番の型)。</summary>
-public readonly struct EquatableArray<T>(T[]? array) : IEquatable<EquatableArray<T>> where T : IEquatable<T>
-{
-    private readonly T[]? _array = array;
-
-    public T[] AsArray() => _array ?? Array.Empty<T>();
-
-    public bool Equals(EquatableArray<T> other) =>
-        ((ReadOnlySpan<T>)AsArray()).SequenceEqual(other.AsArray());
-
-    public override bool Equals(object? obj) => obj is EquatableArray<T> o && Equals(o);
-
-    public override int GetHashCode()
-    {
-        var hc = new HashCode();
-        foreach (var item in AsArray()) hc.Add(item);
-        return hc.ToHashCode();
-    }
-}
 
 // ---- デカール: ステッカー的な追加画像 + 写真の縁取り用の枠線。位置/サイズ/回転は
 //      アバター配置モードと同じ移動+リサイズハンドル+回転ギズモ。レイヤー順は
@@ -62,17 +38,17 @@ public partial class ControlPanelWindow
 {
     private sealed class DecalLayer
     {
-        // 図形デカール(ShapeKind != null)はサイズ/色/太さ変更のたびに
-        // ShapeRasterizer で焼き直して差し替えるので init ではなく set。
+        // 枠線デカール(IsFrame)はサイズ/色/太さ変更のたびに ShapeRasterizer で
+        // 焼き直して差し替えるので init ではなく set。
         public required ImageAdjustment.PixelBuffer Pixels { get; set; }
         public required BitmapSource Thumbnail { get; set; }
         public double X, Y, Width, Height; // full-res photo-pixel space, same convention as _compositePlaceX/Y/Width/Height
         public double Rotation; // degrees, same convention (positive = clockwise) as _compositeRotation
         public double Opacity = 1.0; // 0..1、このデカール個別の不透明度
 
-        // ---- 図形デカール専用。null = 従来どおりの画像デカール(以降の分岐は
-        //      すべて「ShapeKind == null なら画像として扱う」で画像経路は不変)。 ----
-        public ShapeKind? ShapeKind;
+        // ---- 枠線デカール専用。IsFrame == false = 従来どおりの画像デカール(以降の
+        //      分岐はすべて「IsFrame でなければ画像として扱う」で画像経路は不変)。 ----
+        public bool IsFrame;
         public System.Windows.Media.Color ShapeColor = System.Windows.Media.Colors.White;
         public double ShapeStrokePercent = 3; // 枠線の短辺に対する線幅%
 
@@ -228,14 +204,14 @@ public partial class ControlPanelWindow
         new(_decalLayerOrder.Select(l =>
         {
             if (l is null)
-                return new DecalEntrySnapshot(true, null, null, 0, 0, 0, 0, 0, null, 0, 0, 0, 0, 1);
+                return new DecalEntrySnapshot(true, null, null, 0, 0, 0, 0, 0, false, 0, 0, 0, 0, 1);
             // 枠線はパラメータのみ(焼き直しは Apply 側)、画像はバッファ参照を共有。
-            bool isShape = l.ShapeKind is not null;
+            bool isShape = l.IsFrame;
             return new DecalEntrySnapshot(false,
                 isShape ? null : l.Pixels,
                 isShape ? null : l.Thumbnail,
                 l.X, l.Y, l.Width, l.Height, l.Rotation,
-                l.ShapeKind, l.ShapeColor.R, l.ShapeColor.G, l.ShapeColor.B, l.ShapeStrokePercent,
+                l.IsFrame, l.ShapeColor.R, l.ShapeColor.G, l.ShapeColor.B, l.ShapeStrokePercent,
                 l.Opacity);
         }).ToArray());
 
@@ -246,10 +222,10 @@ public partial class ControlPanelWindow
         var color = Color.FromRgb(e.ColorR, e.ColorG, e.ColorB);
         ImageAdjustment.PixelBuffer pixels;
         BitmapSource thumb;
-        if (e.ShapeKind is { } kind)
+        if (e.IsFrame)
         {
             var (rw, rh) = ShapeRasterizer.RasterSizeFor(e.Width, e.Height);
-            pixels = ShapeRasterizer.Rasterize(kind, rw, rh, color, e.StrokePercent);
+            pixels = ShapeRasterizer.RasterizeFrame(rw, rh, color, e.StrokePercent);
             thumb = MakeShapeThumbnail(pixels);
         }
         else
@@ -263,7 +239,7 @@ public partial class ControlPanelWindow
             Thumbnail = thumb,
             X = e.X, Y = e.Y, Width = e.Width, Height = e.Height, Rotation = e.Rotation,
             Opacity = e.Opacity,
-            ShapeKind = e.ShapeKind,
+            IsFrame = e.IsFrame,
             ShapeColor = color,
             ShapeStrokePercent = e.StrokePercent,
         };
@@ -279,7 +255,7 @@ public partial class ControlPanelWindow
         foreach (var e in entries)
         {
             if (e.IsAvatarMarker
-                || (e.ShapeKind is null && (e.Pixels is null || e.Thumbnail is null))) // 壊れたエントリは通常あり得ない
+                || (!e.IsFrame && (e.Pixels is null || e.Thumbnail is null))) // 壊れたエントリは通常あり得ない
             {
                 _decalLayerOrder.Add(null);
                 continue;
@@ -364,14 +340,14 @@ public partial class ControlPanelWindow
         var grid = new Grid();
         // 図形デカール(特に枠/線)はサムネの大半が透明なので、無地の下地を
         // 敷いて白い図形でも見えるようにする。
-        if (decal.ShapeKind is not null)
+        if (decal.IsFrame)
             grid.Background = new SolidColorBrush(Color.FromRgb(60, 60, 68));
         grid.Children.Add(new Image
         {
             Source = decal.Thumbnail,
             // 図形は端まで意味がある(枠/線)ので letterbox、画像は従来どおり
             // 正方セルを埋める。
-            Stretch = decal.ShapeKind is null ? Stretch.UniformToFill : Stretch.Uniform,
+            Stretch = decal.IsFrame ? Stretch.Uniform : Stretch.UniformToFill,
         });
 
         var deleteButton = new Button
@@ -545,7 +521,7 @@ public partial class ControlPanelWindow
         PlaceAvatarHandle(DecalHandleBR, width - half, height - half);
 
         // 辺ハンドルは枠線デカールのみ(角=アス比固定 / 辺=その軸だけ変更)。
-        bool showEdges = decal.ShapeKind is not null;
+        bool showEdges = decal.IsFrame;
         var edgeVis = showEdges ? Visibility.Visible : Visibility.Collapsed;
         DecalHandleT.Visibility = DecalHandleB.Visibility = DecalHandleL.Visibility = DecalHandleR.Visibility = edgeVis;
         if (showEdges)
@@ -622,7 +598,7 @@ public partial class ControlPanelWindow
         double hw0 = _decalHandleStartWidth / 2, hh0 = _decalHandleStartHeight / 2;
 
         // ---- 枠線デカール: 中心(cx0, cy0)固定で拡縮 ----
-        if (decal.ShapeKind is not null)
+        if (decal.IsFrame)
         {
             // マウス移動量をデカールのローカル軸へ射影(その軸方向の移動量)。
             double dLocalX = screenDx * uxx + screenDy * uxy;
@@ -719,7 +695,7 @@ public partial class ControlPanelWindow
         // 図形はドラッグ中は引き伸ばしただけなので、確定した新サイズで焼き直す
         // (RerasterizeShapeDecal 内で本解像度の再合成もかかる)。画像デカールは
         // ここで本解像度に戻すため明示的に再合成。
-        if (_placingDecal is { ShapeKind: not null } shape) RerasterizeShapeDecal(shape);
+        if (_placingDecal is { IsFrame: true } shape) RerasterizeShapeDecal(shape);
         else ScheduleCompositeRender();
         _undo.CommitChange(); // 焼き直し後の状態でコミット(新しい Pixels 参照を含める)
     }
@@ -802,7 +778,7 @@ public partial class ControlPanelWindow
         double ny = _decalBodyDragStartY + (current.Y - _decalBodyDragStartMouse.Y) / scale;
         // 枠線デカールはキャンバス外へ出さない。画像デカールは従来どおり端を
         // はみ出させて配置できる。
-        if (decal.ShapeKind is not null)
+        if (decal.IsFrame)
         {
             double maxX = crop.Left + Math.Max(0, crop.Width - decal.Width);
             double maxY = crop.Top + Math.Max(0, crop.Height - decal.Height);
@@ -834,7 +810,7 @@ public partial class ControlPanelWindow
         if (_photoPixelBuffer is not { } photo) return;
         var crop = GetDisplayedCropRect(photo.Width, photo.Height);
         double nx = decal.X + dx, ny = decal.Y + dy;
-        if (decal.ShapeKind is not null)
+        if (decal.IsFrame)
         {
             nx = Math.Clamp(nx, crop.Left, crop.Left + Math.Max(0, crop.Width - decal.Width));
             ny = Math.Clamp(ny, crop.Top, crop.Top + Math.Max(0, crop.Height - decal.Height));
@@ -891,7 +867,7 @@ public partial class ControlPanelWindow
     private static DecalRenderEntry ToRenderEntry(DecalLayer l, double scale, bool dragging)
     {
         var pixels = l.Pixels;
-        if (l.ShapeKind is not null && !dragging)
+        if (l.IsFrame && !dragging)
         {
             int outW = (int)Math.Round(l.Width * scale);
             int outH = (int)Math.Round(l.Height * scale);
@@ -909,7 +885,7 @@ public partial class ControlPanelWindow
             && d.FrameRenderCacheColor == d.ShapeColor && d.FrameRenderCacheStroke == d.ShapeStrokePercent)
             return cache;
 
-        var baked = ShapeRasterizer.Rasterize(d.ShapeKind!.Value, outW, outH, d.ShapeColor, d.ShapeStrokePercent);
+        var baked = ShapeRasterizer.RasterizeFrame(outW, outH, d.ShapeColor, d.ShapeStrokePercent);
         d.FrameRenderCache = baked;
         d.FrameRenderCacheW = outW;
         d.FrameRenderCacheH = outH;

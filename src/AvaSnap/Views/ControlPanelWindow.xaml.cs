@@ -24,12 +24,19 @@ namespace AvaSnap.Views;
 /// look, grain/vignette, and where the avatar sits on the photo) -- folded
 /// into UndoManager's single timeline via CaptureExtra/ApplyExtra so Ctrl+Z
 /// covers it too, alongside the avatar-image look it already tracked.</summary>
-public sealed record CompositeSnapshot(
+/// <summary>写真ルックカードのスライダー値(明るさ〜黒レベル + 色被せ + 事前ぼかし)。
+/// フィールド名は分割前の <see cref="CompositeSnapshot"/> のときと同じなので、
+/// 参照側は頭に <c>.PhotoLook.</c> が付くだけ。</summary>
+public sealed record CompositePhotoLook(
     double PhotoBrightness, double PhotoContrast, double PhotoSaturation,
     double PhotoVibrance, double PhotoTemperature, double PhotoTint, double PhotoHue,
     double PhotoHighlights, double PhotoShadows, double PhotoWhites, double PhotoBlacks,
     double PhotoColorTintStrength, byte PhotoColorTintR, byte PhotoColorTintG, byte PhotoColorTintB,
-    double PhotoBlurAmount,
+    double PhotoBlurAmount);
+
+/// <summary>仕上げ(フィニッシュ)カードの効果量: グレイン/ビネット/ソフト/シャープ/
+/// フェード/グロー/色収差/カラーブリード/走査線/明瞭度/ライトリーク/トーングラデ。</summary>
+public sealed record CompositeFinish(
     double GrainAmount, double VignetteAmount,
     double SoftnessAmount, double SharpnessAmount,
     double FadeAmount, double GlowAmount,
@@ -38,17 +45,44 @@ public sealed record CompositeSnapshot(
     byte LightLeakColorB, byte LightLeakColorG, byte LightLeakColorR,
     double ToneGradientAmount, double ToneGradientRotation,
     byte ToneGradientLightR, byte ToneGradientLightG, byte ToneGradientLightB,
-    byte ToneGradientDarkR, byte ToneGradientDarkG, byte ToneGradientDarkB,
+    byte ToneGradientDarkR, byte ToneGradientDarkG, byte ToneGradientDarkB);
+
+/// <summary>ドロップシャドウの量/向き/距離/ぼかし/色/ブレンドモード。</summary>
+public sealed record CompositeDropShadow(
     double DropShadowAmount, double DropShadowDirection, double DropShadowDistance, double DropShadowBlur,
     byte DropShadowColorB, byte DropShadowColorG, byte DropShadowColorR,
-    ImageAdjustment.DropShadowBlendMode DropShadowBlendMode,
-    double? CanvasAspectRatio, double CanvasCropOffsetX, double CanvasCropOffsetY, double CanvasCropWidthPercent, double CanvasCropHeightPercent,
+    ImageAdjustment.DropShadowBlendMode DropShadowBlendMode);
+
+/// <summary>キャンバス切り抜き(アス比 + 幅/高さ% + 位置X/Y%)。</summary>
+public sealed record CompositeCanvasCrop(
+    double? CanvasAspectRatio, double CanvasCropOffsetX, double CanvasCropOffsetY,
+    double CanvasCropWidthPercent, double CanvasCropHeightPercent);
+
+/// <summary>アバター(紙立て看板)の配置: 写真ピクセル空間での位置/サイズ + 回転。</summary>
+public sealed record CompositePlacement(
     double CompositePlaceX, double CompositePlaceY, double CompositePlaceWidth, double CompositePlaceHeight,
-    double CompositeRotation,
-    EquatableArray<DecalEntrySnapshot> Decals,
+    double CompositeRotation);
+
+/// <summary>「背景なしで作成」キャンバスの単色/グラデーション設定。</summary>
+public sealed record CompositeBlankCanvas(
     byte BlankCanvasR, byte BlankCanvasG, byte BlankCanvasB,
     byte BlankCanvasR2, byte BlankCanvasG2, byte BlankCanvasB2,
-    bool BlankCanvasGradientEnabled, double BlankCanvasGradientDirection, bool IsBlankCanvasActive,
+    bool BlankCanvasGradientEnabled, double BlankCanvasGradientDirection, bool IsBlankCanvasActive);
+
+/// <summary>Undo/Redo タイムラインに乗る「合成モード」全体のスナップショット。
+/// 分割前は約70個の位置引数を1レコードに並べていたが、キャプチャ/適用/フラッシュ表の
+/// 3箇所での可読性のためカード単位のサブレコードにまとめた。追加フィールドは
+/// 該当サブレコード1つを直すだけで済む。<see cref="Decals"/> と
+/// <see cref="PhotoBuffer"/> はどのカードにも属さないのでトップレベルのまま。</summary>
+public sealed record CompositeSnapshot(
+    CompositePhotoLook PhotoLook,
+    CompositeFinish Finish,
+    CompositeDropShadow DropShadow,
+    CompositeCanvasCrop CanvasCrop,
+    CompositePlacement Placement,
+    EquatableArray<DecalEntrySnapshot> Decals,
+    CompositeBlankCanvas BlankCanvas,
+    CompositeMasks Masks,
     ImageAdjustment.PixelBuffer? PhotoBuffer);
 
 public partial class ControlPanelWindow : Window
@@ -59,7 +93,16 @@ public partial class ControlPanelWindow : Window
     private readonly VrChatOscListener _oscListener;
     private readonly ScreenshotWatcherService _screenshotWatcher;
     private readonly UnityCameraGuideService _unityCameraGuide;
-    private bool _suppressEvents;
+    /// <summary>&gt; 0 の間だけ「コード側からコントロールへ値を流し込んでいる」
+    /// 区間で、その間に飛ぶ ValueChanged / Checked 等のハンドラは早期 return する。
+    /// 単純な bool ではなく深さカウンタ: 値を流し込むメソッドが別の同種メソッドを
+    /// 呼び子側が終端で解除しても、外側の区間はまだ抜けていない、という入れ子を
+    /// 正しく扱える(OverlayState の _batchDepth と同じ考え方。以前は
+    /// SetGuideFovPitchRollDisplay 等でこの入れ子問題を手作業で避けていた)。
+    /// 読み取りは <c>_suppressEvents</c> プロパティ、区間は
+    /// <c>_suppressEventsDepth++</c> / <c>_suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1)</c>。</summary>
+    private int _suppressEventsDepth;
+    private bool _suppressEvents => _suppressEventsDepth > 0;
 
     public ControlPanelWindow(OverlayState state, OverlayWindow overlayWindow, UndoManager undo, VrChatOscListener oscListener, ScreenshotWatcherService screenshotWatcher, UnityCameraGuideService unityCameraGuide)
     {
@@ -69,13 +112,15 @@ public partial class ControlPanelWindow : Window
         _oscListener = oscListener;
         _screenshotWatcher = screenshotWatcher;
         _unityCameraGuide = unityCameraGuide;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         InitializeComponent();
         ThemeToggleButton.IsChecked = ThemeService.IsDarkMode;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         _defaultMinWidth = MinWidth;
         _defaultMinHeight = MinHeight;
         RebuildDecalStrip(); // populates just the non-removable アバター marker at startup
+        RebuildMaskList();
+        RefreshMaskChips();
 
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
         TitleBarVersionText.Text = $"v{version.Major}.{version.Minor}.{version.Build}";
@@ -99,9 +144,9 @@ public partial class ControlPanelWindow : Window
             _state.GuideManualFov = data.Fov;
             _state.GuideManualPitch = data.Pitch;
             _state.GuideManualRoll = data.Roll;
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             RefreshGuideManualDisplay();
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         };
 
         _state.PropertyChanged += (_, e) => { RefreshFromState(e.PropertyName); ScheduleCompositeRender(); };
@@ -110,6 +155,7 @@ public partial class ControlPanelWindow : Window
         RefreshPhotoLookUI();
         RefreshFinishUI();
         RefreshSkipAvatarUI();
+        RefreshSplitGapRowEnabled();
         PreviewKeyDown += ControlPanelWindow_PreviewKeyDown;
 
         // Set here (after InitializeComponent), not via IsChecked="True" in
@@ -1046,47 +1092,47 @@ public partial class ControlPanelWindow : Window
 
     private List<(Func<CompositeSnapshot, object?> Key, FrameworkElement Row)> BuildCompositeFlashTable() => new()
     {
-        (s => s.PhotoBrightness, PhotoBrightnessSlider),
-        (s => s.PhotoContrast, PhotoContrastSlider),
-        (s => s.PhotoSaturation, PhotoSaturationSlider),
-        (s => s.PhotoVibrance, PhotoVibranceSlider),
-        (s => s.PhotoTemperature, PhotoTemperatureSlider),
-        (s => s.PhotoTint, PhotoTintSlider),
-        (s => s.PhotoHue, PhotoHueSlider),
-        (s => s.PhotoHighlights, PhotoHighlightsSlider),
-        (s => s.PhotoShadows, PhotoShadowsSlider),
-        (s => s.PhotoWhites, PhotoWhitesSlider),
-        (s => s.PhotoBlacks, PhotoBlacksSlider),
-        (s => (s.PhotoColorTintStrength, s.PhotoColorTintR, s.PhotoColorTintG, s.PhotoColorTintB), PhotoColorTintStrengthSlider),
-        (s => s.PhotoBlurAmount, PhotoBlurSlider),
-        (s => s.GrainAmount, GrainSlider),
-        (s => s.VignetteAmount, VignetteSlider),
-        (s => s.SoftnessAmount, SoftnessSlider),
-        (s => s.SharpnessAmount, SharpnessSlider),
-        (s => s.FadeAmount, FadeSlider),
-        (s => s.GlowAmount, GlowSlider),
-        (s => s.ChromaticAberrationAmount, ChromaticAberrationSlider),
-        (s => s.ColorBleedAmount, ColorBleedSlider),
-        (s => s.ScanlineAmount, ScanlineSlider),
-        (s => s.ClarityAmount, ClaritySlider),
-        (s => (s.LightLeakAmount, s.LightLeakAngle, s.LightLeakDistance, s.LightLeakColorB, s.LightLeakColorG, s.LightLeakColorR), LightLeakSlider),
-        (s => s.ToneGradientAmount, ToneGradientSlider),
-        (s => s.ToneGradientRotation, ToneGradientDirectionSlider),
-        (s => s.DropShadowAmount, DropShadowSlider),
-        (s => s.DropShadowDirection, DropShadowDirectionSlider),
-        (s => s.DropShadowDistance, DropShadowDistanceSlider),
-        (s => s.DropShadowBlur, DropShadowBlurSlider),
-        (s => (s.DropShadowColorB, s.DropShadowColorG, s.DropShadowColorR), DropShadowColorButton),
-        (s => s.DropShadowBlendMode, DropShadowBlendModeCombo),
+        (s => s.PhotoLook.PhotoBrightness, PhotoBrightnessSlider),
+        (s => s.PhotoLook.PhotoContrast, PhotoContrastSlider),
+        (s => s.PhotoLook.PhotoSaturation, PhotoSaturationSlider),
+        (s => s.PhotoLook.PhotoVibrance, PhotoVibranceSlider),
+        (s => s.PhotoLook.PhotoTemperature, PhotoTemperatureSlider),
+        (s => s.PhotoLook.PhotoTint, PhotoTintSlider),
+        (s => s.PhotoLook.PhotoHue, PhotoHueSlider),
+        (s => s.PhotoLook.PhotoHighlights, PhotoHighlightsSlider),
+        (s => s.PhotoLook.PhotoShadows, PhotoShadowsSlider),
+        (s => s.PhotoLook.PhotoWhites, PhotoWhitesSlider),
+        (s => s.PhotoLook.PhotoBlacks, PhotoBlacksSlider),
+        (s => (s.PhotoLook.PhotoColorTintStrength, s.PhotoLook.PhotoColorTintR, s.PhotoLook.PhotoColorTintG, s.PhotoLook.PhotoColorTintB), PhotoColorTintStrengthSlider),
+        (s => s.PhotoLook.PhotoBlurAmount, PhotoBlurSlider),
+        (s => s.Finish.GrainAmount, GrainSlider),
+        (s => s.Finish.VignetteAmount, VignetteSlider),
+        (s => s.Finish.SoftnessAmount, SoftnessSlider),
+        (s => s.Finish.SharpnessAmount, SharpnessSlider),
+        (s => s.Finish.FadeAmount, FadeSlider),
+        (s => s.Finish.GlowAmount, GlowSlider),
+        (s => s.Finish.ChromaticAberrationAmount, ChromaticAberrationSlider),
+        (s => s.Finish.ColorBleedAmount, ColorBleedSlider),
+        (s => s.Finish.ScanlineAmount, ScanlineSlider),
+        (s => s.Finish.ClarityAmount, ClaritySlider),
+        (s => (s.Finish.LightLeakAmount, s.Finish.LightLeakAngle, s.Finish.LightLeakDistance, s.Finish.LightLeakColorB, s.Finish.LightLeakColorG, s.Finish.LightLeakColorR), LightLeakSlider),
+        (s => s.Finish.ToneGradientAmount, ToneGradientSlider),
+        (s => s.Finish.ToneGradientRotation, ToneGradientDirectionSlider),
+        (s => s.DropShadow.DropShadowAmount, DropShadowSlider),
+        (s => s.DropShadow.DropShadowDirection, DropShadowDirectionSlider),
+        (s => s.DropShadow.DropShadowDistance, DropShadowDistanceSlider),
+        (s => s.DropShadow.DropShadowBlur, DropShadowBlurSlider),
+        (s => (s.DropShadow.DropShadowColorB, s.DropShadow.DropShadowColorG, s.DropShadow.DropShadowColorR), DropShadowColorButton),
+        (s => s.DropShadow.DropShadowBlendMode, DropShadowBlendModeCombo),
         // No dedicated crop-width/position row anymore (see 切り抜き幅/位置X/Y's
         // own removal comment elsewhere -- the interactive 切り抜きモード drag
         // replaced them), so those two undo-tracked properties have no
         // FlashRow-compatible anchor left; simply not flashed on undo/redo.
-        (s => s.CanvasAspectRatio, CanvasAspectCombo),
+        (s => s.CanvasCrop.CanvasAspectRatio, CanvasAspectCombo),
         // No dedicated X/Y/幅/回転 rows anymore either (see
         // AvatarPlacementModeToggle_Changed's own removal comment) -- all 5
         // properties instead flash the toggle's own row as one group.
-        (s => (s.CompositePlaceX, s.CompositePlaceY, s.CompositePlaceWidth, s.CompositePlaceHeight, s.CompositeRotation), AvatarPlacementModeToggle),
+        (s => (s.Placement.CompositePlaceX, s.Placement.CompositePlaceY, s.Placement.CompositePlaceWidth, s.Placement.CompositePlaceHeight, s.Placement.CompositeRotation), AvatarPlacementModeToggle),
     };
 
     private void OnUndoRedoApplied(bool isRedo, OverlaySnapshot before, OverlaySnapshot after, object? extraBefore, object? extraAfter)
@@ -1182,7 +1228,7 @@ public partial class ControlPanelWindow : Window
 
     private void RefreshFromState(string? changedProperty = null)
     {
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         try
         {
             bool all = changedProperty is null;
@@ -1252,7 +1298,7 @@ public partial class ControlPanelWindow : Window
         }
         finally
         {
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
     }
 
@@ -1538,9 +1584,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(OpacitySlider.Value, 3, 50, 100);
         if (snapped != OpacitySlider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             OpacitySlider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         _state.Opacity = snapped / 100.0;
     }
@@ -1675,12 +1721,12 @@ public partial class ControlPanelWindow : Window
     }
 
     /// <summary>No _suppressEvents management of its own -- every caller is
-    /// already inside a _suppressEvents=true scope of its own
-    /// (RefreshFromState's, or the constructor's DataUpdated handler), and
-    /// this used to manage the flag itself too, which broke when called
-    /// from INSIDE RefreshFromState's own scope: setting _suppressEvents=
-    /// false partway through RefreshFromState let its later lines' handlers
-    /// fire early.</summary>
+    /// already inside a suppression scope of its own (RefreshFromState's, or
+    /// the constructor's DataUpdated handler). It could now safely push/pop
+    /// _suppressEventsDepth itself (the counter nests), but there's no reason
+    /// to: the callers already cover it. (Historically it DID set a bool flag
+    /// and reset it partway through, which fired RefreshFromState's later
+    /// handlers early -- the bug that motivated the depth counter.)</summary>
     private void SetGuideFovPitchRollDisplay(double fov, double pitch, double roll)
     {
         GuideFovBox.Text = fov.ToString("F0", CultureInfo.InvariantCulture);
@@ -1750,9 +1796,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Brightness;
@@ -1777,9 +1823,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Contrast;
@@ -1804,9 +1850,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Saturation;
@@ -1831,9 +1877,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Vibrance;
@@ -1858,9 +1904,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Temperature;
@@ -1885,9 +1931,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Tint;
@@ -1912,9 +1958,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Hue;
@@ -1939,9 +1985,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Highlights;
@@ -1966,9 +2012,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Shadows;
@@ -1993,9 +2039,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Whites;
@@ -2020,9 +2066,9 @@ public partial class ControlPanelWindow : Window
         double snapped = SoftSnap(slider.Value, 3, 0);
         if (snapped != slider.Value)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             slider.Value = snapped;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         double rounded = Math.Round(snapped);
         double delta = rounded - _state.Blacks;
@@ -2492,6 +2538,14 @@ public partial class ControlPanelWindow : Window
     /// CanvasCropBoundary_*.</summary>
     private bool _isCropModeActive;
 
+    /// <summary>切り抜きモード / アバター配置モード中は、まだ確定していない
+    /// 切り抜きの外へも要素を置いて見えるよう、プレビューは未切り抜きの写真
+    /// 全体を表示する。GetDisplayedCropRect と RenderCompositePreview の
+    /// cropAdjusting、RefreshSliderLockState の hardLocked は必ずこの1つを
+    /// 参照して食い違わないようにする(デカール配置モードは含めない -- 切り抜き
+    /// 後のキャンバス上で作業する)。</summary>
+    private bool PreviewShowsUncropped => _isCropModeActive || _isAvatarPlacementModeActive;
+
     private ImageAdjustment.ColorAdjustments PhotoAdjustments => new(
         _photoBrightness, _photoContrast, _photoSaturation,
         _photoVibrance, _photoTemperature, _photoTint, _photoHue,
@@ -2740,93 +2794,101 @@ public partial class ControlPanelWindow : Window
     }
 
     private CompositeSnapshot CaptureCompositeSnapshot() => new(
-        _photoBrightness, _photoContrast, _photoSaturation,
-        _photoVibrance, _photoTemperature, _photoTint, _photoHue,
-        _photoHighlights, _photoShadows, _photoWhites, _photoBlacks,
-        _photoColorTintStrength, _photoColorTintR, _photoColorTintG, _photoColorTintB,
-        _photoBlurAmount,
-        _grainAmount, _vignetteAmount,
-        _softnessAmount, _sharpnessAmount,
-        _fadeAmount, _glowAmount,
-        _chromaticAberrationAmount, _colorBleedAmount, _scanlineAmount,
-        _clarityAmount, _lightLeakAmount, _lightLeakAngle, _lightLeakDistance,
-        _lightLeakColorB, _lightLeakColorG, _lightLeakColorR,
-        _toneGradientAmount, _toneGradientRotation,
-        _toneGradientLightR, _toneGradientLightG, _toneGradientLightB,
-        _toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB,
-        _dropShadowAmount, _dropShadowDirection, _dropShadowDistance, _dropShadowBlur,
-        _dropShadowColorB, _dropShadowColorG, _dropShadowColorR,
-        _dropShadowBlendMode,
-        _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent, _canvasCropHeightPercent,
-        _compositePlaceX, _compositePlaceY, _compositePlaceWidth, _compositePlaceHeight,
-        _compositeRotation,
+        new CompositePhotoLook(
+            PhotoBrightness: _photoBrightness, PhotoContrast: _photoContrast, PhotoSaturation: _photoSaturation,
+            PhotoVibrance: _photoVibrance, PhotoTemperature: _photoTemperature, PhotoTint: _photoTint, PhotoHue: _photoHue,
+            PhotoHighlights: _photoHighlights, PhotoShadows: _photoShadows, PhotoWhites: _photoWhites, PhotoBlacks: _photoBlacks,
+            PhotoColorTintStrength: _photoColorTintStrength, PhotoColorTintR: _photoColorTintR, PhotoColorTintG: _photoColorTintG, PhotoColorTintB: _photoColorTintB,
+            PhotoBlurAmount: _photoBlurAmount),
+        new CompositeFinish(
+            GrainAmount: _grainAmount, VignetteAmount: _vignetteAmount,
+            SoftnessAmount: _softnessAmount, SharpnessAmount: _sharpnessAmount,
+            FadeAmount: _fadeAmount, GlowAmount: _glowAmount,
+            ChromaticAberrationAmount: _chromaticAberrationAmount, ColorBleedAmount: _colorBleedAmount, ScanlineAmount: _scanlineAmount,
+            ClarityAmount: _clarityAmount, LightLeakAmount: _lightLeakAmount, LightLeakAngle: _lightLeakAngle, LightLeakDistance: _lightLeakDistance,
+            LightLeakColorB: _lightLeakColorB, LightLeakColorG: _lightLeakColorG, LightLeakColorR: _lightLeakColorR,
+            ToneGradientAmount: _toneGradientAmount, ToneGradientRotation: _toneGradientRotation,
+            ToneGradientLightR: _toneGradientLightR, ToneGradientLightG: _toneGradientLightG, ToneGradientLightB: _toneGradientLightB,
+            ToneGradientDarkR: _toneGradientDarkR, ToneGradientDarkG: _toneGradientDarkG, ToneGradientDarkB: _toneGradientDarkB),
+        new CompositeDropShadow(
+            DropShadowAmount: _dropShadowAmount, DropShadowDirection: _dropShadowDirection, DropShadowDistance: _dropShadowDistance, DropShadowBlur: _dropShadowBlur,
+            DropShadowColorB: _dropShadowColorB, DropShadowColorG: _dropShadowColorG, DropShadowColorR: _dropShadowColorR,
+            DropShadowBlendMode: _dropShadowBlendMode),
+        new CompositeCanvasCrop(
+            CanvasAspectRatio: _canvasAspectRatio, CanvasCropOffsetX: _canvasCropOffsetX, CanvasCropOffsetY: _canvasCropOffsetY,
+            CanvasCropWidthPercent: _canvasCropWidthPercent, CanvasCropHeightPercent: _canvasCropHeightPercent),
+        new CompositePlacement(
+            CompositePlaceX: _compositePlaceX, CompositePlaceY: _compositePlaceY, CompositePlaceWidth: _compositePlaceWidth, CompositePlaceHeight: _compositePlaceHeight,
+            CompositeRotation: _compositeRotation),
         CaptureDecalSnapshot(),
-        _blankCanvasR, _blankCanvasG, _blankCanvasB,
-        _blankCanvasR2, _blankCanvasG2, _blankCanvasB2,
-        _blankCanvasGradientEnabled, _blankCanvasGradientDirection, _isBlankCanvasActive,
+        new CompositeBlankCanvas(
+            BlankCanvasR: _blankCanvasR, BlankCanvasG: _blankCanvasG, BlankCanvasB: _blankCanvasB,
+            BlankCanvasR2: _blankCanvasR2, BlankCanvasG2: _blankCanvasG2, BlankCanvasB2: _blankCanvasB2,
+            BlankCanvasGradientEnabled: _blankCanvasGradientEnabled, BlankCanvasGradientDirection: _blankCanvasGradientDirection, IsBlankCanvasActive: _isBlankCanvasActive),
+        CaptureMaskSnapshot(),
         _photoPixelBuffer);
 
     private void ApplyCompositeSnapshot(object? snapshot)
     {
         if (snapshot is not CompositeSnapshot s) return;
-        _photoBrightness = s.PhotoBrightness;
-        _photoContrast = s.PhotoContrast;
-        _photoSaturation = s.PhotoSaturation;
-        _photoVibrance = s.PhotoVibrance;
-        _photoTemperature = s.PhotoTemperature;
-        _photoTint = s.PhotoTint;
-        _photoHue = s.PhotoHue;
-        _photoHighlights = s.PhotoHighlights;
-        _photoShadows = s.PhotoShadows;
-        _photoWhites = s.PhotoWhites;
-        _photoBlacks = s.PhotoBlacks;
-        _photoColorTintStrength = s.PhotoColorTintStrength;
-        _photoColorTintR = s.PhotoColorTintR;
-        _photoColorTintG = s.PhotoColorTintG;
-        _photoColorTintB = s.PhotoColorTintB;
-        _photoBlurAmount = s.PhotoBlurAmount;
-        _grainAmount = s.GrainAmount;
-        _vignetteAmount = s.VignetteAmount;
-        _softnessAmount = s.SoftnessAmount;
-        _sharpnessAmount = s.SharpnessAmount;
-        _fadeAmount = s.FadeAmount;
-        _glowAmount = s.GlowAmount;
-        _chromaticAberrationAmount = s.ChromaticAberrationAmount;
-        _colorBleedAmount = s.ColorBleedAmount;
-        _scanlineAmount = s.ScanlineAmount;
-        _clarityAmount = s.ClarityAmount;
-        _lightLeakAmount = s.LightLeakAmount;
-        _lightLeakAngle = s.LightLeakAngle;
-        _lightLeakDistance = s.LightLeakDistance;
-        _lightLeakColorB = s.LightLeakColorB;
-        _lightLeakColorG = s.LightLeakColorG;
-        _lightLeakColorR = s.LightLeakColorR;
-        _toneGradientAmount = s.ToneGradientAmount;
-        _toneGradientRotation = s.ToneGradientRotation;
-        _toneGradientLightR = s.ToneGradientLightR;
-        _toneGradientLightG = s.ToneGradientLightG;
-        _toneGradientLightB = s.ToneGradientLightB;
-        _toneGradientDarkR = s.ToneGradientDarkR;
-        _toneGradientDarkG = s.ToneGradientDarkG;
-        _toneGradientDarkB = s.ToneGradientDarkB;
-        _dropShadowAmount = s.DropShadowAmount;
-        _dropShadowDirection = s.DropShadowDirection;
-        _dropShadowDistance = s.DropShadowDistance;
-        _dropShadowBlur = s.DropShadowBlur;
-        _dropShadowColorB = s.DropShadowColorB;
-        _dropShadowColorG = s.DropShadowColorG;
-        _dropShadowColorR = s.DropShadowColorR;
-        _dropShadowBlendMode = s.DropShadowBlendMode;
-        _canvasAspectRatio = s.CanvasAspectRatio;
-        _canvasCropOffsetX = s.CanvasCropOffsetX;
-        _canvasCropOffsetY = s.CanvasCropOffsetY;
-        _canvasCropWidthPercent = s.CanvasCropWidthPercent;
-        _canvasCropHeightPercent = s.CanvasCropHeightPercent;
-        _compositePlaceX = s.CompositePlaceX;
-        _compositePlaceY = s.CompositePlaceY;
-        _compositePlaceWidth = s.CompositePlaceWidth;
-        _compositePlaceHeight = s.CompositePlaceHeight;
-        _compositeRotation = s.CompositeRotation;
+        _photoBrightness = s.PhotoLook.PhotoBrightness;
+        _photoContrast = s.PhotoLook.PhotoContrast;
+        _photoSaturation = s.PhotoLook.PhotoSaturation;
+        _photoVibrance = s.PhotoLook.PhotoVibrance;
+        _photoTemperature = s.PhotoLook.PhotoTemperature;
+        _photoTint = s.PhotoLook.PhotoTint;
+        _photoHue = s.PhotoLook.PhotoHue;
+        _photoHighlights = s.PhotoLook.PhotoHighlights;
+        _photoShadows = s.PhotoLook.PhotoShadows;
+        _photoWhites = s.PhotoLook.PhotoWhites;
+        _photoBlacks = s.PhotoLook.PhotoBlacks;
+        _photoColorTintStrength = s.PhotoLook.PhotoColorTintStrength;
+        _photoColorTintR = s.PhotoLook.PhotoColorTintR;
+        _photoColorTintG = s.PhotoLook.PhotoColorTintG;
+        _photoColorTintB = s.PhotoLook.PhotoColorTintB;
+        _photoBlurAmount = s.PhotoLook.PhotoBlurAmount;
+        _grainAmount = s.Finish.GrainAmount;
+        _vignetteAmount = s.Finish.VignetteAmount;
+        _softnessAmount = s.Finish.SoftnessAmount;
+        _sharpnessAmount = s.Finish.SharpnessAmount;
+        _fadeAmount = s.Finish.FadeAmount;
+        _glowAmount = s.Finish.GlowAmount;
+        _chromaticAberrationAmount = s.Finish.ChromaticAberrationAmount;
+        _colorBleedAmount = s.Finish.ColorBleedAmount;
+        _scanlineAmount = s.Finish.ScanlineAmount;
+        _clarityAmount = s.Finish.ClarityAmount;
+        _lightLeakAmount = s.Finish.LightLeakAmount;
+        _lightLeakAngle = s.Finish.LightLeakAngle;
+        _lightLeakDistance = s.Finish.LightLeakDistance;
+        _lightLeakColorB = s.Finish.LightLeakColorB;
+        _lightLeakColorG = s.Finish.LightLeakColorG;
+        _lightLeakColorR = s.Finish.LightLeakColorR;
+        _toneGradientAmount = s.Finish.ToneGradientAmount;
+        _toneGradientRotation = s.Finish.ToneGradientRotation;
+        _toneGradientLightR = s.Finish.ToneGradientLightR;
+        _toneGradientLightG = s.Finish.ToneGradientLightG;
+        _toneGradientLightB = s.Finish.ToneGradientLightB;
+        _toneGradientDarkR = s.Finish.ToneGradientDarkR;
+        _toneGradientDarkG = s.Finish.ToneGradientDarkG;
+        _toneGradientDarkB = s.Finish.ToneGradientDarkB;
+        _dropShadowAmount = s.DropShadow.DropShadowAmount;
+        _dropShadowDirection = s.DropShadow.DropShadowDirection;
+        _dropShadowDistance = s.DropShadow.DropShadowDistance;
+        _dropShadowBlur = s.DropShadow.DropShadowBlur;
+        _dropShadowColorB = s.DropShadow.DropShadowColorB;
+        _dropShadowColorG = s.DropShadow.DropShadowColorG;
+        _dropShadowColorR = s.DropShadow.DropShadowColorR;
+        _dropShadowBlendMode = s.DropShadow.DropShadowBlendMode;
+        _canvasAspectRatio = s.CanvasCrop.CanvasAspectRatio;
+        _canvasCropOffsetX = s.CanvasCrop.CanvasCropOffsetX;
+        _canvasCropOffsetY = s.CanvasCrop.CanvasCropOffsetY;
+        _canvasCropWidthPercent = s.CanvasCrop.CanvasCropWidthPercent;
+        _canvasCropHeightPercent = s.CanvasCrop.CanvasCropHeightPercent;
+        _compositePlaceX = s.Placement.CompositePlaceX;
+        _compositePlaceY = s.Placement.CompositePlaceY;
+        _compositePlaceWidth = s.Placement.CompositePlaceWidth;
+        _compositePlaceHeight = s.Placement.CompositePlaceHeight;
+        _compositeRotation = s.Placement.CompositeRotation;
 
         // #2 背景写真の +90°回転: スナップショット時点の(可能なら回転済みの)
         // ピクセルバッファ参照をそのまま戻す。回転のみが _photoPixelBuffer を
@@ -2840,16 +2902,16 @@ public partial class ControlPanelWindow : Window
 
         // #1 「背景なしで作成」の色/グラデーション。
         bool blankChanged =
-            _blankCanvasR != s.BlankCanvasR || _blankCanvasG != s.BlankCanvasG || _blankCanvasB != s.BlankCanvasB ||
-            _blankCanvasR2 != s.BlankCanvasR2 || _blankCanvasG2 != s.BlankCanvasG2 || _blankCanvasB2 != s.BlankCanvasB2 ||
-            _blankCanvasGradientEnabled != s.BlankCanvasGradientEnabled ||
-            _blankCanvasGradientDirection != s.BlankCanvasGradientDirection ||
-            _isBlankCanvasActive != s.IsBlankCanvasActive;
-        _blankCanvasR = s.BlankCanvasR; _blankCanvasG = s.BlankCanvasG; _blankCanvasB = s.BlankCanvasB;
-        _blankCanvasR2 = s.BlankCanvasR2; _blankCanvasG2 = s.BlankCanvasG2; _blankCanvasB2 = s.BlankCanvasB2;
-        _blankCanvasGradientEnabled = s.BlankCanvasGradientEnabled;
-        _blankCanvasGradientDirection = s.BlankCanvasGradientDirection;
-        _isBlankCanvasActive = s.IsBlankCanvasActive;
+            _blankCanvasR != s.BlankCanvas.BlankCanvasR || _blankCanvasG != s.BlankCanvas.BlankCanvasG || _blankCanvasB != s.BlankCanvas.BlankCanvasB ||
+            _blankCanvasR2 != s.BlankCanvas.BlankCanvasR2 || _blankCanvasG2 != s.BlankCanvas.BlankCanvasG2 || _blankCanvasB2 != s.BlankCanvas.BlankCanvasB2 ||
+            _blankCanvasGradientEnabled != s.BlankCanvas.BlankCanvasGradientEnabled ||
+            _blankCanvasGradientDirection != s.BlankCanvas.BlankCanvasGradientDirection ||
+            _isBlankCanvasActive != s.BlankCanvas.IsBlankCanvasActive;
+        _blankCanvasR = s.BlankCanvas.BlankCanvasR; _blankCanvasG = s.BlankCanvas.BlankCanvasG; _blankCanvasB = s.BlankCanvas.BlankCanvasB;
+        _blankCanvasR2 = s.BlankCanvas.BlankCanvasR2; _blankCanvasG2 = s.BlankCanvas.BlankCanvasG2; _blankCanvasB2 = s.BlankCanvas.BlankCanvasB2;
+        _blankCanvasGradientEnabled = s.BlankCanvas.BlankCanvasGradientEnabled;
+        _blankCanvasGradientDirection = s.BlankCanvas.BlankCanvasGradientDirection;
+        _isBlankCanvasActive = s.BlankCanvas.IsBlankCanvasActive;
         if (blankChanged)
         {
             RefreshBlankCanvasUI();
@@ -2857,6 +2919,7 @@ public partial class ControlPanelWindow : Window
         }
 
         ApplyDecalSnapshot(s.Decals);
+        ApplyMaskSnapshot(s.Masks);
         RefreshPhotoLookUI();
         RefreshFinishUI();
         RefreshCompositePlacementUI();
@@ -2904,6 +2967,7 @@ public partial class ControlPanelWindow : Window
         _decalLayerOrder.RemoveAll(l => l is not null);
         ExitDecalPlacementMode();
         RebuildDecalStrip();
+        ClearMasks();
         // 別の写真に切り替えたら Undo 履歴は無効(配置/look/デカール/背景色は
         // その写真に対してのみ意味を持つ)。モード入場スナップショットも同様。
         _undo.Clear();
@@ -2929,6 +2993,7 @@ public partial class ControlPanelWindow : Window
         _decalLayerOrder.RemoveAll(l => l is not null);
         ExitDecalPlacementMode();
         RebuildDecalStrip();
+        ClearMasks();
         // 配置の推定し直し(_compositePlacementInitialized=false)を CommitChange の
         // 前に確定させたいので、ScheduleCompositeRender ではなく同期的に走らせる
         // (ResetCompositePlacementButton_Click と同じ理由・同じやり方)。
@@ -3009,9 +3074,9 @@ public partial class ControlPanelWindow : Window
     private void BlankCanvasColorButton_Click(object sender, RoutedEventArgs e)
     {
         BlankCanvasColorWheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncBlankCanvasColorUI(_blankCanvasR, _blankCanvasG, _blankCanvasB);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         BlankCanvasColorPopup.IsOpen = true;
     }
 
@@ -3129,9 +3194,9 @@ public partial class ControlPanelWindow : Window
         _blankCanvasG = g;
         _blankCanvasB = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncBlankCanvasColorUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         BlankCanvasColorSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         if (_isBlankCanvasActive) RegenerateBlankCanvas();
@@ -3144,9 +3209,9 @@ public partial class ControlPanelWindow : Window
     private void BlankCanvasColor2Button_Click(object sender, RoutedEventArgs e)
     {
         BlankCanvasColor2Wheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncBlankCanvasColor2UI(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         BlankCanvasColor2Popup.IsOpen = true;
     }
 
@@ -3264,9 +3329,9 @@ public partial class ControlPanelWindow : Window
         _blankCanvasG2 = g;
         _blankCanvasB2 = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncBlankCanvasColor2UI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         BlankCanvasColor2Swatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         if (_isBlankCanvasActive) RegenerateBlankCanvas();
@@ -3296,9 +3361,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(BlankCanvasGradientDirectionSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         BlankCanvasGradientDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _blankCanvasGradientDirection) return;
         _blankCanvasGradientDirection = rounded;
         if (_isBlankCanvasActive) RegenerateBlankCanvas();
@@ -3309,9 +3374,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(BlankCanvasGradientDirectionBox.Text, out var v)) return;
         _blankCanvasGradientDirection = Math.Clamp(v, 0, 360);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         BlankCanvasGradientDirectionSlider.Value = _blankCanvasGradientDirection;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (_isBlankCanvasActive) RegenerateBlankCanvas();
     }
 
@@ -3373,6 +3438,7 @@ public partial class ControlPanelWindow : Window
         _decalLayerOrder.RemoveAll(l => l is not null);
         ExitDecalPlacementMode();
         RebuildDecalStrip();
+        ClearMasks();
 
         _photoBrightness = _photoContrast = _photoSaturation = 0;
         _photoVibrance = _photoTemperature = _photoTint = _photoHue = 0;
@@ -3380,7 +3446,7 @@ public partial class ControlPanelWindow : Window
         RefreshPhotoLookUI();
         ClearCompositeSaveStatus();
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncBlankCanvasColorUI(_blankCanvasR, _blankCanvasG, _blankCanvasB);
         SyncBlankCanvasColor2UI(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2);
         BlankCanvasColorSwatch.Background = new SolidColorBrush(Color.FromRgb(_blankCanvasR, _blankCanvasG, _blankCanvasB));
@@ -3388,7 +3454,7 @@ public partial class ControlPanelWindow : Window
         BlankCanvasGradientToggle.IsChecked = false;
         BlankCanvasGradientDirectionSlider.Value = 0;
         BlankCanvasGradientDirectionBox.Text = "0";
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         RefreshBlankCanvasGradientUI();
 
         BlankCanvasColorPanel.Visibility = Visibility.Visible;
@@ -3490,7 +3556,7 @@ public partial class ControlPanelWindow : Window
     /// refresh occasions: construction, undo/redo, snapshot restore).</summary>
     private void RefreshCanvasAspectUI()
     {
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         int index = _canvasAspectRatio switch
         {
             null => 0,
@@ -3523,7 +3589,7 @@ public partial class ControlPanelWindow : Window
                 CanvasAspectCustomHeightBox.Text = "1";
             }
         }
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
     }
 
     private void CanvasAspectCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -3539,11 +3605,11 @@ public partial class ControlPanelWindow : Window
             // on 4:5, say, should just let the boxes show/refine 0.8:1, not
             // silently jump to some other starting value.
             _canvasAspectRatio ??= 1.0;
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             CanvasAspectCustomRow.Visibility = Visibility.Visible;
             CanvasAspectCustomWidthBox.Text = _canvasAspectRatio.Value.ToString("0.###", CultureInfo.InvariantCulture);
             CanvasAspectCustomHeightBox.Text = "1";
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
             ScheduleCompositeRender();
             return;
         }
@@ -3664,8 +3730,8 @@ public partial class ControlPanelWindow : Window
         // 全体を止める。デカール配置は「デカール」カードの図形プロパティ
         // (色/太さ)を位置確定前に触りたい & 右列をスクロールしたいので、
         // カード列は生かしたまま確定バーだけ出す(ロック通知は出さない)。
-        bool hardLocked = _isCropModeActive || _isAvatarPlacementModeActive;
-        bool anyMode = hardLocked || _isDecalPlacementModeActive;
+        bool hardLocked = PreviewShowsUncropped;
+        bool anyMode = hardLocked || _isDecalPlacementModeActive || _isMaskEditModeActive;
         CompositeCardsScrollViewer.IsEnabled = !hardLocked;
         SliderLockNotice.Visibility = hardLocked ? Visibility.Visible : Visibility.Collapsed;
         PreviewModeConfirmBar.Visibility = anyMode ? Visibility.Visible : Visibility.Collapsed;
@@ -3689,6 +3755,7 @@ public partial class ControlPanelWindow : Window
         if (_isCropModeActive) CropModeToggle.IsChecked = false;
         else if (_isAvatarPlacementModeActive) AvatarPlacementModeToggle.IsChecked = false;
         else if (_isDecalPlacementModeActive) ExitDecalPlacementMode();
+        else if (_isMaskEditModeActive) ConfirmMaskEdit();
     }
 
     /// <summary>キャンセル: restores the snapshot captured when the active
@@ -3703,6 +3770,11 @@ public partial class ControlPanelWindow : Window
         if (_isDecalPlacementModeActive)
         {
             CancelDecalPlacement();
+            return;
+        }
+        if (_isMaskEditModeActive)
+        {
+            CancelMaskEdit();
             return;
         }
         var snapshot = _isCropModeActive ? _cropModeEntrySnapshot
@@ -3935,8 +4007,7 @@ public partial class ControlPanelWindow : Window
     /// コントロールをその値に合わせて一括同期する。</summary>
     private void RefreshBlankCanvasUI()
     {
-        bool prevSuppress = _suppressEvents;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncBlankCanvasColorUI(_blankCanvasR, _blankCanvasG, _blankCanvasB);
         SyncBlankCanvasColor2UI(_blankCanvasR2, _blankCanvasG2, _blankCanvasB2);
         BlankCanvasColorSwatch.Background = new SolidColorBrush(Color.FromRgb(_blankCanvasR, _blankCanvasG, _blankCanvasB));
@@ -3944,7 +4015,7 @@ public partial class ControlPanelWindow : Window
         BlankCanvasGradientToggle.IsChecked = _blankCanvasGradientEnabled;
         BlankCanvasGradientDirectionSlider.Value = _blankCanvasGradientDirection;
         BlankCanvasGradientDirectionBox.Text = _blankCanvasGradientDirection.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = prevSuppress;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         RefreshBlankCanvasGradientUI();
         RefreshBlankCanvasActiveUI();
         BlankCanvasColorPanel.Visibility = _isBlankCanvasActive ? Visibility.Visible : Visibility.Collapsed;
@@ -4143,13 +4214,12 @@ public partial class ControlPanelWindow : Window
         }
 
         bool dragging = _isCompositeDragging;
-        // Also skips the final crop while アバター配置モード is on, not just
-        // during 切り抜きモード itself: otherwise positioning/resizing the
-        // avatar near or past the crop's own edge would show it clipped away
-        // by a crop that hasn't even been committed to yet -- see
-        // GetDisplayedCropRect, which every avatar coordinate conversion
-        // must agree with this flag on.
-        bool cropAdjusting = _isCropModeActive || _isAvatarPlacementModeActive || _isDecalPlacementModeActive;
+        // Skips the final crop while 切り抜きモード or アバター配置モード is on
+        // (positioning near/past the not-yet-committed crop edge must stay
+        // visible). デカール配置モード is deliberately NOT here: decals are
+        // placed on the already-cropped canvas (see GetDisplayedCropRect),
+        // which every decal coordinate conversion must agree with.
+        bool cropAdjusting = PreviewShowsUncropped;
 
         if (overlaySource is null)
         {
@@ -4167,8 +4237,10 @@ public partial class ControlPanelWindow : Window
             var snap = CaptureCompositeSnapshot();
             var behindDecalsNoAvatar = CaptureBehindAvatarDecals(photoOnlyScale, dragging);
             var frontDecalsNoAvatar = CaptureInFrontOfAvatarDecals(photoOnlyScale, dragging);
-            renderPhotoBuffer = ApplyBehindAvatarDecals(renderPhotoBuffer, behindDecalsNoAvatar, photoOnlyScale, snap.PhotoBlurAmount, photoOnlyScale);
-            double effectivePhotoBlurAmountNoAvatar = EffectivePhotoBlurAmount(snap.PhotoBlurAmount, behindDecalsNoAvatar);
+            renderPhotoBuffer = ApplyBehindAvatarDecals(renderPhotoBuffer, behindDecalsNoAvatar, photoOnlyScale, snap.PhotoLook.PhotoBlurAmount, photoOnlyScale);
+            double effectivePhotoBlurAmountNoAvatar = EffectivePhotoBlurAmount(snap.PhotoLook.PhotoBlurAmount, behindDecalsNoAvatar);
+            var maskPlanNoAvatar = BuildMaskPlan();
+            var maskCropNoAvatar = GetCanvasCropRect(photoBuffer.Width, photoBuffer.Height);
 
             await _compositeRenderGate.WaitAsync();
             WriteableBitmap after;
@@ -4177,22 +4249,30 @@ public partial class ControlPanelWindow : Window
                 if (token != _compositeRenderToken) return; // superseded while waiting for the gate
                 after = await Task.Run(() =>
                 {
-                    var result = ImageAdjustment.CompositeOverlayOntoPhoto(
-                        renderPhotoBuffer, photoAdjustments,
-                        grainAmount: snap.GrainAmount, vignetteAmount: snap.VignetteAmount,
-                        photoBlurAmount: effectivePhotoBlurAmountNoAvatar, photoBlurScale: photoOnlyScale,
-                        softnessAmount: snap.SoftnessAmount, sharpnessAmount: snap.SharpnessAmount, finishDetailScale: photoOnlyScale,
-                        fadeAmount: snap.FadeAmount, glowAmount: snap.GlowAmount, glowScale: photoOnlyScale,
-                        chromaticAberrationAmount: snap.ChromaticAberrationAmount, colorBleedAmount: snap.ColorBleedAmount,
-                        scanlineAmount: snap.ScanlineAmount, vhsScale: photoOnlyScale,
-                        clarityAmount: snap.ClarityAmount, clarityScale: photoOnlyScale,
-                        lightLeakAmount: snap.LightLeakAmount, lightLeakAngle: snap.LightLeakAngle, lightLeakDistance: snap.LightLeakDistance,
-                        lightLeakColorB: snap.LightLeakColorB, lightLeakColorG: snap.LightLeakColorG, lightLeakColorR: snap.LightLeakColorR,
-                        toneGradientAmount: snap.ToneGradientAmount, toneGradientRotation: snap.ToneGradientRotation,
-                        toneGradientLightR: snap.ToneGradientLightR, toneGradientLightG: snap.ToneGradientLightG, toneGradientLightB: snap.ToneGradientLightB,
-                        toneGradientDarkR: snap.ToneGradientDarkR, toneGradientDarkG: snap.ToneGradientDarkG, toneGradientDarkB: snap.ToneGradientDarkB);
+                    // アバター不在なので変種インデックスは無視。
+                    WriteableBitmap RunNoAvatar(ImageAdjustment.ColorAdjustments adj, double toneAmt, double leakAmt, int _) =>
+                        ImageAdjustment.CompositeOverlayOntoPhoto(
+                            renderPhotoBuffer, adj,
+                            grainAmount: snap.Finish.GrainAmount, vignetteAmount: snap.Finish.VignetteAmount,
+                            photoBlurAmount: effectivePhotoBlurAmountNoAvatar, photoBlurScale: photoOnlyScale,
+                            softnessAmount: snap.Finish.SoftnessAmount, sharpnessAmount: snap.Finish.SharpnessAmount, finishDetailScale: photoOnlyScale,
+                            fadeAmount: snap.Finish.FadeAmount, glowAmount: snap.Finish.GlowAmount, glowScale: photoOnlyScale,
+                            chromaticAberrationAmount: snap.Finish.ChromaticAberrationAmount, colorBleedAmount: snap.Finish.ColorBleedAmount,
+                            scanlineAmount: snap.Finish.ScanlineAmount, vhsScale: photoOnlyScale,
+                            clarityAmount: snap.Finish.ClarityAmount, clarityScale: photoOnlyScale,
+                            lightLeakAmount: leakAmt, lightLeakAngle: snap.Finish.LightLeakAngle, lightLeakDistance: snap.Finish.LightLeakDistance,
+                            lightLeakColorB: snap.Finish.LightLeakColorB, lightLeakColorG: snap.Finish.LightLeakColorG, lightLeakColorR: snap.Finish.LightLeakColorR,
+                            toneGradientAmount: toneAmt, toneGradientRotation: snap.Finish.ToneGradientRotation,
+                            toneGradientLightR: snap.Finish.ToneGradientLightR, toneGradientLightG: snap.Finish.ToneGradientLightG, toneGradientLightB: snap.Finish.ToneGradientLightB,
+                            toneGradientDarkR: snap.Finish.ToneGradientDarkR, toneGradientDarkG: snap.Finish.ToneGradientDarkG, toneGradientDarkB: snap.Finish.ToneGradientDarkB);
+
+                    var result = maskPlanNoAvatar.Count == 0
+                        ? RunNoAvatar(photoAdjustments, snap.Finish.ToneGradientAmount, snap.Finish.LightLeakAmount, 0)
+                        : BlendMasked(RunNoAvatar, photoAdjustments, snap.Finish.ToneGradientAmount, snap.Finish.LightLeakAmount,
+                            maskPlanNoAvatar, new int[maskPlanNoAvatar.Count],
+                            maskCropNoAvatar.Left, maskCropNoAvatar.Top, maskCropNoAvatar.Width, maskCropNoAvatar.Height, photoOnlyScale);
                     result = ApplyInFrontOfAvatarDecals(result, frontDecalsNoAvatar, photoOnlyScale);
-                    return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, snap.CanvasAspectRatio, snap.CanvasCropOffsetX, snap.CanvasCropOffsetY, snap.CanvasCropWidthPercent, snap.CanvasCropHeightPercent);
+                    return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, snap.CanvasCrop.CanvasAspectRatio, snap.CanvasCrop.CanvasCropOffsetX, snap.CanvasCrop.CanvasCropOffsetY, snap.CanvasCrop.CanvasCropWidthPercent, snap.CanvasCrop.CanvasCropHeightPercent);
                 });
             }
             finally
@@ -4289,8 +4369,43 @@ public partial class ControlPanelWindow : Window
 
         var fullPhotoAdjustments = PhotoAdjustments;
         var fullSnap = CaptureCompositeSnapshot();
-        scaledPhotoBuffer = ApplyBehindAvatarDecals(scaledPhotoBuffer, behindDecals, previewScale, fullSnap.PhotoBlurAmount, previewScale);
-        double effectivePhotoBlurAmount = EffectivePhotoBlurAmount(fullSnap.PhotoBlurAmount, behindDecals);
+        scaledPhotoBuffer = ApplyBehindAvatarDecals(scaledPhotoBuffer, behindDecals, previewScale, fullSnap.PhotoLook.PhotoBlurAmount, previewScale);
+        double effectivePhotoBlurAmount = EffectivePhotoBlurAmount(fullSnap.PhotoLook.PhotoBlurAmount, behindDecals);
+        var maskPlan = BuildMaskPlan();
+        var maskCrop = GetCanvasCropRect(photoBuffer.Width, photoBuffer.Height);
+
+        // アバターの色調補正マスク: 色違いに焼いたアバターpixelを何枚か用意し、
+        // BlendMasked では「どの変種を使うか」(0 = 中立)で表現する。UI スレッドで焼く
+        // -- RenderOverlayForComposite が WPF ビジュアルを描くので Task.Run 内では不可。
+        // アバターの色調補正マスクが1つも無ければ変種は overlayPixels 1枚だけ(従来動作)。
+        var overlayVariants = new List<byte[]> { overlayPixels };
+        var variantIndexPerGroup = new int[maskPlan.Count];
+        if (maskPlan.Count > 0)
+        {
+            var avatarMasked = maskPlan.SelectMany(g => g.Targets).Where(IsAvatarTarget).Distinct().ToArray();
+            if (avatarMasked.Length > 0 && _overlayWindow.EdgeBlurredPixelBuffer is { } blurredAvatar)
+            {
+                var fullAv = AvatarAdjustments;
+                var neutralAv = avatarMasked.Aggregate(fullAv, WithAvatarTargetZeroed);
+                byte[] RenderAvatarVariant(ImageAdjustment.ColorAdjustments av)
+                {
+                    var colored = ImageAdjustment.ApplyColor(blurredAvatar, av);
+                    var (rendered, _, _) = ImageAdjustment.RenderOverlayForComposite(colored, placeWidth, placeHeight, _compositeRotation, 1.0);
+                    var (px, _, _, _) = ExtractBgraPixels(rendered);
+                    return px;
+                }
+                overlayVariants[0] = RenderAvatarVariant(neutralAv); // 変種0 = 中立
+                for (int i = 0; i < maskPlan.Count; i++)
+                {
+                    var gAvT = maskPlan[i].Targets.Where(IsAvatarTarget).ToArray();
+                    if (gAvT.Length == 0) { variantIndexPerGroup[i] = 0; continue; }
+                    var gAv = gAvT.Aggregate(neutralAv, (a, t) => WithAvatarTargetRestored(a, fullAv, t));
+                    overlayVariants.Add(RenderAvatarVariant(gAv));
+                    variantIndexPerGroup[i] = overlayVariants.Count - 1;
+                }
+            }
+        }
+        var overlayVariantArr = overlayVariants.ToArray();
 
         // Finishing effects (film grain, vignette) apply exactly once, to the
         // final composite result only -- not per-layer -- so they read as
@@ -4303,24 +4418,30 @@ public partial class ControlPanelWindow : Window
             if (token != _compositeRenderToken) return; // superseded while waiting for the gate
             afterComposite = await Task.Run(() =>
             {
-                var result = ImageAdjustment.CompositeOverlayOntoPhoto(
-                    scaledPhotoBuffer, fullPhotoAdjustments,
-                    overlayPixels, overlayStride, overlayWidth, overlayHeight, overlayLeft, overlayTop,
-                    fullSnap.GrainAmount, fullSnap.VignetteAmount, effectivePhotoBlurAmount, previewScale,
-                    fullSnap.SoftnessAmount, fullSnap.SharpnessAmount, previewScale,
-                    fullSnap.FadeAmount, fullSnap.GlowAmount, previewScale,
-                    fullSnap.ChromaticAberrationAmount, fullSnap.ColorBleedAmount, fullSnap.ScanlineAmount, previewScale,
-                    fullSnap.ClarityAmount, previewScale, fullSnap.LightLeakAmount, fullSnap.LightLeakAngle, fullSnap.LightLeakDistance,
-                    fullSnap.LightLeakColorB, fullSnap.LightLeakColorG, fullSnap.LightLeakColorR,
-                    fullSnap.ToneGradientAmount, fullSnap.ToneGradientRotation,
-                    fullSnap.ToneGradientLightR, fullSnap.ToneGradientLightG, fullSnap.ToneGradientLightB,
-                    fullSnap.ToneGradientDarkR, fullSnap.ToneGradientDarkG, fullSnap.ToneGradientDarkB,
-                    fullSnap.DropShadowAmount, fullSnap.DropShadowDirection, fullSnap.DropShadowDistance, fullSnap.DropShadowBlur,
-                    fullSnap.DropShadowColorB, fullSnap.DropShadowColorG, fullSnap.DropShadowColorR, previewScale,
-                    // トーン風(ハーフトーン)UIは削除済み: 常時オフのプレーンな影のみ。
-                    false, 8, fullSnap.DropShadowBlendMode);
+                WriteableBitmap RunAvatar(ImageAdjustment.ColorAdjustments adj, double toneAmt, double leakAmt, int variantIdx) =>
+                    ImageAdjustment.CompositeOverlayOntoPhoto(
+                        scaledPhotoBuffer, adj,
+                        overlayVariantArr[variantIdx], overlayStride, overlayWidth, overlayHeight, overlayLeft, overlayTop,
+                        fullSnap.Finish.GrainAmount, fullSnap.Finish.VignetteAmount, effectivePhotoBlurAmount, previewScale,
+                        fullSnap.Finish.SoftnessAmount, fullSnap.Finish.SharpnessAmount, previewScale,
+                        fullSnap.Finish.FadeAmount, fullSnap.Finish.GlowAmount, previewScale,
+                        fullSnap.Finish.ChromaticAberrationAmount, fullSnap.Finish.ColorBleedAmount, fullSnap.Finish.ScanlineAmount, previewScale,
+                        fullSnap.Finish.ClarityAmount, previewScale, leakAmt, fullSnap.Finish.LightLeakAngle, fullSnap.Finish.LightLeakDistance,
+                        fullSnap.Finish.LightLeakColorB, fullSnap.Finish.LightLeakColorG, fullSnap.Finish.LightLeakColorR,
+                        toneAmt, fullSnap.Finish.ToneGradientRotation,
+                        fullSnap.Finish.ToneGradientLightR, fullSnap.Finish.ToneGradientLightG, fullSnap.Finish.ToneGradientLightB,
+                        fullSnap.Finish.ToneGradientDarkR, fullSnap.Finish.ToneGradientDarkG, fullSnap.Finish.ToneGradientDarkB,
+                        fullSnap.DropShadow.DropShadowAmount, fullSnap.DropShadow.DropShadowDirection, fullSnap.DropShadow.DropShadowDistance, fullSnap.DropShadow.DropShadowBlur,
+                        fullSnap.DropShadow.DropShadowColorB, fullSnap.DropShadow.DropShadowColorG, fullSnap.DropShadow.DropShadowColorR, previewScale,
+                        // トーン風(ハーフトーン)UIは削除済み: 常時オフのプレーンな影のみ。
+                        false, 8, fullSnap.DropShadow.DropShadowBlendMode);
+
+                var result = maskPlan.Count == 0
+                    ? RunAvatar(fullPhotoAdjustments, fullSnap.Finish.ToneGradientAmount, fullSnap.Finish.LightLeakAmount, 0)
+                    : BlendMasked(RunAvatar, fullPhotoAdjustments, fullSnap.Finish.ToneGradientAmount, fullSnap.Finish.LightLeakAmount,
+                        maskPlan, variantIndexPerGroup, maskCrop.Left, maskCrop.Top, maskCrop.Width, maskCrop.Height, previewScale);
                 result = ApplyInFrontOfAvatarDecals(result, frontDecals, previewScale);
-                return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, fullSnap.CanvasAspectRatio, fullSnap.CanvasCropOffsetX, fullSnap.CanvasCropOffsetY, fullSnap.CanvasCropWidthPercent, fullSnap.CanvasCropHeightPercent);
+                return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, fullSnap.CanvasCrop.CanvasAspectRatio, fullSnap.CanvasCrop.CanvasCropOffsetX, fullSnap.CanvasCrop.CanvasCropOffsetY, fullSnap.CanvasCrop.CanvasCropWidthPercent, fullSnap.CanvasCrop.CanvasCropHeightPercent);
             });
         }
         finally
@@ -4502,34 +4623,31 @@ public partial class ControlPanelWindow : Window
     {
         if (photoWidth <= 0 || photoHeight <= 0) return (0, 0, photoWidth, photoHeight);
 
-        var (maxCropWidth, maxCropHeight) = GetMaxCropSize(photoWidth, photoHeight);
-        double widthZoom = Math.Clamp(_canvasCropWidthPercent, 1, 100) / 100.0;
-        double heightZoom = _canvasAspectRatio is null ? Math.Clamp(_canvasCropHeightPercent, 1, 100) / 100.0 : widthZoom;
-        double cropWidth = Math.Max(1, Math.Round(maxCropWidth * widthZoom));
-        double cropHeight = Math.Max(1, Math.Round(maxCropHeight * heightZoom));
-        double maxLeft = photoWidth - cropWidth;
-        double maxTop = photoHeight - cropHeight;
-        double left = Math.Round(maxLeft * Math.Clamp(_canvasCropOffsetX, 0, 100) / 100.0);
-        double top = Math.Round(maxTop * Math.Clamp(_canvasCropOffsetY, 0, 100) / 100.0);
+        // Same ratio-fit + zoom + offset math ImageAdjustment.CropToAspect
+        // uses to actually cut the pixels, so the handles/guides we draw here
+        // can never drift from the committed crop. (GetMaxCropSize stays
+        // separate: the interactive corner-drag needs the 100%-zoom box, not
+        // the final rect.)
+        var (left, top, cropWidth, cropHeight) = ImageAdjustment.ComputeCropRect(
+            photoWidth, photoHeight, _canvasAspectRatio,
+            _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent, _canvasCropHeightPercent);
         return (left, top, cropWidth, cropHeight);
     }
 
-    /// <summary>What every avatar-placement screen&lt;-&gt;photo coordinate
+    /// <summary>What every avatar/decal-placement screen&lt;-&gt;photo coordinate
     /// conversion should treat "the area PreviewBorder currently displays"
-    /// as: the real canvas crop normally, but the FULL uncropped photo while
-    /// either 切り抜きモード or アバター配置モード is active. Must always
-    /// agree with RenderCompositePreview's own `cropAdjusting` local (see its
-    /// definition), which renders the full uncropped composite during either
-    /// of those exact same two modes -- otherwise the avatar highlight/
-    /// handles/gizmo would be positioned against a crop rect PreviewBorder
-    /// isn't actually showing, clipping them out of view the moment the
-    /// avatar is placed outside the (still-uncommitted) crop bounds. Unlike
-    /// GetCanvasCropRect's other few callers (UpdateCanvasCropBoundary, the
-    /// crop-handle drag handlers), which draw/adjust the crop boundary
-    /// itself and so need the TRUE rect regardless of which mode is
-    /// active.</summary>
+    /// as: the FULL uncropped photo while 切り抜きモード or アバター配置モード
+    /// is active (so the avatar can be positioned near/past the not-yet-
+    /// committed crop edge without being clipped out of view), and the real
+    /// canvas crop otherwise -- INCLUDING during デカール配置モード, where the
+    /// user wants to place decals on the already-cropped canvas (e.g. a frame
+    /// aligned to the final output edges), not the raw photo. Must always
+    /// agree with RenderCompositePreview's own `cropAdjusting` local. Unlike
+    /// GetCanvasCropRect's other callers (UpdateCanvasCropBoundary, the
+    /// crop-handle drag handlers), which draw/adjust the crop boundary itself
+    /// and so need the TRUE rect regardless of mode.</summary>
     private (double Left, double Top, double Width, double Height) GetDisplayedCropRect(int photoWidth, int photoHeight) =>
-        _isCropModeActive || _isAvatarPlacementModeActive || _isDecalPlacementModeActive
+        PreviewShowsUncropped
             ? (0, 0, photoWidth, photoHeight)
             : GetCanvasCropRect(photoWidth, photoHeight);
 
@@ -4844,6 +4962,8 @@ public partial class ControlPanelWindow : Window
         CanvasCropHandleBottomLeft.Visibility = handleVisibility;
         CanvasCropHandleBottomRight.Margin = new Thickness(left + width - handleSize / 2, top + height - handleSize / 2, 0, 0);
         CanvasCropHandleBottomRight.Visibility = handleVisibility;
+
+        UpdateSplitGuides(); // 切り抜き枠の変更に分割線を追従させる
     }
 
     /// <summary>Window-wide, not scoped to the preview: Shift's own state
@@ -5047,6 +5167,7 @@ public partial class ControlPanelWindow : Window
             PreviewBorder.VerticalAlignment = VerticalAlignment.Stretch;
             CompareSlider.Width = double.NaN;
             UpdateCompareSplitLine();
+            UpdateSplitGuides();
             return;
         }
 
@@ -5075,6 +5196,7 @@ public partial class ControlPanelWindow : Window
         // middle.
         CompareSlider.Width = PreviewBorder.Width + CompareThumbDiameter;
         UpdateCompareSplitLine();
+        UpdateSplitGuides();
     }
 
     private const double CompareThumbDiameter = 16.0;
@@ -5118,7 +5240,7 @@ public partial class ControlPanelWindow : Window
 
     private void RefreshPhotoLookUI()
     {
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoBrightnessBox.Text = _photoBrightness.ToString("F0", CultureInfo.InvariantCulture);
         PhotoBrightnessSlider.Value = _photoBrightness;
         PhotoContrastBox.Text = _photoContrast.ToString("F0", CultureInfo.InvariantCulture);
@@ -5147,7 +5269,7 @@ public partial class ControlPanelWindow : Window
         PhotoColorTintHexBox.Text = ToHexColor(_photoColorTintR, _photoColorTintG, _photoColorTintB);
         PhotoBlurBox.Text = _photoBlurAmount.ToString("F0", CultureInfo.InvariantCulture);
         PhotoBlurSlider.Value = _photoBlurAmount;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
     }
 
     private void ResetPhotoLookButton_Click(object sender, RoutedEventArgs e)
@@ -5171,9 +5293,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoBrightness;
         _photoBrightness = v;
         if (_lookLinked && delta != 0) _state.Brightness = Math.Clamp(_state.Brightness + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoBrightnessSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5181,10 +5303,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoBrightnessSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoBrightnessSlider.Value = snapped;
         PhotoBrightnessBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoBrightness) return;
         double delta = rounded - _photoBrightness;
@@ -5200,9 +5322,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoContrast;
         _photoContrast = v;
         if (_lookLinked && delta != 0) _state.Contrast = Math.Clamp(_state.Contrast + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoContrastSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5210,10 +5332,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoContrastSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoContrastSlider.Value = snapped;
         PhotoContrastBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoContrast) return;
         double delta = rounded - _photoContrast;
@@ -5229,9 +5351,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoSaturation;
         _photoSaturation = v;
         if (_lookLinked && delta != 0) _state.Saturation = Math.Clamp(_state.Saturation + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoSaturationSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5239,10 +5361,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoSaturationSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoSaturationSlider.Value = snapped;
         PhotoSaturationBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoSaturation) return;
         double delta = rounded - _photoSaturation;
@@ -5258,9 +5380,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoVibrance;
         _photoVibrance = v;
         if (_lookLinked && delta != 0) _state.Vibrance = Math.Clamp(_state.Vibrance + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoVibranceSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5268,10 +5390,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoVibranceSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoVibranceSlider.Value = snapped;
         PhotoVibranceBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoVibrance) return;
         double delta = rounded - _photoVibrance;
@@ -5287,9 +5409,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoTemperature;
         _photoTemperature = v;
         if (_lookLinked && delta != 0) _state.Temperature = Math.Clamp(_state.Temperature + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoTemperatureSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5297,10 +5419,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoTemperatureSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoTemperatureSlider.Value = snapped;
         PhotoTemperatureBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoTemperature) return;
         double delta = rounded - _photoTemperature;
@@ -5316,9 +5438,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoTint;
         _photoTint = v;
         if (_lookLinked && delta != 0) _state.Tint = Math.Clamp(_state.Tint + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoTintSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5326,10 +5448,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoTintSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoTintSlider.Value = snapped;
         PhotoTintBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoTint) return;
         double delta = rounded - _photoTint;
@@ -5345,9 +5467,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoHue;
         _photoHue = v;
         if (_lookLinked && delta != 0) _state.Hue = Math.Clamp(_state.Hue + delta, -180, 180);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoHueSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5355,10 +5477,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoHueSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoHueSlider.Value = snapped;
         PhotoHueBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoHue) return;
         double delta = rounded - _photoHue;
@@ -5374,9 +5496,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoHighlights;
         _photoHighlights = v;
         if (_lookLinked && delta != 0) _state.Highlights = Math.Clamp(_state.Highlights + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoHighlightsSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5384,10 +5506,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoHighlightsSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoHighlightsSlider.Value = snapped;
         PhotoHighlightsBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoHighlights) return;
         double delta = rounded - _photoHighlights;
@@ -5403,9 +5525,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoShadows;
         _photoShadows = v;
         if (_lookLinked && delta != 0) _state.Shadows = Math.Clamp(_state.Shadows + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoShadowsSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5413,10 +5535,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoShadowsSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoShadowsSlider.Value = snapped;
         PhotoShadowsBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoShadows) return;
         double delta = rounded - _photoShadows;
@@ -5432,9 +5554,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoWhites;
         _photoWhites = v;
         if (_lookLinked && delta != 0) _state.Whites = Math.Clamp(_state.Whites + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoWhitesSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5442,10 +5564,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoWhitesSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoWhitesSlider.Value = snapped;
         PhotoWhitesBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoWhites) return;
         double delta = rounded - _photoWhites;
@@ -5461,9 +5583,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoBlacks;
         _photoBlacks = v;
         if (_lookLinked && delta != 0) _state.Blacks = Math.Clamp(_state.Blacks + delta, -100, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoBlacksSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5471,10 +5593,10 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double snapped = SoftSnap(PhotoBlacksSlider.Value, 3, 0);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoBlacksSlider.Value = snapped;
         PhotoBlacksBox.Text = snapped.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         double rounded = Math.Round(snapped);
         if (rounded == _photoBlacks) return;
         double delta = rounded - _photoBlacks;
@@ -5488,9 +5610,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(PhotoBlurBox.Text, out var v) || v < 0) return;
         _photoBlurAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoBlurSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5498,9 +5620,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(PhotoBlurSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoBlurBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _photoBlurAmount) return;
         _photoBlurAmount = rounded;
         ScheduleCompositeRender();
@@ -5514,7 +5636,7 @@ public partial class ControlPanelWindow : Window
 
     private void RefreshFinishUI()
     {
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         GrainBox.Text = _grainAmount.ToString("F0", CultureInfo.InvariantCulture);
         GrainSlider.Value = _grainAmount;
         VignetteBox.Text = _vignetteAmount.ToString("F0", CultureInfo.InvariantCulture);
@@ -5565,7 +5687,7 @@ public partial class ControlPanelWindow : Window
             ImageAdjustment.DropShadowBlendMode.Additive => 2,
             _ => 0,
         };
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
     }
 
     private void ResetFinishButton_Click(object sender, RoutedEventArgs e)
@@ -5599,9 +5721,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(GrainBox.Text, out var v) || v < 0) return;
         _grainAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         GrainSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5609,9 +5731,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(GrainSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         GrainBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _grainAmount) return;
         _grainAmount = rounded;
         ScheduleCompositeRender();
@@ -5622,9 +5744,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(VignetteBox.Text, out var v) || v < 0) return;
         _vignetteAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         VignetteSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5632,9 +5754,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(VignetteSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         VignetteBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _vignetteAmount) return;
         _vignetteAmount = rounded;
         ScheduleCompositeRender();
@@ -5645,9 +5767,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(SoftnessBox.Text, out var v) || v < 0) return;
         _softnessAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SoftnessSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5655,9 +5777,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(SoftnessSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SoftnessBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _softnessAmount) return;
         _softnessAmount = rounded;
         ScheduleCompositeRender();
@@ -5668,9 +5790,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(SharpnessBox.Text, out var v) || v < 0) return;
         _sharpnessAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SharpnessSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5678,9 +5800,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(SharpnessSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SharpnessBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _sharpnessAmount) return;
         _sharpnessAmount = rounded;
         ScheduleCompositeRender();
@@ -5691,9 +5813,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(FadeBox.Text, out var v) || v < 0) return;
         _fadeAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         FadeSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5701,9 +5823,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(FadeSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         FadeBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _fadeAmount) return;
         _fadeAmount = rounded;
         ScheduleCompositeRender();
@@ -5714,9 +5836,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(GlowBox.Text, out var v) || v < 0) return;
         _glowAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         GlowSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5724,9 +5846,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(GlowSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         GlowBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _glowAmount) return;
         _glowAmount = rounded;
         ScheduleCompositeRender();
@@ -5737,9 +5859,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(ChromaticAberrationBox.Text, out var v) || v < 0) return;
         _chromaticAberrationAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ChromaticAberrationSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5747,9 +5869,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(ChromaticAberrationSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ChromaticAberrationBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _chromaticAberrationAmount) return;
         _chromaticAberrationAmount = rounded;
         ScheduleCompositeRender();
@@ -5760,9 +5882,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(ColorBleedBox.Text, out var v) || v < 0) return;
         _colorBleedAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ColorBleedSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5770,9 +5892,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(ColorBleedSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ColorBleedBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _colorBleedAmount) return;
         _colorBleedAmount = rounded;
         ScheduleCompositeRender();
@@ -5783,9 +5905,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(ScanlineBox.Text, out var v) || v < 0) return;
         _scanlineAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ScanlineSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5793,9 +5915,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(ScanlineSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ScanlineBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _scanlineAmount) return;
         _scanlineAmount = rounded;
         ScheduleCompositeRender();
@@ -5806,9 +5928,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(ClarityBox.Text, out var v) || v < 0) return;
         _clarityAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ClaritySlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5816,9 +5938,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(ClaritySlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ClarityBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _clarityAmount) return;
         _clarityAmount = rounded;
         ScheduleCompositeRender();
@@ -5829,9 +5951,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(LightLeakBox.Text, out var v) || v < 0) return;
         _lightLeakAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         LightLeakSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5839,9 +5961,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(LightLeakSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         LightLeakBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _lightLeakAmount) return;
         _lightLeakAmount = rounded;
         ScheduleCompositeRender();
@@ -5858,9 +5980,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(LightLeakDirectionBox.Text, out var v)) return;
         _lightLeakAngle = Math.Clamp(v, 0, 360);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         LightLeakDirectionSlider.Value = _lightLeakAngle;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -5868,9 +5990,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(LightLeakDirectionSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         LightLeakDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _lightLeakAngle) return;
         _lightLeakAngle = rounded;
         ScheduleCompositeRender();
@@ -5884,9 +6006,9 @@ public partial class ControlPanelWindow : Window
     private void LightLeakColorButton_Click(object sender, RoutedEventArgs e)
     {
         LightLeakColorWheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncLightLeakColorUI(_lightLeakColorR, _lightLeakColorG, _lightLeakColorB);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         LightLeakColorPopup.IsOpen = true;
     }
 
@@ -6005,9 +6127,9 @@ public partial class ControlPanelWindow : Window
         _lightLeakColorG = g;
         _lightLeakColorB = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncLightLeakColorUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         LightLeakColorSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         ScheduleCompositeRender();
@@ -6018,9 +6140,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(ToneGradientBox.Text, out var v) || v < 0) return;
         _toneGradientAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ToneGradientSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -6028,9 +6150,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(ToneGradientSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ToneGradientBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _toneGradientAmount) return;
         _toneGradientAmount = rounded;
         ScheduleCompositeRender();
@@ -6044,9 +6166,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(ToneGradientDirectionBox.Text, out var v)) return;
         _toneGradientRotation = Math.Clamp(v, 0, 360);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ToneGradientDirectionSlider.Value = _toneGradientRotation;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -6054,9 +6176,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(ToneGradientDirectionSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         ToneGradientDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _toneGradientRotation) return;
         _toneGradientRotation = rounded;
         ScheduleCompositeRender();
@@ -6074,9 +6196,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(DropShadowBox.Text, out var v) || v < 0) return;
         _dropShadowAmount = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -6084,9 +6206,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(DropShadowSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _dropShadowAmount) return;
         _dropShadowAmount = rounded;
         ScheduleCompositeRender();
@@ -6097,9 +6219,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(DropShadowDirectionBox.Text, out var v)) return;
         _dropShadowDirection = Math.Clamp(v, 0, 360);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowDirectionSlider.Value = _dropShadowDirection;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -6107,9 +6229,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(DropShadowDirectionSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowDirectionBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _dropShadowDirection) return;
         _dropShadowDirection = rounded;
         ScheduleCompositeRender();
@@ -6120,9 +6242,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(DropShadowDistanceBox.Text, out var v) || v < 0) return;
         _dropShadowDistance = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowDistanceSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -6130,9 +6252,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(DropShadowDistanceSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowDistanceBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _dropShadowDistance) return;
         _dropShadowDistance = rounded;
         ScheduleCompositeRender();
@@ -6143,9 +6265,9 @@ public partial class ControlPanelWindow : Window
         if (_suppressEvents) return;
         if (!TryParse(DropShadowBlurBox.Text, out var v) || v < 0) return;
         _dropShadowBlur = v;
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowBlurSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -6153,9 +6275,9 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(DropShadowBlurSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         DropShadowBlurBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _dropShadowBlur) return;
         _dropShadowBlur = rounded;
         ScheduleCompositeRender();
@@ -6182,9 +6304,9 @@ public partial class ControlPanelWindow : Window
     private void DropShadowColorButton_Click(object sender, RoutedEventArgs e)
     {
         DropShadowColorWheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncColorPickerUI(_dropShadowColorR, _dropShadowColorG, _dropShadowColorB);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         DropShadowColorPopup.IsOpen = true;
     }
 
@@ -6420,9 +6542,9 @@ public partial class ControlPanelWindow : Window
         _dropShadowColorG = g;
         _dropShadowColorB = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncColorPickerUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         DropShadowColorSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         ScheduleCompositeRender();
@@ -6436,9 +6558,9 @@ public partial class ControlPanelWindow : Window
     private void ToneGradientLightColorButton_Click(object sender, RoutedEventArgs e)
     {
         ToneGradientLightColorWheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncToneGradientLightColorUI(_toneGradientLightR, _toneGradientLightG, _toneGradientLightB);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ToneGradientLightColorPopup.IsOpen = true;
     }
 
@@ -6551,9 +6673,9 @@ public partial class ControlPanelWindow : Window
         _toneGradientLightG = g;
         _toneGradientLightB = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncToneGradientLightColorUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         ToneGradientLightSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         ScheduleCompositeRender();
@@ -6562,9 +6684,9 @@ public partial class ControlPanelWindow : Window
     private void ToneGradientDarkColorButton_Click(object sender, RoutedEventArgs e)
     {
         ToneGradientDarkColorWheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncToneGradientDarkColorUI(_toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ToneGradientDarkColorPopup.IsOpen = true;
     }
 
@@ -6677,9 +6799,9 @@ public partial class ControlPanelWindow : Window
         _toneGradientDarkG = g;
         _toneGradientDarkB = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncToneGradientDarkColorUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         ToneGradientDarkSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         ScheduleCompositeRender();
@@ -6941,9 +7063,9 @@ public partial class ControlPanelWindow : Window
     private void CompositeColorTintButton_Click(object sender, RoutedEventArgs e)
     {
         CompositeColorTintWheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncCompositeColorTintUI(_state.ColorTintR, _state.ColorTintG, _state.ColorTintB);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         CompositeColorTintPopup.IsOpen = true;
     }
 
@@ -7071,9 +7193,9 @@ public partial class ControlPanelWindow : Window
         _state.ColorTintG = g;
         _state.ColorTintB = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncCompositeColorTintUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         CompositeColorTintSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
 
@@ -7109,9 +7231,9 @@ public partial class ControlPanelWindow : Window
     private void PhotoColorTintButton_Click(object sender, RoutedEventArgs e)
     {
         PhotoColorTintWheel.Source = GetColorWheelBitmap();
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncPhotoColorTintUI(_photoColorTintR, _photoColorTintG, _photoColorTintB);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         PhotoColorTintPopup.IsOpen = true;
     }
 
@@ -7228,9 +7350,9 @@ public partial class ControlPanelWindow : Window
         _photoColorTintG = g;
         _photoColorTintB = b;
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncPhotoColorTintUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         PhotoColorTintSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
         ScheduleCompositeRender();
@@ -7251,9 +7373,9 @@ public partial class ControlPanelWindow : Window
         double delta = v - _photoColorTintStrength;
         _photoColorTintStrength = v;
         if (_lookLinked && delta != 0) _state.ColorTintStrength = Math.Clamp(_state.ColorTintStrength + delta, 0, 100);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoColorTintStrengthSlider.Value = v;
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -7261,114 +7383,14 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         double rounded = Math.Round(PhotoColorTintStrengthSlider.Value);
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         PhotoColorTintStrengthBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _photoColorTintStrength) return;
         double delta = rounded - _photoColorTintStrength;
         _photoColorTintStrength = rounded;
         if (_lookLinked && delta != 0) _state.ColorTintStrength = Math.Clamp(_state.ColorTintStrength + delta, 0, 100);
         ScheduleCompositeRender();
-    }
-
-    /// <summary>PNG-encodes and writes a full-resolution VRChat-screenshot-
-    /// sized composite -- slow enough (same order of cost as the recompose
-    /// itself) that doing it synchronously on the UI thread visibly froze
-    /// the window for the save's duration, the exact symptom
-    /// RenderCompositePreview's own Task.Run split was meant to eliminate.
-    /// Safe to encode off the UI thread because _lastComposite is always
-    /// one of CompositeOverlayOntoPhoto/CropToAspect's own outputs, both of
-    /// which are frozen right before they're returned (see their own doc
-    /// comments) -- BitmapFrame.Create keeps that frozen state rather than
-    /// needing the UI thread to re-wrap it.</summary>
-    private async void SaveCompositeButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_lastComposite is null) return;
-
-        var defaultName = _photoPath is not null
-            ? Path.GetFileNameWithoutExtension(_photoPath) + "_avasnap.png"
-            : "avasnap_composite.png";
-        var dialog = new SaveFileDialog
-        {
-            Filter = "PNG画像 (*.png)|*.png",
-            FileName = defaultName,
-            InitialDirectory = _photoPath is not null ? Path.GetDirectoryName(_photoPath) ?? "" : "",
-        };
-        if (dialog.ShowDialog() != true) return;
-
-        var composite = _lastComposite;
-        string path = dialog.FileName;
-        SaveCompositeButton.IsEnabled = false;
-        try
-        {
-            bool saved = await Task.Run(() =>
-            {
-                try
-                {
-                    var encoder = new PngBitmapEncoder();
-                    encoder.Frames.Add(BitmapFrame.Create(composite));
-                    using var stream = File.Create(path);
-                    encoder.Save(stream);
-                    return true;
-                }
-                catch (IOException)
-                {
-                    return false;
-                }
-            });
-            ShowCompositeSaveStatus(
-                saved ? "保存しました: " + Path.GetFileName(path) : "保存に失敗しました。",
-                success: saved);
-        }
-        finally
-        {
-            SaveCompositeButton.IsEnabled = true;
-        }
-    }
-
-    /// <summary>Both the save result and (via <paramref name="success"/>:
-    /// false) the unrelated "background photo failed to load" message share
-    /// this one status TextBlock -- routing both through here means both
-    /// get the same color-coded (green/rose) treatment instead of the
-    /// success and failure cases looking visually identical. A successful
-    /// save also gets a fading-in checkmark and auto-clears itself after a
-    /// few seconds (failures don't: they stay until the user's next action,
-    /// since a failure is something to notice and act on, not a fire-and-
-    /// forget confirmation).</summary>
-    private DispatcherTimer? _compositeSaveStatusClearTimer;
-
-    private void ShowCompositeSaveStatus(string text, bool success)
-    {
-        _compositeSaveStatusClearTimer?.Stop();
-        CompositeSaveStatusText.Text = text;
-        CompositeSaveStatusText.Foreground = (Brush)FindResource(success ? "SuccessBrush" : "AccentDarkBrush");
-
-        if (!success)
-        {
-            CompositeSaveCheckmark.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        CompositeSaveCheckmark.Visibility = Visibility.Visible;
-        CompositeSaveCheckmark.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(250)));
-
-        _compositeSaveStatusClearTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-        _compositeSaveStatusClearTimer.Tick -= CompositeSaveStatusClearTimer_Tick;
-        _compositeSaveStatusClearTimer.Tick += CompositeSaveStatusClearTimer_Tick;
-        _compositeSaveStatusClearTimer.Start();
-    }
-
-    private void CompositeSaveStatusClearTimer_Tick(object? sender, EventArgs e)
-    {
-        _compositeSaveStatusClearTimer!.Stop();
-        ClearCompositeSaveStatus();
-    }
-
-    private void ClearCompositeSaveStatus()
-    {
-        _compositeSaveStatusClearTimer?.Stop();
-        CompositeSaveStatusText.Text = "";
-        CompositeSaveCheckmark.Visibility = Visibility.Collapsed;
     }
 
     // ---- Screenshot-watcher folder: defaults to VRChat's own default save

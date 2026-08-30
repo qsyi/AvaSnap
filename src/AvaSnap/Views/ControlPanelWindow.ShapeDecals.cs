@@ -10,7 +10,7 @@ namespace AvaSnap.Views;
 // ---- 図形デカール: 画像ファイルを使わず、コード側で「枠線」(写真の縁取り)を
 //      ラスタライズして DecalLayer.Pixels へ流し込む(ShapeRasterizer)。
 //      追加後は通常の画像デカールと同じ配置モード(移動+回転ギズモ、レイヤー
-//      並べ替え、アバター前後)に乗る。違いは (1) DecalLayer.ShapeKind != null、
+//      並べ替え、アバター前後)に乗る。違いは (1) DecalLayer.IsFrame、
 //      (2) リサイズは 角=アス比固定 / 辺=その軸だけ変更(DecalHandle_MouseMove
 //      の分岐)、(3) サイズ/色/太さを変えると RerasterizeShapeDecal で焼き直す、
 //      の3点。色UIはアプリ内の他のカラーピッカー(BlankCanvasColor 等)と同じ
@@ -19,6 +19,13 @@ namespace AvaSnap.Views;
 //      TryParseHexColor)を再利用する。永続化/Undo 対象外なのも画像デカールと同じ。 ----
 public partial class ControlPanelWindow
 {
+    /// <summary>追加直後の枠線デカールのサイズ = キャンバスの何割か。
+    /// 「最大状態からちょっと小さく」出しておき、端まではドラッグで広げられる。</summary>
+    private const double NewFrameCanvasFraction = 0.9;
+
+    /// <summary>追加直後の枠線の線幅(短辺に対する%)。「細い枠」の既定値。</summary>
+    private const double NewFrameStrokePercent = 1.5;
+
     // 図形デカールは「枠線(RectangleFrame)」のみ。
     private void AddRectangleFrameDecal_Click(object sender, RoutedEventArgs e)
     {
@@ -29,7 +36,7 @@ public partial class ControlPanelWindow
         // 確定前(配置モード中)に再度押したら、まだ確定していない枠線デカールは
         // 破棄してから追加し直す(RemoveDecal の Begin/Commit はこの外側にネスト
         // されて1ステップにまとまる)。
-        if (_isDecalPlacementModeActive && _placingDecal is { ShapeKind: not null } pending)
+        if (_isDecalPlacementModeActive && _placingDecal is { IsFrame: true } pending)
             RemoveDecal(pending);
 
         var crop = GetDisplayedCropRect(photo.Width, photo.Height);
@@ -37,11 +44,12 @@ public partial class ControlPanelWindow
         // 「最大状態からちょっと小さく」= キャンバスの 90%(写真の縁取り用途)。
         // 追加後すぐキャンバス端までドラッグでき、それ以上は出せない
         // (DecalHandle_MouseMove / TryContinueDecalBodyDrag のクランプ)。
-        double w = crop.Width * 0.9, h = crop.Height * 0.9, stroke = 1.5; // 「細い枠」なので線は細め
+        double w = crop.Width * NewFrameCanvasFraction, h = crop.Height * NewFrameCanvasFraction;
+        double stroke = NewFrameStrokePercent;
 
         var color = Colors.White;
         var (rw, rh) = ShapeRasterizer.RasterSizeFor(w, h);
-        var pixels = ShapeRasterizer.Rasterize(ShapeKind.RectangleFrame, rw, rh, color, stroke);
+        var pixels = ShapeRasterizer.RasterizeFrame(rw, rh, color, stroke);
 
         var decal = new DecalLayer
         {
@@ -51,7 +59,7 @@ public partial class ControlPanelWindow
             Y = crop.Top + crop.Height / 2 - h / 2,
             Width = w,
             Height = h,
-            ShapeKind = ShapeKind.RectangleFrame,
+            IsFrame = true,
             ShapeColor = color,
             ShapeStrokePercent = stroke,
         };
@@ -65,9 +73,9 @@ public partial class ControlPanelWindow
     /// リサイズ確定時(DecalHandle_MouseLeftButtonUp)と色/太さ変更時に呼ぶ。</summary>
     private void RerasterizeShapeDecal(DecalLayer decal)
     {
-        if (decal.ShapeKind is not { } kind) return;
+        if (!decal.IsFrame) return;
         var (rw, rh) = ShapeRasterizer.RasterSizeFor(decal.Width, decal.Height);
-        decal.Pixels = ShapeRasterizer.Rasterize(kind, rw, rh, decal.ShapeColor, decal.ShapeStrokePercent);
+        decal.Pixels = ShapeRasterizer.RasterizeFrame(rw, rh, decal.ShapeColor, decal.ShapeStrokePercent);
         decal.Thumbnail = MakeShapeThumbnail(decal.Pixels);
         RebuildDecalStrip();
         ScheduleCompositeRender();
@@ -91,23 +99,23 @@ public partial class ControlPanelWindow
         if (_isDecalPlacementModeActive && _placingDecal is { } placing)
         {
             DecalOpacityRow.Visibility = Visibility.Visible;
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             DecalOpacitySlider.Value = placing.Opacity * 100;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         else
         {
             DecalOpacityRow.Visibility = Visibility.Collapsed;
         }
 
-        if (_isDecalPlacementModeActive && _placingDecal is { ShapeKind: not null } decal)
+        if (_isDecalPlacementModeActive && _placingDecal is { IsFrame: true } decal)
         {
             ShapeDecalPanel.Visibility = Visibility.Visible;
 
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             SyncShapeDecalColorUI(decal.ShapeColor.R, decal.ShapeColor.G, decal.ShapeColor.B);
             ShapeDecalStrokeSlider.Value = decal.ShapeStrokePercent;
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
             ShapeDecalColorSwatch.Background = new SolidColorBrush(decal.ShapeColor);
             // 位置確定前に色/太さを触れるよう、パネルを表示したら見える位置まで
             // スクロールする(カード列のロックは解除済み。RefreshSliderLockState)。
@@ -135,11 +143,11 @@ public partial class ControlPanelWindow
     private void ShapeDecalColorButton_Click(object sender, RoutedEventArgs e)
     {
         ShapeDecalColorWheel.Source = GetColorWheelBitmap();
-        if (_placingDecal is { ShapeKind: not null } decal)
+        if (_placingDecal is { IsFrame: true } decal)
         {
-            _suppressEvents = true;
+            _suppressEventsDepth++;
             SyncShapeDecalColorUI(decal.ShapeColor.R, decal.ShapeColor.G, decal.ShapeColor.B);
-            _suppressEvents = false;
+            _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         }
         ShapeDecalColorPopup.IsOpen = true;
     }
@@ -216,12 +224,12 @@ public partial class ControlPanelWindow
 
     private void SetShapeDecalColor(byte r, byte g, byte b)
     {
-        if (_placingDecal is not { ShapeKind: not null } decal) return;
+        if (_placingDecal is not { IsFrame: true } decal) return;
         decal.ShapeColor = Color.FromRgb(r, g, b);
 
-        _suppressEvents = true;
+        _suppressEventsDepth++;
         SyncShapeDecalColorUI(r, g, b);
-        _suppressEvents = false;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
 
         ShapeDecalColorSwatch.Background = new SolidColorBrush(decal.ShapeColor);
         RerasterizeShapeDecal(decal);
@@ -230,7 +238,7 @@ public partial class ControlPanelWindow
     private void ShapeDecalStrokeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_suppressEvents) return;
-        if (_placingDecal is not { ShapeKind: not null } decal) return;
+        if (_placingDecal is not { IsFrame: true } decal) return;
         decal.ShapeStrokePercent = e.NewValue;
         RerasterizeShapeDecal(decal);
     }

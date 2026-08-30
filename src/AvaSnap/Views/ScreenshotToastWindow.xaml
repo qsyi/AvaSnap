@@ -18,7 +18,7 @@
         MouseLeave="Window_MouseLeave">
     <Window.Resources>
         <Style x:Key="ToastPillButton" TargetType="Button">
-            <Setter Property="Background" Value="#4A58C4" />
+            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
             <Setter Property="Foreground" Value="White" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="12" />
@@ -42,12 +42,12 @@
             </Setter>
         </Style>
         <Style x:Key="ToastSecondaryPillButton" TargetType="Button" BasedOn="{StaticResource ToastPillButton}">
-            <Setter Property="Background" Value="#E4E7FA" />
-            <Setter Property="Foreground" Value="#4A58C4" />
+            <Setter Property="Background" Value="{DynamicResource PrimaryTintBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}" />
         </Style>
         <Style x:Key="ToastCloseButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#3A3A5A" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
@@ -58,7 +58,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#F1F1F8" />
+                                <Setter Property="Background" Value="{DynamicResource PrimaryTintBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -66,9 +66,10 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Border Background="#FFFFFF" CornerRadius="12" BorderBrush="#E0E0EC" BorderThickness="1" Margin="8">
+    <Border Background="{DynamicResource CardBackgroundBrush}" CornerRadius="12"
+            BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" Margin="8">
         <Border.Effect>
-            <DropShadowEffect Color="#000000" Opacity="0.22" BlurRadius="16" ShadowDepth="3" Direction="270" />
+            <DropShadowEffect Color="#000000" Opacity="0.3" BlurRadius="16" ShadowDepth="3" Direction="270" />
         </Border.Effect>
         <Grid Margin="12">
             <Grid.ColumnDefinitions>
@@ -77,14 +78,14 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Width="72" Height="72" CornerRadius="10" Background="#F1F1F8"
+            <Border Grid.Column="0" Width="72" Height="72" CornerRadius="10" Background="{DynamicResource AppBackgroundBrush}"
                     VerticalAlignment="Center" ClipToBounds="True">
                 <Image x:Name="ThumbnailImage" Stretch="UniformToFill" />
             </Border>
 
             <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
-                <TextBlock Text="新しいスクリーンショット" FontSize="12" FontWeight="SemiBold" Foreground="#4A58C4" />
-                <TextBlock x:Name="FileNameText" Text="" FontSize="12" Foreground="#3A3A5A"
+                <TextBlock Text="新しいスクリーンショット" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+                <TextBlock x:Name="FileNameText" Text="" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                            TextTrimming="CharacterEllipsis" Margin="0,3,0,10" />
                 <StackPanel Orientation="Horizontal">
                     <Button x:Name="OpenButton" Content="合成する" HorizontalAlignment="Left"

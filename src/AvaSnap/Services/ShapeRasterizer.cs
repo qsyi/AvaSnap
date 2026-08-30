@@ -4,30 +4,23 @@ using System.Windows.Media.Imaging;
 
 namespace AvaSnap.Services;
 
-/// <summary>図形デカールの種類。現状は写真の縁取り用の枠線のみ
-/// (<c>DecalLayer.ShapeKind</c> が null なら画像デカール)。</summary>
-public enum ShapeKind
-{
-    RectangleFrame,
-}
-
-/// <summary>コード生成の図形を <see cref="ImageAdjustment.PixelBuffer"/> に
-/// ラスタライズする。画像ファイルの代わりにこのバッファをデカール
-/// (<c>DecalLayer</c>)へ流し込むことで、画像を用意しなくても枠線を
-/// アバターの前後に合成できる。<see cref="ImageAdjustment.CreateSolidColor"/> /
+/// <summary>コード生成の「枠線」(写真の縁取り)を <see cref="ImageAdjustment.PixelBuffer"/>
+/// にラスタライズする。画像ファイルの代わりにこのバッファをデカール
+/// (<c>DecalLayer</c>、<c>IsFrame == true</c>)へ流し込むことで、画像を用意しなくても
+/// 枠線をアバターの前後に合成できる。<see cref="ImageAdjustment.CreateSolidColor"/> /
 /// <see cref="ImageAdjustment.CreateLinearGradient"/>(背景なしキャンバス用)と
 /// 同じ「コード側で PixelBuffer を作る」系のヘルパー。
 ///
-/// デカールのサイズ変更や色/太さ変更のたびに呼び直して <c>DecalLayer.Pixels</c>
-/// を差し替える運用(BlendDecalOnto 側は最近傍拡大なので、細い枠ほど元バッファ
+/// デカールのサイズ/色/太さ変更のたびに呼び直して <c>DecalLayer.Pixels</c> を
+/// 差し替える運用(BlendDecalOnto 側は最近傍拡大なので、細い枠ほど元バッファ
 /// 解像度の粗さが出る -- 変更時に出力に近い解像度で焼き直すのが前提)。
 /// <see cref="RenderTargetBitmap"/> を使うので必ず UI スレッドから呼ぶこと。</summary>
 public static class ShapeRasterizer
 {
     /// <summary>焼き上げるバッファの1辺の上限。デカールを 4K キャンバス全面へ
     /// 伸ばしても、ここで頭打ちにして拡大は BlendDecalOnto 任せにする
-    /// (塗りつぶし図形は拡大しても劣化しない。枠/線はわずかに甘くなるが
-    /// 実用範囲)。</summary>
+    /// (枠はわずかに甘くなるが実用範囲。出力解像度での焼き直しは
+    /// ControlPanelWindow.EnsureFrameRenderBuffer 側)。</summary>
     private const int MaxRasterDimension = 2400;
 
     /// <summary>デカールの表示サイズ(写真ピクセル空間の幅/高さ)から、
@@ -42,12 +35,11 @@ public static class ShapeRasterizer
         return (w, h);
     }
 
-    /// <summary><paramref name="kind"/> の図形を (<paramref name="width"/> x
-    /// <paramref name="height"/>) の BGRA32 バッファへ描く。枠線の線幅は
-    /// 短辺に対する <paramref name="strokePercent"/> パーセント(選択A:
-    /// 拡縮しても見た目の細さが一定になるよう、レンダー解像度が確定した
-    /// この時点で実ピクセルへ変換する)。</summary>
-    public static ImageAdjustment.PixelBuffer Rasterize(ShapeKind kind, int width, int height, Color color, double strokePercent)
+    /// <summary>(<paramref name="width"/> x <paramref name="height"/>) の BGRA32
+    /// バッファへ枠線を描く。線幅は短辺に対する <paramref name="strokePercent"/>
+    /// パーセント(拡縮しても見た目の細さが一定になるよう、レンダー解像度が
+    /// 確定したこの時点で実ピクセルへ変換する)。</summary>
+    public static ImageAdjustment.PixelBuffer RasterizeFrame(int width, int height, Color color, double strokePercent)
     {
         width = Math.Clamp(width, 2, 4096);
         height = Math.Clamp(height, 2, 4096);
@@ -60,17 +52,10 @@ public static class ShapeRasterizer
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            switch (kind)
-            {
-                case ShapeKind.RectangleFrame:
-                {
-                    var pen = new Pen(fill, stroke);
-                    pen.Freeze();
-                    double inset = stroke / 2.0; // 線の外縁をバッファの端(0 と width/height)にそろえる
-                    dc.DrawRectangle(null, pen, new Rect(inset, inset, width - stroke, height - stroke));
-                    break;
-                }
-            }
+            var pen = new Pen(fill, stroke);
+            pen.Freeze();
+            double inset = stroke / 2.0; // 線の外縁をバッファの端(0 と width/height)にそろえる
+            dc.DrawRectangle(null, pen, new Rect(inset, inset, width - stroke, height - stroke));
         }
 
         var rtb = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);

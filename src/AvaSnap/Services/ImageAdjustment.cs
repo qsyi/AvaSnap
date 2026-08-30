@@ -1000,10 +1000,15 @@ public static class ImageAdjustment
     /// <paramref name="heightPercent"/> each shrink their own axis
     /// independently against the FULL source dimensions instead of both
     /// deriving from one ratio-fit box.</summary>
-    public static WriteableBitmap CropToAspect(WriteableBitmap source, double? aspectRatio, double offsetXPercent, double offsetYPercent, double widthPercent = 100, double heightPercent = 100)
+    /// <summary>切り抜き5パラメータ(アスペクト比 / 幅% / 高さ% / 位置X% / 位置Y%)
+    /// からソース内の切り抜き矩形を求める。<see cref="CropToAspect"/> が実際に切り
+    /// 出す矩形と、ハンドル/ガイド描画用の ControlPanelWindow.GetCanvasCropRect が
+    /// 必ず一致するよう、計算はここ1箇所に集約する。</summary>
+    public static (int Left, int Top, int Width, int Height) ComputeCropRect(
+        int srcWidth, int srcHeight, double? aspectRatio,
+        double offsetXPercent, double offsetYPercent, double widthPercent = 100, double heightPercent = 100)
     {
-        int srcWidth = source.PixelWidth, srcHeight = source.PixelHeight;
-        if (srcWidth <= 0 || srcHeight <= 0) return source;
+        if (srcWidth <= 0 || srcHeight <= 0) return (0, 0, Math.Max(0, srcWidth), Math.Max(0, srcHeight));
 
         int maxCropWidth, maxCropHeight;
         double heightZoomPercent;
@@ -1037,19 +1042,25 @@ public static class ImageAdjustment
         }
 
         // widthPercent/heightPercent shrink the crop box below its 100%
-        // size (the ratio-maximal box in fixed mode, the full photo in 自由
-        // mode) -- a zoom-in-place knob layered on top of the aspect-ratio
-        // pick.
+        // size -- a zoom-in-place knob layered on top of the aspect-ratio pick.
         double widthZoom = Math.Clamp(widthPercent, 1, 100) / 100.0;
         double heightZoom = Math.Clamp(heightZoomPercent, 1, 100) / 100.0;
         int cropWidth = Math.Max(1, (int)Math.Round(maxCropWidth * widthZoom));
         int cropHeight = Math.Max(1, (int)Math.Round(maxCropHeight * heightZoom));
-        if (cropWidth == srcWidth && cropHeight == srcHeight) return source;
 
-        int maxLeft = srcWidth - cropWidth;
-        int maxTop = srcHeight - cropHeight;
-        int left = (int)Math.Round(maxLeft * Math.Clamp(offsetXPercent, 0, 100) / 100.0);
-        int top = (int)Math.Round(maxTop * Math.Clamp(offsetYPercent, 0, 100) / 100.0);
+        int left = (int)Math.Round((srcWidth - cropWidth) * Math.Clamp(offsetXPercent, 0, 100) / 100.0);
+        int top = (int)Math.Round((srcHeight - cropHeight) * Math.Clamp(offsetYPercent, 0, 100) / 100.0);
+        return (left, top, cropWidth, cropHeight);
+    }
+
+    public static WriteableBitmap CropToAspect(WriteableBitmap source, double? aspectRatio, double offsetXPercent, double offsetYPercent, double widthPercent = 100, double heightPercent = 100)
+    {
+        int srcWidth = source.PixelWidth, srcHeight = source.PixelHeight;
+        if (srcWidth <= 0 || srcHeight <= 0) return source;
+
+        var (left, top, cropWidth, cropHeight) = ComputeCropRect(
+            srcWidth, srcHeight, aspectRatio, offsetXPercent, offsetYPercent, widthPercent, heightPercent);
+        if (cropWidth == srcWidth && cropHeight == srcHeight) return source;
 
         var format = source.Format;
         int bytesPerPixel = (format.BitsPerPixel + 7) / 8;
