@@ -180,19 +180,19 @@ public readonly partial struct DropShadowBlendShader(
 
         float4 ph = photo[new int2(px, py)];
         float b = ph.B * 255f, g = ph.G * 255f, r = ph.R * 255f;
-        if (blendMode == 2) // Additive
+        if (blendMode == 2) // 加算
         {
             b += colorB * a;
             g += colorG * a;
             r += colorR * a;
         }
-        else if (blendMode == 1) // Normal
+        else if (blendMode == 1) // 通常
         {
             b = b * (1f - a) + colorB * a;
             g = g * (1f - a) + colorG * a;
             r = r * (1f - a) + colorR * a;
         }
-        else // Multiply
+        else // 乗算
         {
             b = b * (1f - a) + b * colorB / 255f * a;
             g = g * (1f - a) + g * colorG / 255f * a;
