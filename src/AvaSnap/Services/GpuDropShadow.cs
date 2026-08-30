@@ -3,31 +3,19 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>GPU offload for CompositeOverlayOntoPhoto's ApplyDropShadow --
-/// see GPU_MIGRATION_PLAN.md's "残作業2" item 2. Mirrors the CPU pipeline
-/// stage for stage: extract the overlay's alpha channel, optionally box-
-/// blur it, optionally re-quantize it into a halftone dot pattern, then
-/// blend it onto the photo at an offset (see
-/// ImageAdjustment.DropShadowBlendMode -- multiply/normal/additive). The
-/// alpha-blur step
-/// reuses GpuCompositePipeline's own BoxBlurPassShader by packing the
-/// single alpha value into all of R/G/B (that shader blurs R/G/B alike,
-/// clamp-to-edge) rather than writing a dedicated single-channel blur
-/// shader -- CPU parity isn't a goal here (see GPU_MIGRATION_PLAN.md), so
-/// the edge behavior not matching BoxBlurAlpha's own shrinking-average
-/// edges exactly is an accepted, purely cosmetic difference right at the
-/// silhouette's own border.
+/// <summary>ApplyDropShadow の GPU 版。CPU 版と同じ段取り: オーバーレイのアルファを
+/// 取り出す → 任意でボックスブラー → 任意でハーフトーンのドット化 → オフセット付きで
+/// 写真へブレンド(DropShadowBlendMode: multiply/normal/additive)。アルファブラーは
+/// 専用シェーダを書かず、アルファ値を R/G/B 全部に詰めて BoxBlurPassShader を流用する
+/// (シルエット縁の挙動が BoxBlurAlpha と厳密一致しないが、見た目だけの差で許容)。
 ///
-/// Uses the SAME "Overlay" GpuTexturePool key as GpuAvatarBlend: within one
-/// CompositeOverlayOntoPhoto call, ApplyDropShadow and the avatar blend
-/// both receive the identical overlayPixels array reference, so whichever
-/// runs first (DropShadow, per the CPU call order) uploads it and the
-/// other's RentUploaded call for the same key/reference is a no-op.</summary>
+/// GpuAvatarBlend と同じ "Overlay" key を使う ── 1回の CompositeOverlayOntoPhoto 内で
+/// 両者に同じ overlayPixels 参照が渡るので、先に走る方がアップロードし、もう一方の
+/// RentUploaded は no-op。</summary>
 public static class GpuDropShadow
 {
-    /// <summary>Returns false (leaving <paramref name="photoPixels"/>
-    /// untouched) if no DX12-capable GPU/driver is available, so the caller
-    /// falls back to its own CPU ApplyDropShadow instead.</summary>
+    /// <summary>DX12 対応 GPU が無ければ false(<paramref name="photoPixels"/> は不変)。
+    /// 呼び出し側は CPU の ApplyDropShadow へフォールバックする。</summary>
     public static bool TryApply(
         byte[] photoPixels, int photoStride, int photoWidth, int photoHeight,
         byte[] overlayPixels, int overlayStride, int overlayWidth, int overlayHeight,
@@ -64,11 +52,10 @@ public static class GpuDropShadow
         }
     }
 
-    /// <summary>Same drop-shadow pass as <see cref="TryApply"/>, but drawing
-    /// directly onto an already GPU-resident <paramref name="photoTexture"/>
-    /// -- no upload/download of the photo itself (the overlay's own alpha
-    /// still gets uploaded/rented as usual, since it's a small, separate
-    /// buffer). Used by GpuCompositeChain -- see its own doc comment.</summary>
+    /// <summary><see cref="TryApply"/> と同じ処理を、既に GPU 上にある
+    /// <paramref name="photoTexture"/> へ直接描く(写真のアップロード/ダウンロード無し。
+    /// オーバーレイのアルファは小さい別バッファなので従来どおり借りる)。
+    /// GpuCompositeChain から使う。</summary>
     internal static bool ApplyToTexture(
         ReadWriteTexture2D<Bgra32, float4> photoTexture, GraphicsDevice device, int photoWidth, int photoHeight,
         byte[] overlayPixels, int overlayStride, int overlayWidth, int overlayHeight,
@@ -113,10 +100,9 @@ public static class GpuDropShadow
     }
 }
 
-/// <summary>Copies <paramref name="overlay"/>'s alpha channel into all of
-/// R/G/B of <paramref name="destination"/>, so the existing (RGB-blurring)
-/// BoxBlurPassShader can blur it as if it were a grayscale image, without
-/// needing a dedicated single-channel blur shader.</summary>
+/// <summary><paramref name="overlay"/> のアルファを <paramref name="destination"/> の
+/// R/G/B 全部へコピーする。既存の BoxBlurPassShader(RGB ブラー)をグレースケール
+/// 画像のように流用するため。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct ExtractAlphaShader(
@@ -131,11 +117,9 @@ public readonly partial struct ExtractAlphaShader(
     }
 }
 
-/// <summary>Mirrors ApplyHalftoneDots exactly (see its own doc comment in
-/// ImageAdjustment.cs for the shape rationale) -- a per-pixel, no-neighbor-
-/// dependency formula, so it's safe to run in place. Reads/writes the alpha
-/// value packed into R/G/B by ExtractAlphaShader (or left there by the
-/// preceding blur pass).</summary>
+/// <summary>ApplyHalftoneDots の再現(形状の理由は ImageAdjustment.cs 側の doc)。
+/// per-pixel・近傍非依存なので in-place で安全。ExtractAlphaShader が R/G/B に詰めた
+/// アルファ値を読み書きする。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct HalftoneDotsShader(
@@ -163,16 +147,12 @@ public readonly partial struct HalftoneDotsShader(
     }
 }
 
-/// <summary>Mirrors ApplyDropShadow's own final blend loop: combines the
-/// photo pixel with the shadow color (colorB/colorG/colorR) per
-/// <paramref name="blendMode"/> (0=Multiply, 1=Normal, 2=Additive -- matches
-/// ImageAdjustment.DropShadowBlendMode's own int values; HLSL shader fields
-/// can't be C# enums, so the caller passes the int cast), weighted by the
-/// (blurred/halftoned) alpha at <paramref name="alphaTexture"/>'s own
-/// position, writing into the photo at an offset position. Dispatched over
-/// the overlay's dimensions -- same no-cross-thread-hazard reasoning as
-/// AlphaBlendShader, since each thread owns a distinct alpha-texture pixel
-/// and therefore a distinct photo pixel.</summary>
+/// <summary>ApplyDropShadow の最終ブレンドの再現。写真画素を影色(colorB/G/R)と
+/// <paramref name="blendMode"/>(0=Multiply / 1=Normal / 2=Additive。
+/// DropShadowBlendMode の int 値。HLSL は enum 不可なので呼び出し側が int で渡す)で
+/// 合成し、<paramref name="alphaTexture"/> の(ブラー/ハーフトーン済み)アルファで
+/// 重み付けして写真のオフセット位置へ書く。ディスパッチはオーバーレイ寸法
+/// (AlphaBlendShader と同じく競合なし)。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct DropShadowBlendShader(

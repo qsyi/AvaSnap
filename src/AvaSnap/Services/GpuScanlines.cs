@@ -3,20 +3,14 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>GPU offload for CompositeOverlayOntoPhoto's ApplyScanlines --
-/// see GPU_MIGRATION_PLAN.md's "残作業2" item 3. Two passes, same as the
-/// CPU version: darken every even row, then apply up to
-/// ImageAdjustment.MaxGlitchBands horizontal-shift glitch bands. The band
-/// parameters (which rows, how far to shift) are cheap to compute -- at
-/// most 4 calls to ImageAdjustment.HashNoise -- so they're computed on the
-/// CPU exactly like the CPU path does and passed to the shader as plain
-/// scalars, rather than trying to run that tiny sequential computation on
-/// the GPU itself.</summary>
+/// <summary>ApplyScanlines の GPU 版。CPU 版と同じ2パス: 偶数行を暗くする →
+/// 最大 MaxGlitchBands 本の横ずれグリッチバンドを当てる。バンドのパラメータ
+/// (対象行・ずらし量)は HashNoise 数回で安く出せるので CPU で計算し、シェーダへは
+/// スカラーで渡す。</summary>
 public static class GpuScanlines
 {
-    /// <summary>Returns false (leaving <paramref name="pixels"/> untouched)
-    /// if no DX12-capable GPU/driver is available, so the caller falls back
-    /// to its own CPU ApplyScanlines instead.</summary>
+    /// <summary>DX12 対応 GPU が無ければ false(<paramref name="pixels"/> は不変)。
+    /// 呼び出し側は CPU の ApplyScanlines へフォールバックする。</summary>
     public static bool TryApply(byte[] pixels, int stride, int width, int height, double amount, double scale = 1.0)
     {
         if (stride != width * 4 || pixels.Length < stride * height) return false;
@@ -40,10 +34,9 @@ public static class GpuScanlines
         }
     }
 
-    /// <summary>Same scanlines pass as <see cref="TryApply"/>, but operating
-    /// directly on an already GPU-resident <paramref name="texture"/> -- no
-    /// upload/download of its own. Used by GpuCompositeChain -- see its own
-    /// doc comment.</summary>
+    /// <summary><see cref="TryApply"/> と同じ処理を、既に GPU 上にある
+    /// <paramref name="texture"/> へ直接かける(アップロード/ダウンロード無し)。
+    /// GpuCompositeChain から使う。</summary>
     internal static bool ApplyToTexture(ReadWriteTexture2D<Bgra32, float4> texture, GraphicsDevice device, int width, int height, double amount, double scale = 1.0)
     {
         double strength = amount / 100.0;
@@ -74,11 +67,9 @@ public static class GpuScanlines
 
         device.For(width, height, new EvenRowDarkenShader(texture, darkenFactor));
 
-        // Snapshot AFTER darkening (matching the CPU order: `original =
-        // pixels.Clone()` happens after the darken pass), then the
-        // glitch-band shader reads from this snapshot and writes back into
-        // `texture` -- a ping-pong (GPU-to-GPU, not a CPU round trip), since
-        // shifted rows read NEIGHBORING x positions.
+        // 暗くした後のスナップショット(CPU 版の順序と同じ)。グリッチバンドシェーダは
+        // これを読んで texture へ書き戻す ── ずれた行は隣接 x を読むので GPU 同士の
+        // ping-pong にする(CPU 往復ではない)。
         ReadWriteTexture2D<Bgra32, float4> original = GpuTexturePool.Rent(device, "Scanlines.B", width, height);
         texture.CopyTo(original);
 
@@ -110,13 +101,9 @@ public readonly partial struct EvenRowDarkenShader(
     }
 }
 
-/// <summary>For each pixel, checks which (if any) of up to 4 glitch bands
-/// its row falls into -- later bands (higher index) override earlier ones
-/// on overlap, matching the CPU version's sequential for-loop where a
-/// later band's own write simply overwrites an earlier one's for the same
-/// row. A row matching no band (or a band with shift=0) reads from
-/// <paramref name="original"/> at its own unshifted position, an exact
-/// passthrough copy.</summary>
+/// <summary>各画素で、その行が最大4本のどのグリッチバンドに入るか調べる。重なった
+/// 場合は後(添字が大)のバンドが勝つ(CPU 版の逐次 for と同じ)。どのバンドにも
+/// 入らない(または shift=0 の)行は <paramref name="original"/> をそのまま素通し。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct GlitchBandShader(

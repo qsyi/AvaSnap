@@ -3,42 +3,23 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>The "finishing" effects that run AFTER the avatar/drop-shadow
-/// compositing step in CompositeOverlayOntoPhoto -- softness, sharpness,
-/// clarity, fade, glow, light leak, chromatic aberration, color bleed, and
-/// vignette -- as one GPU pipeline, same one-upload/one-download idea as
-/// GpuCompositePipeline (see its own doc comment) but for this second half
-/// of the effect chain. Kept as a SEPARATE GPU round trip from
-/// GpuCompositePipeline rather than merged into one, because drop-shadow
-/// compositing and the avatar alpha-blend in between still run on the CPU
-/// (they involve a second, differently-sized/offset buffer -- the avatar
-/// PNG -- not just the single photo buffer these two pipelines share) and
-/// haven't been ported yet. Tone gradient, scanlines, and film grain also
-/// still run on the CPU after this returns -- tone gradient needs an
-/// aggregate color-extraction pass over the whole image first, and film
-/// grain needs its own precomputed noise field uploaded as a texture,
-/// neither of which this straightforward per-pixel/box-blur pipeline
-/// covers yet. Those three CPU steps sit INTERLEAVED between these GPU-
-/// covered effects in the original order (tone gradient between light leak
-/// and chromatic aberration; scanlines between color bleed and vignette),
-/// so calling everything covered here in one giant pass would silently
-/// reorder the pipeline -- see TryRunPreToneGradient/TryRunPreScanlines/
-/// TryRunVignette, the three grouped entry points CompositeOverlayOntoPhoto
-/// actually calls, each bracketing exactly the effects that sit between two
-/// of those CPU steps (or before the first/after the last). Each is still
-/// its own single upload/download, just for a smaller slice of the chain
-/// than one call covering everything would be.
+/// <summary>アバター/ドロップシャドウ合成の後に走る「仕上げ」エフェクト
+/// (ソフト・シャープ・クラリティ・フェード・グロー・ライトリーク・色収差・
+/// カラーブリード・ビネット)を1つの GPU パイプラインで。GpuCompositePipeline と
+/// 同じ 1アップロード/1ダウンロードの発想の、連鎖後半ぶん。
 ///
-/// Formula constants (fade floor cap, glow blur radius cap, etc.) are read
-/// directly off ImageAdjustment's own internal consts (MaxFadeFloor,
-/// MaxGlowRadius, ...) rather than duplicated here, so there's one source
-/// of truth for both the CPU and GPU paths. Texture allocations are cached
-/// across calls by GpuTexturePool, not freshly allocated every render.</summary>
+/// CPU に残るトーングラデ・走査線・グレインは、元の順序でここのエフェクトの
+/// 「間」に挟まる(トーングラデはライトリークと色収差の間、走査線はカラーブリードと
+/// ビネットの間)。全部を1回のパスにまとめると順序が崩れるので、
+/// TryRunPreToneGradient / TryRunPreScanlines / TryRunVignette の3入口に分け、
+/// それぞれが CPU ステップに挟まれた区間だけを担当する。
+///
+/// フェード床上限・グローぼかし半径上限などの定数は ImageAdjustment の内部 const を
+/// 直接読む(CPU/GPU で単一の真実)。テクスチャ確保は GpuTexturePool がキャッシュする。</summary>
 public static class GpuFinishingEffects
 {
-    /// <summary>Softness, sharpness, clarity, fade, glow, and light leak --
-    /// everything between the avatar/drop-shadow compositing step and tone
-    /// gradient in the original CPU order.</summary>
+    /// <summary>ソフト・シャープ・クラリティ・フェード・グロー・ライトリーク
+    /// (元の CPU 順で、アバター/ドロップシャドウ合成とトーングラデの間)。</summary>
     public static bool TryRunPreToneGradient(byte[] pixels, int stride, int width, int height,
         double softnessAmount, double sharpnessAmount, double finishDetailScale,
         double clarityAmount, double clarityScale,
@@ -55,8 +36,7 @@ public static class GpuFinishingEffects
             chromaticAberrationAmount: 0, colorBleedAmount: 0, vhsScale: 1.0,
             vignetteAmount: 0);
 
-    /// <summary>Chromatic aberration and color bleed -- everything between
-    /// tone gradient and scanlines in the original CPU order.</summary>
+    /// <summary>色収差・カラーブリード(元の CPU 順で、トーングラデと走査線の間)。</summary>
     public static bool TryRunPreScanlines(byte[] pixels, int stride, int width, int height,
         double chromaticAberrationAmount, double colorBleedAmount, double vhsScale) =>
         TryRun(pixels, stride, width, height,
@@ -68,8 +48,7 @@ public static class GpuFinishingEffects
             chromaticAberrationAmount, colorBleedAmount, vhsScale,
             vignetteAmount: 0);
 
-    /// <summary>Vignette alone -- everything between scanlines and film
-    /// grain in the original CPU order.</summary>
+    /// <summary>ビネットのみ(元の CPU 順で、走査線とグレインの間)。</summary>
     public static bool TryRunVignette(byte[] pixels, int stride, int width, int height, double vignetteAmount) =>
         TryRun(pixels, stride, width, height,
             softnessAmount: 0, sharpnessAmount: 0, finishDetailScale: 1.0,
@@ -119,17 +98,11 @@ public static class GpuFinishingEffects
         }
     }
 
-    /// <summary>Same effect group as the private byte[]-based TryRun
-    /// overload (called by TryRunPreToneGradient/TryRunPreScanlines/
-    /// TryRunVignette), but operating directly on an already GPU-resident
-    /// <paramref name="mainTexture"/> -- no upload/download of its own.
-    /// <paramref name="mainTexture"/> plays the role <c>texA</c> played
-    /// before: one of the three ping-pong slots ChromaticAberration/
-    /// ColorBleed may swap `current` away from, in which case the final
-    /// result is copied back into it with a cheap GPU-to-GPU copy before
-    /// returning, so callers can always rely on <paramref name="mainTexture"/>
-    /// holding the up-to-date image afterward. Used by GpuCompositeChain --
-    /// see its own doc comment.</summary>
+    /// <summary>private な byte[] 版 TryRun と同じエフェクト群を、既に GPU 上にある
+    /// <paramref name="mainTexture"/> へ直接かける(アップロード/ダウンロード無し)。
+    /// 色収差/カラーブリードは `current` を別テクスチャへ ping-pong させることがあるが、
+    /// 戻る前に <paramref name="mainTexture"/> へコピーし直すので、呼び出し側は常に
+    /// <paramref name="mainTexture"/> が最新と信じてよい。GpuCompositeChain から使う。</summary>
     internal static bool ApplyToTexture(ReadWriteTexture2D<Bgra32, float4> mainTexture, GraphicsDevice device, int width, int height,
         double softnessAmount, double sharpnessAmount, double finishDetailScale,
         double clarityAmount, double clarityScale,
@@ -148,15 +121,9 @@ public static class GpuFinishingEffects
         ReadWriteTexture2D<Bgra32, float4> texB = GpuTexturePool.Rent(device, "Finishing.B", width, height);
         ReadWriteTexture2D<Bgra32, float4> texC = GpuTexturePool.Rent(device, "Finishing.C", width, height);
 
-        // `current` is whichever of the three physical textures holds the
-        // up-to-date image right now -- mainTexture at the start, but
-        // ChromaticAberration/ColorBleed below read from every OTHER
-        // pixel's position too (not just their own), so they can't safely
-        // read-and-write the same texture in one dispatch and instead
-        // ping-pong onto a scratch texture, reassigning `current` to point
-        // at it. Every other effect here only ever touches its own pixel,
-        // so it writes back into `current` in place without needing to
-        // ping-pong.
+        // `current` = 今どの物理テクスチャが最新か。開始時は mainTexture。色収差/
+        // カラーブリードは近傍を読むので in-place できず scratch へ ping-pong し
+        // `current` を張り替える。他のエフェクトは自分の画素しか触らないので in-place。
         ReadWriteTexture2D<Bgra32, float4> current = mainTexture;
 
         if (softnessAmount > 0)
@@ -251,21 +218,15 @@ public static class GpuFinishingEffects
 
         if (!ReferenceEquals(current, mainTexture))
         {
-            // A cheap GPU-to-GPU copy, not a CPU round trip -- ChromaticAberration
-            // or ColorBleed left the final result sitting on a scratch texture
-            // instead of mainTexture, so callers (GpuCompositeChain chaining
-            // straight into the next stage) can keep relying on mainTexture
-            // always holding the up-to-date image.
+            // 色収差/カラーブリードが結果を scratch に残したので mainTexture へ戻す
+            // (GPU 同士の安いコピー)。次ステージが mainTexture を最新前提で使えるように。
             current.CopyTo(mainTexture);
         }
         return true;
     }
 
-    /// <summary>Returns the two textures out of (a, b, c) that are NOT
-    /// `current` -- always well-defined since exactly one of the three is
-    /// ever `current` at a time. Used to grab scratch space without caring
-    /// which physical texture happens to be free after an earlier
-    /// ChromaticAberration/ColorBleed pass reassigned `current`.</summary>
+    /// <summary>(a, b, c) のうち `current` でない2つを返す。3つのうち常に1つだけが
+    /// `current` なので一意。スクラッチ用テクスチャを取るのに使う。</summary>
     private static (ReadWriteTexture2D<Bgra32, float4> first, ReadWriteTexture2D<Bgra32, float4> second) OtherTwo(
         ReadWriteTexture2D<Bgra32, float4> current,
         ReadWriteTexture2D<Bgra32, float4> a, ReadWriteTexture2D<Bgra32, float4> b, ReadWriteTexture2D<Bgra32, float4> c)
@@ -277,12 +238,9 @@ public static class GpuFinishingEffects
 
 }
 
-// ---- Shaders below: each one mirrors a single ImageAdjustment CPU method
-//      of the same purpose -- see GpuFinishingEffects.TryRun's call sites
-//      for which CPU method each corresponds to. All operate in 0..255
-//      float space internally (matching the CPU byte-space formulas
-//      literally) even though the underlying texture storage is normalized
-//      0..1, converting at the read/write boundary only. ----
+// ---- 以下のシェーダは、それぞれ ImageAdjustment の同目的 CPU メソッドの再現。
+//      内部計算は 0..255 float 空間(CPU の byte 空間の式をそのまま)、テクスチャ
+//      入出力の境界でだけ 0..1 と変換する。 ----
 
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
@@ -343,12 +301,10 @@ public readonly partial struct LightLeakShader(
     }
 }
 
-/// <summary>Shared by Softness/Sharpness/Clarity (see their own call sites
-/// in TryRun): all three are "blend each pixel toward/away from a blur of
-/// itself" -- positive <paramref name="strength"/> blends TOWARD the blur
-/// (softness), negative blends AWAY from it (sharpness/clarity), and
-/// <paramref name="useMidtoneWeight"/> additionally scales that by a bell-
-/// curve luminance weight (clarity only).</summary>
+/// <summary>ソフト/シャープ/クラリティ共通。いずれも「自身のぼかしへ寄せる/離す」。
+/// <paramref name="strength"/> 正でぼかしへ寄せる(ソフト)、負で離す(シャープ/
+/// クラリティ)。<paramref name="useMidtoneWeight"/> は中間調のベル型輝度重みで
+/// さらにスケール(クラリティのみ)。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct BlurBlendShader(
@@ -417,11 +373,9 @@ public readonly partial struct GlowBlendShader(
     }
 }
 
-/// <summary>Reads from <paramref name="source"/> at x-shifted positions
-/// (red one way, blue the other, green untouched) and writes the result to
-/// <paramref name="destination"/> -- must be a separate texture, not
-/// in-place, since each thread reads OTHER pixels' positions that other
-/// threads in the same dispatch may be concurrently overwriting.</summary>
+/// <summary><paramref name="source"/> を x 方向にずらして読み(赤は一方、青は他方、
+/// 緑はそのまま)、<paramref name="destination"/> へ書く。近傍を読むので in-place 不可、
+/// 別テクスチャが必要。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct ChromaticAberrationShader(
@@ -441,12 +395,10 @@ public readonly partial struct ChromaticAberrationShader(
     }
 }
 
-/// <summary>First half of ColorBleed (see YCbCrUnpackShader for the
-/// second): converts each pixel to Y'CbCr and packs it back into the same
-/// texture as (R=Y, G=Cb, B=Cr) -- an arbitrary internal packing, never
-/// exposed -- purely so the existing BoxBlurPassShader can blur it (Y comes
-/// along for the ride and gets thrown away; only blurred Cb/Cr are used).
-/// Safe in place: only reads/writes its own pixel.</summary>
+/// <summary>カラーブリード前半(後半は YCbCrUnpackShader)。各画素を Y'CbCr にして
+/// 同じテクスチャへ (R=Y, G=Cb, B=Cr) で詰め直す(外に出さない内部詰め方)。既存の
+/// BoxBlurPassShader でぼかせるように。Y は道連れで捨て、ぼかした Cb/Cr だけ使う。
+/// 自分の画素しか触らないので in-place で安全。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct RgbToYCbCrPackShader(IReadWriteNormalizedTexture2D<float4> texture) : IComputeShader
@@ -463,12 +415,10 @@ public readonly partial struct RgbToYCbCrPackShader(IReadWriteNormalizedTexture2
     }
 }
 
-/// <summary>Second half of ColorBleed: reconstructs RGB from the original
-/// (unblurred) Y still sitting in <paramref name="current"/>'s R channel
-/// and the horizontally-blurred Cb/Cr sitting in <paramref name="blurred"/>'s
-/// G/B channels (see RgbToYCbCrPackShader), writing the final RGB back into
-/// <paramref name="current"/>. Safe in place: only reads its own pixel from
-/// each of the two textures.</summary>
+/// <summary>カラーブリード後半。<paramref name="current"/> の R に残る未ぼかしの Y と、
+/// <paramref name="blurred"/> の G/B にある横ぼかし済み Cb/Cr から RGB を復元し、
+/// <paramref name="current"/> へ書き戻す。各テクスチャから自分の画素しか読まないので
+/// in-place で安全。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct YCbCrUnpackShader(

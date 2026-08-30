@@ -2,22 +2,17 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>Caches whether a DX12-capable GPU/driver is actually available,
-/// checked once instead of every one of GpuColorAdjustments/
-/// GpuCompositePipeline/GpuFinishingEffects re-attempting GraphicsDevice.
-/// GetDefault() (and eating its exception, on a machine where it fails) on
-/// every single render -- including every tick of a slider drag. A machine
-/// that can't do DX12 compute isn't going to start being able to mid-
-/// session, so once determined, the result is trusted for the rest of the
-/// app's lifetime.</summary>
+/// <summary>DX12 対応 GPU が使えるかを一度だけ判定してキャッシュする。各 Gpu* が
+/// レンダーのたび(スライダードラッグの各 tick 含む) GraphicsDevice.GetDefault() を
+/// 呼び直して例外を握りつぶす、のを避けるため。セッション中に状況は変わらないので
+/// 結果はアプリ終了まで信頼する。</summary>
 public static class GpuAvailability
 {
     private static bool? _isAvailable;
     private static GraphicsDevice? _device;
 
-    /// <summary>The default GPU device, or null if none is available --
-    /// callers should bail out to their CPU fallback immediately when this
-    /// is null, without attempting any texture allocation.</summary>
+    /// <summary>既定の GPU デバイス。無ければ null なので、呼び出し側は
+    /// テクスチャ確保を試みず即 CPU フォールバックへ抜けること。</summary>
     public static GraphicsDevice? Device
     {
         get

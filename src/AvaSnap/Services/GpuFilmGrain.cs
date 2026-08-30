@@ -3,30 +3,19 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>GPU offload for CompositeOverlayOntoPhoto's ApplyFilmGrain --
-/// see GPU_MIGRATION_PLAN.md's "残作業2" item 4. The noise FIELD itself
-/// (ImageAdjustment.GenerateArNoise) is an autoregressive, raster-scan-
-/// dependent computation that can't be parallelized (each sample depends on
-/// its own left/upper neighbors already having been generated) -- but it's
-/// only ever computed once per (width, height, seed) and cached
-/// (ImageAdjustment.GrainNoiseCache/GetArNoise), so this doesn't try to
-/// move THAT part to the GPU. What it does move is the per-pixel BLEND step
-/// (luminance-weighted soft-light blend against the noise), which has no
-/// such dependency. The noise field's own upload to the GPU is cached the
-/// same way GetArNoise caches it on the CPU side: by reference, so a
-/// render where the photo size hasn't changed (the common case, e.g.
-/// during a color-slider drag) skips re-uploading it every time, same idea
-/// as GpuTexturePool.RentUploaded but for a ReadWriteBuffer&lt;float&gt;
-/// instead of a texture (GpuTexturePool itself only manages the
-/// Bgra32/float4 texture type the rest of the pipeline uses).</summary>
+/// <summary>ApplyFilmGrain の GPU 版。ノイズ場そのもの(GenerateArNoise)は
+/// 自己回帰でラスタ順依存なので並列化できないが、(width, height, seed) ごとに
+/// 一度だけ計算してキャッシュ(GetArNoise)されるので GPU へは移さない。移すのは
+/// per-pixel のブレンド(輝度加重のソフトライト)だけ。ノイズ場の GPU への
+/// アップロードは参照一致でキャッシュするので、写真サイズが変わらないレンダー
+/// (色スライダードラッグ等)では再アップロードしない。</summary>
 public static class GpuFilmGrain
 {
     private static double[]? _lastNoise;
     private static ReadWriteBuffer<float>? _noiseBuffer;
 
-    /// <summary>Returns false (leaving <paramref name="pixels"/> untouched)
-    /// if no DX12-capable GPU/driver is available, so the caller falls back
-    /// to its own CPU ApplyFilmGrain instead.</summary>
+    /// <summary>DX12 対応 GPU が無ければ false(<paramref name="pixels"/> は不変)。
+    /// 呼び出し側は CPU の ApplyFilmGrain へフォールバックする。</summary>
     public static bool TryApply(byte[] pixels, int stride, int width, int height, double amount)
     {
         if (amount <= 0) return true;
@@ -50,11 +39,9 @@ public static class GpuFilmGrain
         }
     }
 
-    /// <summary>Same film-grain pass as <see cref="TryApply"/>, but
-    /// operating directly on an already GPU-resident <paramref name="texture"/>
-    /// -- no upload/download of its own (the noise buffer itself is still
-    /// cached/uploaded the same way regardless of caller). Used by
-    /// GpuCompositeChain -- see its own doc comment.</summary>
+    /// <summary><see cref="TryApply"/> と同じ処理を、既に GPU 上にある
+    /// <paramref name="texture"/> へ直接かける(それ自体のアップロード/ダウンロード無し。
+    /// ノイズバッファのキャッシュは呼び出し側に依らず同じ)。GpuCompositeChain から使う。</summary>
     internal static bool ApplyToTexture(ReadWriteTexture2D<Bgra32, float4> texture, GraphicsDevice device, int width, int height, double amount)
     {
         if (amount <= 0) return true;
@@ -80,9 +67,8 @@ public static class GpuFilmGrain
     }
 }
 
-/// <summary>Mirrors ApplyFilmGrain's own per-pixel blend exactly -- see its
-/// doc comment in ImageAdjustment.cs for why luminance-weighted soft-light
-/// instead of a flat additive blend.</summary>
+/// <summary>ApplyFilmGrain の per-pixel ブレンドの再現(輝度加重ソフトライト。
+/// 理由は ImageAdjustment.cs 側の doc)。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct FilmGrainShader(

@@ -3,29 +3,15 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>GPU offload for CompositeOverlayOntoPhoto's ExtractToneGradientColors
-/// + ApplyToneGradient pair -- see GPU_MIGRATION_PLAN.md's "残作業2" item
-/// 5, the trickiest of the five since it needs an aggregate (weighted
-/// average) over the WHOLE image before the per-pixel gradient can even be
-/// computed, not just a per-pixel transform like the others.
-///
-/// Uses a one-thread-per-ROW reduction rather than a full GPU tree
-/// reduction (thread-group shared memory, multiple passes, etc.): each of
-/// `height` GPU threads sums its own row's weighted bright/dark
-/// contributions into an 8-float slot of a small ReadWriteBuffer, which is
-/// then downloaded to the CPU (height*8 floats -- trivial next to the
-/// photo's own width*height*4 bytes) for the final summation across rows.
-/// Real GPU parallelism across rows, without the complexity of a proper
-/// tree reduction -- a deliberate, documented simplification, not an
-/// oversight; revisit if profiling ever shows the per-row sequential loop
-/// (each thread still walks the full row width alone) is the bottleneck.</summary>
+/// <summary>ExtractToneGradientColors + ApplyToneGradient の GPU 版。他の仕上げ
+/// シェーダと違い per-pixel の前に画像全体の加重平均が要るので、1スレッド1行で
+/// 小バッファへ集計し、行間の合計だけ CPU で取る(ツリーリダクションではない。
+/// per-row ループがボトルネックになったら見直す)。</summary>
 public static class GpuToneGradient
 {
-    /// <summary>Returns false (leaving <paramref name="pixels"/> untouched)
-    /// if no DX12-capable GPU/driver is available. lightR/G/B and darkR/G/B
-    /// are the gradient's two endpoint colors -- no longer auto-computed on
-    /// every call (see TryDetectColors for that, now a separate one-shot
-    /// operation the UI's 自動判定 button triggers explicitly).</summary>
+    /// <summary>DX12 対応 GPU が無ければ false(<paramref name="pixels"/> は不変)。
+    /// lightR/G/B・darkR/G/B は勾配の両端色。毎回の自動計算はしない
+    /// (自動判定は <see cref="TryDetectColors"/> を「自動判定」ボタンが明示的に呼ぶ)。</summary>
     public static bool TryApply(byte[] pixels, int stride, int width, int height, double amount, double rotationDegrees,
         byte lightR, byte lightG, byte lightB, byte darkR, byte darkG, byte darkB)
     {
@@ -50,10 +36,9 @@ public static class GpuToneGradient
         }
     }
 
-    /// <summary>Same tone-gradient pass as <see cref="TryApply"/>, but
-    /// operating directly on an already GPU-resident <paramref name="texture"/>
-    /// -- no upload/download of the photo itself. Used by GpuCompositeChain
-    /// -- see its own doc comment.</summary>
+    /// <summary><see cref="TryApply"/> と同じ処理を、既に GPU 上にある
+    /// <paramref name="texture"/> へ直接かける(写真のアップロード/ダウンロード無し)。
+    /// GpuCompositeChain から使う。</summary>
     internal static bool ApplyToTexture(ReadWriteTexture2D<Bgra32, float4> texture, GraphicsDevice device, int width, int height, double amount, double rotationDegrees,
         byte lightR, byte lightG, byte lightB, byte darkR, byte darkG, byte darkB)
     {
@@ -72,15 +57,9 @@ public static class GpuToneGradient
         return true;
     }
 
-    /// <summary>The one-shot whole-image weighted-average extraction that
-    /// used to run on every ApplyToTexture call -- now only invoked
-    /// explicitly by the 自動判定 (auto-detect) button, with the result
-    /// stored as the user's own editable 明色/暗色 fields from then on
-    /// rather than recomputed every render. Same ToneGradientRowSumShader
-    /// reduction as before (see its own doc comment for the weighting
-    /// rationale), just no longer chained straight into an apply pass.
-    /// Returns false (leaving the out params at their white/black defaults)
-    /// if no GPU is available.</summary>
+    /// <summary>画像全体の加重平均から明色/暗色を推定する一回きりの処理。以前は毎
+    /// レンダー走っていたが、今は「自動判定」ボタンからのみ呼ばれ、結果はユーザーが
+    /// 編集できる明色/暗色フィールドになる。GPU が無ければ out は白/黒既定のまま false。</summary>
     public static bool TryDetectColors(byte[] pixels, int stride, int width, int height,
         out byte lightR, out byte lightG, out byte lightB, out byte darkR, out byte darkG, out byte darkB)
     {
@@ -125,13 +104,9 @@ public static class GpuToneGradient
     }
 }
 
-/// <summary>One thread per photo row -- see GpuToneGradient's own doc
-/// comment for why this isn't a full tree reduction. Mirrors
-/// ExtractToneGradientColors' own per-pixel weighting exactly (smoothstep
-/// bright/dark weights, dark pixels additionally boosted by their own HSL
-/// saturation), just accumulating into 8 floats per row instead of 8
-/// running totals shared across every row the way the CPU version's
-/// Parallel.For thread-local accumulators do.</summary>
+/// <summary>1スレッド1行。CPU 版 ExtractToneGradientColors の per-pixel 加重
+/// (smoothstep の明/暗ウェイト + 暗ピクセルは HSL 彩度ぶん増幅)をそのまま再現し、
+/// 行ごとに 8 float へ蓄積する。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.X)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct ToneGradientRowSumShader(
@@ -194,10 +169,8 @@ public readonly partial struct ToneGradientRowSumShader(
     }
 }
 
-/// <summary>Mirrors ApplyToneGradient's own per-pixel screen-blend exactly,
-/// given the already-extracted bright/dark colors as plain scalars. The dot
-/// (dirX,dirY's own direction) points toward BRIGHT, not dark -- see
-/// ApplyToneGradient's own doc comment for why.</summary>
+/// <summary>ApplyToneGradient の per-pixel スクリーンブレンドを再現。両端色は
+/// スカラーで受け取る。(dirX,dirY) は「明」の方向を指す(dark ではない)。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct ToneGradientApplyShader(
@@ -215,8 +188,7 @@ public readonly partial struct ToneGradientApplyShader(
         float t = Hlsl.Saturate((proj + maxExtent) / (2f * maxExtent));
         t = Hlsl.Pow(t, 0.5f); // ToneGradientDarkBias
 
-        // t near 1 is the dot's own direction -- bright/dark swapped from
-        // the naive bright-at-t=0 mapping so the dot points at bright.
+        // t≒1 = dot の方向。明/暗を入れ替えて dot が明を指すようにしてある。
         float gB = (darkB + (brightB - darkB) * t) * strength;
         float gG = (darkG + (brightG - darkG) * t) * strength;
         float gR = (darkR + (brightR - darkR) * t) * strength;

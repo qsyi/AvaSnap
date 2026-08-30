@@ -3,44 +3,25 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>GPU offload for ImageAdjustment.BlurPng (the avatar cutout's
-/// silhouette feathering) -- see GPU_MIGRATION_PLAN.md's "残作業6".
+/// <summary>ImageAdjustment.BlurPng(アバター切り抜きのフチのフェザー)の GPU 版。
 ///
-/// The CPU version (BlurEdgePremultiplied) computes an exact Euclidean
-/// distance transform (Felzenszwalb &amp; Huttenlocher) to find each pixel's
-/// signed distance to the foreground/background boundary. That algorithm's
-/// 1D pass keeps small per-column/per-row scratch arrays sized to the
-/// column/row length, which doesn't map onto a GPU thread (HLSL locals need
-/// a compile-time-known size). Rather than force that exact algorithm onto
-/// the GPU, this uses the standard GPU-native technique for the same
-/// problem: the Jump Flooding Algorithm (JFA). Every pixel starts by
-/// recording itself as a "seed" if it sits on the foreground/background
-/// boundary (differs from an in-bounds 4-neighbor), then O(log(max(width,
-/// height))) parallel propagation passes let every pixel discover its
-/// nearest seed by repeatedly comparing against neighbors at halving
-/// offsets. It's an approximation (occasionally a pixel or two off from the
-/// exact nearest boundary point), not a concern given this project's
-/// "CPU一致は求めない" policy -- and it's a textbook-correct way to get a
-/// distance field on a GPU, not a shortcut.
+/// CPU 版(BlurEdgePremultiplied)は各画素の前景/背景境界までの符号付き距離を厳密な
+/// ユークリッド距離変換で求めるが、その 1D パスは列/行長ぶんの可変長スクラッチが
+/// 要り GPU スレッドに載らない(HLSL のローカルはコンパイル時サイズが必要)。そこで
+/// GPU 定番の Jump Flooding Algorithm(JFA)を使う: 境界画素を自身の seed として記録し、
+/// オフセットを半減させながら O(log(max(w,h))) 回の並列伝播で各画素が最近傍 seed を
+/// 見つける。厳密解より数画素ずれることがあるが、CPU 一致は求めない方針なので許容。
 ///
-/// Same overall shape as BlurEdgePremultiplied otherwise: premultiplied
-/// color+alpha gets a box blur (to reconstruct a clean fill color for the
-/// feather band), and the final alpha comes from an eased falloff over the
-/// boundary distance, not from the box blur directly.</summary>
+/// 全体構成は BlurEdgePremultiplied と同じ: 前乗算した色+アルファをボックスブラーし、
+/// 最終アルファは境界距離のイージングで出す(ブラー結果そのものではない)。</summary>
 public static class GpuAvatarEdgeBlur
 {
-    // Mirrors ImageAdjustment.EdgeBlurForegroundAlphaThreshold (see its own
-    // doc comment for why this is close to zero, not the naive 50%
-    // midpoint) -- kept as its own copy rather than referencing that
-    // constant directly since ComputeSharp shader bodies can't reference
-    // external constants, only constructor-passed values (same reason the
-    // other Gpu*.cs files compute from ImageAdjustment's consts in host
-    // code and pass the RESULT in, not the constant itself).
+    // ImageAdjustment.EdgeBlurForegroundAlphaThreshold のコピー。ComputeSharp の
+    // シェーダ本体は外部定数を参照できず、コンストラクタ渡しの値しか使えないため。
     private const float ForegroundAlphaThreshold = ImageAdjustment.EdgeBlurForegroundAlphaThreshold / 255f;
 
-    /// <summary>Returns false (leaving <paramref name="pixels"/> untouched)
-    /// if no DX12-capable GPU/driver is available, so the caller falls back
-    /// to its own CPU BlurEdgePremultiplied instead.</summary>
+    /// <summary>DX12 対応 GPU が無ければ false(<paramref name="pixels"/> は不変)。
+    /// 呼び出し側は CPU の BlurEdgePremultiplied へフォールバックする。</summary>
     public static bool TryApply(byte[] pixels, int stride, int width, int height, double edgeBlurRadius)
     {
         if (edgeBlurRadius <= 0) return true;
@@ -80,9 +61,7 @@ public static class GpuAvatarEdgeBlur
                 (curX, nextX) = (nextX, curX);
                 (curY, nextY) = (nextY, curY);
             }
-            // One extra step=1 pass ("JFA+1"), a well-known refinement that
-            // catches the occasional off-by-one error the base algorithm
-            // leaves behind.
+            // 追加の step=1 パス(JFA+1)。基本アルゴリズムが残す off-by-one を拾う定番の改善。
             device.For(width, height, new EdgeBlurJfaStepShader(curX, curY, nextX, nextY, width, height, 1));
             (curX, nextX) = (nextX, curX);
             (curY, nextY) = (nextY, curY);
@@ -99,11 +78,9 @@ public static class GpuAvatarEdgeBlur
     }
 }
 
-/// <summary>Premultiplies color by alpha (so a later box blur of this
-/// texture never lets fully-transparent pixels' garbage RGB leak into
-/// nearby opaque pixels) while carrying alpha through unchanged as the 4th
-/// channel, ready for <see cref="PremulBoxBlurPassShader"/> to blur all
-/// four channels together in one pass.</summary>
+/// <summary>色にアルファを前乗算する(後段のボックスブラーで完全透明画素のゴミ RGB が
+/// 隣の不透明画素へ滲まないように)。アルファは第4チャンネルとしてそのまま持ち越し、
+/// <see cref="PremulBoxBlurPassShader"/> が4チャンネル一括でブラーできる状態にする。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct PremultiplyShader(
@@ -117,10 +94,9 @@ public readonly partial struct PremultiplyShader(
     }
 }
 
-/// <summary>Separable box blur over ALL FOUR channels (including alpha,
-/// unlike GpuCompositePipeline's BoxBlurPassShader which passes alpha
-/// through untouched) -- BlurEdgePremultiplied needs a blurred alpha too,
-/// as the divisor that un-premultiplies the blurred color back out.</summary>
+/// <summary>4チャンネル全部(アルファ含む。alpha を素通しする
+/// GpuCompositePipeline.BoxBlurPassShader とは違う)を分離ボックスブラー。
+/// ブラー後の色を前乗算解除する除数として、ブラー済みアルファが要るため。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct PremulBoxBlurPassShader(
@@ -157,11 +133,8 @@ public readonly partial struct PremulBoxBlurPassShader(
     }
 }
 
-/// <summary>Seeds the Jump Flooding Algorithm: a pixel becomes its own seed
-/// (records its own coordinates) if it sits on the foreground/background
-/// boundary -- differs from any in-bounds 4-neighbor's foreground/background
-/// class -- else it's marked invalid (-1,-1) for the propagation passes to
-/// fill in.</summary>
+/// <summary>JFA の seed 付け: 前景/背景境界(4近傍のどれかと前景/背景クラスが違う)
+/// の画素は自身の座標を seed に、それ以外は無効 (-1,-1) にして伝播パスで埋めさせる。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct EdgeBlurInitSeedShader(
@@ -194,12 +167,8 @@ public readonly partial struct EdgeBlurInitSeedShader(
     }
 }
 
-/// <summary>One Jump Flooding propagation pass: each pixel looks at its own
-/// current nearest-seed guess plus its 8 neighbors offset by <paramref
-/// name="stepSize"/> pixels, and keeps whichever candidate seed is
-/// actually closest. Run with halving step sizes (see GpuAvatarEdgeBlur.
-/// TryApply) until every pixel has propagated its seed from as far as
-/// max(width, height) away.</summary>
+/// <summary>JFA の伝播1パス: 各画素が現在の最近傍 seed 候補と、<paramref name="stepSize"/>
+/// ずらした8近傍の seed を比べ、一番近いものを採る。step を半減させながら回す。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct EdgeBlurJfaStepShader(
@@ -251,14 +220,10 @@ public readonly partial struct EdgeBlurJfaStepShader(
     }
 }
 
-/// <summary>Final composition: turns each pixel's boundary distance (from
-/// the completed JFA seed search) into the same eased alpha falloff
-/// BlurEdgePremultiplied uses, and reconstructs the feather band's color
-/// from the blurred premultiplied texture -- mirrors that method's own
-/// final loop exactly (see its doc comment in ImageAdjustment.cs), just
-/// with the distance coming from JFA instead of an exact EDT. Writes back
-/// into <paramref name="source"/> in place: safe because this shader only
-/// ever reads its OWN pixel from every input, never a neighbor's.</summary>
+/// <summary>最終合成: JFA で得た境界距離を BlurEdgePremultiplied と同じイージング
+/// アルファ減衰にし、フェザー帯の色をブラー済み前乗算テクスチャから再構成する
+/// (距離が EDT ではなく JFA な点以外は CPU 版の最終ループと同じ)。各入力から自分の
+/// 画素しか読まないので <paramref name="source"/> へ in-place で書いて安全。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct EdgeBlurComposeShader(
@@ -293,8 +258,7 @@ public readonly partial struct EdgeBlurComposeShader(
 
         if (eased >= 0.999f)
         {
-            // Fully opaque -- no boundary within the radius, leave this
-            // pixel's color exactly as it was.
+            // 半径内に境界なし = 完全不透明。色はそのまま。
             return;
         }
 

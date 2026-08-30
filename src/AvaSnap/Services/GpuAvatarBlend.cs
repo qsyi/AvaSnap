@@ -3,23 +3,16 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>GPU offload for CompositeOverlayOntoPhoto's avatar alpha-blend
-/// loop (the aligned/resized avatar PNG composited onto the photo at an
-/// offset). The simplest of the remaining CPU steps -- no neighbor
-/// dependency, no aggregate statistics, no external noise data -- so it's
-/// the natural first piece of GPU_MIGRATION_PLAN.md's "残作業2" list. The
-/// photo texture is always freshly uploaded (CompositeOverlayOntoPhoto's
-/// own working buffer is a fresh byte[] every call, see its own comment on
-/// why), but the overlay texture is rented via GpuTexturePool.RentUploaded
-/// under the SAME "Overlay" key GpuDropShadow uses -- within one
-/// CompositeOverlayOntoPhoto call both receive the identical overlayPixels
-/// array reference, so whichever runs first (DropShadow, per the CPU call
-/// order) uploads it and this call's own upload is skipped.</summary>
+/// <summary>CompositeOverlayOntoPhoto のアバター アルファブレンド(位置合わせ・
+/// リサイズ済みアバター PNG を写真へオフセット付きで重ねる)の GPU 版。写真
+/// テクスチャは毎回アップロードするが、オーバーレイテクスチャは GpuDropShadow と
+/// 同じ "Overlay" key で RentUploaded する ── 1回の CompositeOverlayOntoPhoto 内で
+/// 両者に同じ overlayPixels 参照が渡るので、先に走る方(DropShadow)がアップロードし、
+/// こちらはスキップされる。</summary>
 public static class GpuAvatarBlend
 {
-    /// <summary>Returns false (leaving <paramref name="photoPixels"/>
-    /// untouched) if no DX12-capable GPU/driver is available, so the caller
-    /// falls back to its own CPU Parallel.For blend loop instead.</summary>
+    /// <summary>DX12 対応 GPU が無ければ false(<paramref name="photoPixels"/> は不変)。
+    /// 呼び出し側は CPU の Parallel.For ブレンドへフォールバックする。</summary>
     public static bool TryBlend(
         byte[] photoPixels, int photoStride, int photoWidth, int photoHeight,
         byte[] overlayPixels, int overlayStride, int overlayWidth, int overlayHeight,
@@ -52,10 +45,9 @@ public static class GpuAvatarBlend
         }
     }
 
-    /// <summary>Same alpha-blend pass as <see cref="TryBlend"/>, but writing
-    /// directly onto an already GPU-resident <paramref name="photoTexture"/>
-    /// -- no upload/download of the photo itself. Used by
-    /// GpuCompositeChain -- see its own doc comment.</summary>
+    /// <summary><see cref="TryBlend"/> と同じ処理を、既に GPU 上にある
+    /// <paramref name="photoTexture"/> へ直接書く(写真のアップロード/ダウンロード無し)。
+    /// GpuCompositeChain から使う。</summary>
     internal static bool BlendIntoTexture(
         ReadWriteTexture2D<Bgra32, float4> photoTexture, GraphicsDevice device, int photoWidth, int photoHeight,
         byte[] overlayPixels, int overlayStride, int overlayWidth, int overlayHeight,
@@ -66,26 +58,19 @@ public static class GpuAvatarBlend
 
         ReadWriteTexture2D<Bgra32, float4> overlayTexture = GpuTexturePool.RentUploaded(device, "Overlay", overlayPixels, overlayStride, overlayWidth, overlayHeight);
 
-        // Dispatched over the OVERLAY's own dimensions (usually much
-        // smaller than the photo), matching the CPU loop's own
-        // Parallel.For(0, overlayHeight, ...) -- no need to touch every
-        // photo pixel, only the ones the avatar actually covers.
+        // ディスパッチはオーバーレイの寸法(通常は写真より小)。アバターが覆う
+        // ピクセルだけ触れば良いので、写真全体を回す必要はない。
         device.For(overlayWidth, overlayHeight, new AlphaBlendShader(photoTexture, overlayTexture, photoWidth, photoHeight, overlayLeft, overlayTop));
 
         return true;
     }
 }
 
-/// <summary>Mirrors CompositeOverlayOntoPhoto's own alpha-blend loop: for
-/// each overlay pixel with non-zero alpha, blends it onto the photo pixel
-/// at (overlayLeft + x, overlayTop + y), skipping anything that lands
-/// outside the photo's own bounds. Dispatched over the overlay's
-/// dimensions, not the photo's -- <paramref name="photo"/> is read AND
-/// written at a DIFFERENT position than the thread's own ThreadIds (offset
-/// by overlayLeft/overlayTop), but since every thread here owns a distinct
-/// overlay pixel and therefore a distinct photo pixel (the overlay never
-/// blends onto itself), there's no cross-thread read/write hazard the way
-/// a neighbor-sampling shader (blur, chromatic aberration) would have.</summary>
+/// <summary>CompositeOverlayOntoPhoto のアルファブレンドの再現。アルファ非0の
+/// オーバーレイ各画素を写真の (overlayLeft+x, overlayTop+y) へブレンドし、写真の
+/// 範囲外は捨てる。ディスパッチはオーバーレイ寸法で、書き込み位置はスレッドの
+/// ThreadIds とはオフセットぶんずれるが、各スレッドが別々のオーバーレイ画素
+/// = 別々の写真画素を持つので、近傍参照シェーダ(ぼかし等)のような競合は無い。</summary>
 [ThreadGroupSize(DefaultThreadGroupSizes.XY)]
 [GeneratedComputeShaderDescriptor]
 public readonly partial struct AlphaBlendShader(

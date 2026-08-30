@@ -3,40 +3,25 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>Caches GPU textures across renders instead of GpuColorAdjustments/
-/// GpuCompositePipeline/GpuFinishingEffects each allocating (and disposing)
-/// fresh ones on every single call -- including every tick of a slider
-/// drag. Texture allocation has real driver overhead beyond just the pixel
-/// data transfer, so reusing the same physical texture when the requested
-/// size hasn't changed avoids paying that repeatedly.
+/// <summary>GPU テクスチャをレンダー間でキャッシュする(各 Gpu* が毎回確保/破棄
+/// するのを避ける。確保はデータ転送とは別にドライバのオーバーヘッドがある)。
+/// 呼び出し側は <paramref name="key"/> 文字列(例 "Composite.A")で識別する。
+/// アバター画像経路(PNG サイズ)と写真経路(通常もっと大)が同じスロットを
+/// サイズ違いで取り合ってキャッシュを潰し合わないよう、key ごとに独立サイズの
+/// スロットを持つ。
 ///
-/// Callers identify what they want with a <paramref name="key"/> string
-/// (e.g. "Composite.A"), not a shared slot number -- the avatar-image path
-/// (GpuColorAdjustments, typically PNG-sized) and the photo path
-/// (GpuCompositePipeline/GpuFinishingEffects, typically much larger) would
-/// otherwise constantly invalidate each other's cached texture if they took
-/// turns using the same slot at two different sizes, defeating the whole
-/// point. Each distinct key gets its own independently-sized slot.
-///
-/// Rented textures live for the rest of the app's process lifetime (or
-/// until a differently-sized request for the same key replaces them) --
-/// there's no explicit release-on-photo-unload, which is an accepted
-/// simplification for now (see GPU_MIGRATION_PLAN.md at the repo root):
-/// worst case is one extra texture's worth of GPU memory held onto per key
-/// until the process exits, not an unbounded leak, since a given key only
-/// ever holds ONE texture at a time.</summary>
+/// 借りたテクスチャはプロセス終了まで(または同 key へサイズ違い要求が来るまで)
+/// 生きる。写真アンロード時の明示解放は無い ── 1 key につき常に 1 テクスチャなので、
+/// 最悪でも key ごとに 1 枚ぶんの GPU メモリを終了まで保持するだけ(青天井のリークにはならない)。</summary>
 public static class GpuTexturePool
 {
     private sealed record Slot(int Width, int Height, ReadWriteTexture2D<Bgra32, float4> Texture, object? UploadedFrom = null);
 
     private static readonly Dictionary<string, Slot> Slots = new();
 
-    /// <summary>Returns the cached texture for <paramref name="key"/> if it's
-    /// already the requested size, otherwise disposes whatever was there and
-    /// allocates a fresh one. The returned texture's CONTENTS are whatever
-    /// was left over from the previous use (or undefined, the first time) --
-    /// callers that need it to reflect current pixel data must CopyFrom
-    /// their own source after renting.</summary>
+    /// <summary><paramref name="key"/> のキャッシュが要求サイズと同じならそれを返し、
+    /// 違えば破棄して確保し直す。中身は前回の使用結果(初回は不定)なので、現在の
+    /// ピクセルを反映させたい呼び出し側は借りたあと自分で CopyFrom すること。</summary>
     public static ReadWriteTexture2D<Bgra32, float4> Rent(GraphicsDevice device, string key, int width, int height)
     {
         if (Slots.TryGetValue(key, out var existing))
@@ -53,17 +38,13 @@ public static class GpuTexturePool
         return texture;
     }
 
-    /// <summary>Like <see cref="Rent"/>, but also uploads <paramref name="pixels"/>
-    /// into the texture -- SKIPPING that upload if the exact same <paramref name="pixels"/>
-    /// array reference (not just equal content -- reference) was already
-    /// uploaded to this key at this size. Meant for a source buffer that's
-    /// only ever replaced wholesale, never mutated in place (e.g.
-    /// ControlPanelWindow's own _photoPixelBuffer.Pixels, replaced only by
-    /// TryLoadPhotoPixels), so "same reference" reliably means "same
-    /// content, no need to re-upload" -- a slider-drag render that only
-    /// changes ADJUSTMENT amounts, not the underlying photo, calls this with
-    /// the identical array every time and pays for the CPU->GPU transfer
-    /// only once per photo load instead of once per render.</summary>
+    /// <summary><see cref="Rent"/> に加えて <paramref name="pixels"/> をテクスチャへ
+    /// アップロードする。ただし同じ配列参照(内容一致ではなく参照一致)が既にこの key・
+    /// このサイズでアップロード済みならスキップする。丸ごと差し替えしかしない
+    /// (in-place で書き換えない)バッファ用 ── 例 _photoPixelBuffer.Pixels は
+    /// TryLoadPhotoPixels でしか置き換わらないので「同じ参照 = 再アップロード不要」。
+    /// 調整量だけ変えるスライダードラッグは毎回同じ配列で呼ぶので、CPU→GPU 転送は
+    /// 写真読み込みごとに1回で済む。</summary>
     public static ReadWriteTexture2D<Bgra32, float4> RentUploaded(GraphicsDevice device, string key, byte[] pixels, int stride, int width, int height)
     {
         if (Slots.TryGetValue(key, out var existing) && existing.Width == width && existing.Height == height)

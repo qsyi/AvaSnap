@@ -3,66 +3,31 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>Runs CompositeOverlayOntoPhoto's entire GPU effect chain (color
-/// adjust, photo blur, drop shadow, avatar blend, softness/sharpness/
-/// clarity/fade/glow/light leak, tone gradient, chromatic aberration/color
-/// bleed, scanlines, vignette, film grain) as ONE GPU round trip: upload the
-/// photo once, dispatch all 9 stages back-to-back on the same GPU-resident
-/// texture (each stage's own ApplyToTexture/BlendIntoTexture method, added
-/// alongside its existing byte[]-based TryRun/TryApply for standalone/test
-/// use), and download once at the end.
+/// <summary>CompositeOverlayOntoPhoto の GPU エフェクト連鎖(色調補正・写真ぼかし・
+/// ドロップシャドウ・アバターブレンド・ソフト/シャープ/クラリティ/フェード/グロー/
+/// ライトリーク・トーングラデ・色収差/カラーブリード・走査線・ビネット・グレイン)を
+/// 9ステージまとめて GPU 往復1回で走らせる: アップロード1回 → 同じ GPU 常駐テクスチャ上で
+/// 全ステージ連続ディスパッチ → ダウンロード1回。各ステージの byte[] 版とは別に、
+/// テクスチャへ直接かける ApplyToTexture/BlendIntoTexture を持たせてある。以前は
+/// ステージごとに写真を GPU へ上げ下げしており、その転送が総時間の大半を占めていた。
 ///
-/// Before this existed, CompositeOverlayOntoPhoto called each stage's own
-/// byte[]-based method in sequence, and each one independently uploaded the
-/// full photo to the GPU and downloaded it back before the next stage could
-/// even start. Measured directly (see GpuProfile in the repo's scratchpad
-/// tooling): a single upload+download round trip for a 1920x1080 buffer
-/// costs ~11ms on its own, and the old call sequence did about 9 of them per
-/// composite -- roughly 100ms of pure transfer overhead out of a ~220ms
-/// total, worse at higher resolutions since transfer scales with pixel
-/// count same as compute. Keeping the texture resident across the whole
-/// chain cuts that down to one upload and one download total.
+/// さらに、各ステージ後の結果をチェックポイント(GPU 同士の安いコピー)し、それを
+/// 生んだ入力を覚えておく。スライダードラッグ中は1ステージの入力しか変わらないので、
+/// <see cref="TryRun"/> は前回と入力が一致する最後の境界を探し、生の写真ではなく
+/// そのチェックポイントからテクスチャを復元して、そこから先だけディスパッチする。
+/// 写真/アバターの差し替えや連鎖前方のパラメータ変更は従来どおり下流を全無効化する。
 ///
-/// On top of that, this ALSO checkpoints the GPU-resident result after every
-/// stage (a cheap GPU-to-GPU copy) and remembers the exact inputs that
-/// produced each one. During a real slider drag only ONE stage's own
-/// parameters actually change between renders -- every stage before it in
-/// the chain would recompute byte-identical output given byte-identical
-/// input, so there is nothing to gain from rerunning it. On the next call,
-/// <see cref="TryRun"/> finds the LAST stage boundary whose cumulative
-/// inputs still match the previous call, restores the GPU texture from that
-/// checkpoint instead of the raw source photo, and only dispatches the
-/// stages from there onward. Measured directly (see GpuProfile's
-/// "ProfileStageSkipPotential"): for a 1920x1080 composite, redoing only
-/// film grain costs ~0.7ms against a ~25ms full chain (roughly 30-40x), and
-/// even a mid-chain slider like tone gradient sees roughly a 3-4x speedup --
-/// dragging any single "finishing touch" slider (grain/vignette/scanlines/
-/// tone gradient are the most common late-chain adjustments) becomes close
-/// to instant instead of paying for the whole chain on every tick. A photo
-/// swap, an avatar swap, or a change to an EARLY-chain parameter (color
-/// adjustments, photo blur, drop shadow, avatar placement) still invalidates
-/// everything downstream, same as before -- there is no way around
-/// recomputing what actually depends on changed input.
-///
-/// This cache is static, process-lifetime, single-slot (one photo's worth of
-/// checkpoints at a time, keyed by nothing but "the last call's inputs") --
-/// same assumptions GpuTexturePool itself already makes, and same
-/// single-threaded-access contract ControlPanelWindow's own
-/// _compositeRenderGate already enforces around every GPU-pipeline call, so
-/// no additional synchronization is added here.</summary>
+/// このキャッシュは static・プロセス寿命・1スロット(「前回の入力」だけが鍵)。
+/// GpuTexturePool と同じ前提で、GPU パイプライン呼び出しは _compositeRenderGate が
+/// 直列化するので追加の同期は無し。</summary>
 public static class GpuCompositeChain
 {
     private const int StageCount = 9;
 
-    /// <summary>Every parameter TryRun receives that can affect the final
-    /// pixels, grouped in chain order. Reference-type fields (byte[]
-    /// buffers) are compared by REFERENCE, not content -- same "replaced
-    /// wholesale, never mutated in place" convention as
-    /// GpuTexturePool.RentUploaded and ControlPanelWindow's own
-    /// CachedOverlayRender/CachedBeforeCompositeKey, and the reason a
-    /// record (whose generated equality uses EqualityComparer&lt;T&gt;.Default
-    /// per field, which for arrays IS reference equality) is the right tool
-    /// here rather than a manual deep comparison.</summary>
+    /// <summary>TryRun が受け取る、最終ピクセルに影響し得る全パラメータを連鎖順に
+    /// まとめたもの。byte[] フィールドは内容ではなく参照で比較する(丸ごと差し替え
+    /// しかしない前提。record の自動生成 Equals は配列を参照比較するので、これが
+    /// 手書きの深い比較より正しい道具になる)。</summary>
     private sealed record ChainInputs(
         byte[] Photo, int PhotoWidth, int PhotoHeight, ImageAdjustment.ColorAdjustments ColorAdj, int BlurRadius,
         byte[]? Overlay, int OverlayStride, int OverlayWidth, int OverlayHeight, int OverlayLeft, int OverlayTop,
@@ -82,18 +47,10 @@ public static class GpuCompositeChain
 
     private static ChainInputs? _lastInputs;
 
-    /// <summary>Returns the index (0..StageCount) of the first stage whose
-    /// OWN inputs differ from the previous call -- everything BEFORE that
-    /// stage produced byte-identical output last time and can be restored
-    /// from its checkpoint instead of recomputed. Deliberately coarser than
-    /// per-parameter: e.g. changing ANY drop-shadow parameter invalidates
-    /// both DropShadow (stage 1) and AvatarBlend (stage 2) together, since
-    /// they share the same overlay input and sit adjacent in the chain --
-    /// splitting them would only help the rare case of dragging drop-shadow
-    /// sliders specifically, not the far more common single-slider drags
-    /// this exists for. Returns StageCount if EVERY input matches (nothing
-    /// to do at all -- the caller can reuse the previous final result
-    /// outright).</summary>
+    /// <summary>前回と入力が変わった最初のステージ番号(0..StageCount)を返す。その手前は
+    /// 前回と同じ出力なのでチェックポイントから復元できる。パラメータ単位ではなく
+    /// ステージ単位の粗さ(例: ドロップシャドウ系のどれを変えても stage 1・2 をまとめて
+    /// 無効化)。全入力一致なら StageCount(前回の最終結果をそのまま使える)。</summary>
     private static int FirstDifferingStage(ChainInputs? prev, ChainInputs cur)
     {
         if (prev is null) return 0;
@@ -117,11 +74,8 @@ public static class GpuCompositeChain
             return 1;
         }
 
-        // Stage 2 (AvatarBlend) has no inputs of its own beyond the overlay
-        // ref/dims/position already checked above -- if we got here, those
-        // matched, so stage 2 is valid too. Its checkpoint still gets
-        // refreshed below like every other stage; it just never needs to be
-        // the FIRST differing one.
+        // stage 2 (AvatarBlend) は上で確認したオーバーレイ以外に固有の入力を持たない
+        // ので、ここまで来たなら有効。最初の差分ステージになることは無い。
 
         if (prev.SoftnessAmount != cur.SoftnessAmount || prev.SharpnessAmount != cur.SharpnessAmount
             || prev.FinishDetailScale != cur.FinishDetailScale || prev.ClarityAmount != cur.ClarityAmount
@@ -166,15 +120,11 @@ public static class GpuCompositeChain
         return StageCount;
     }
 
-    /// <summary>Returns false (leaving <paramref name="outputPixels"/>
-    /// untouched) if no DX12-capable GPU/driver is available. <paramref
-    /// name="photoPixels"/> should be the caller's pristine, never-mutated
-    /// photo buffer (same contract as GpuCompositePipeline.TryRun) so the
-    /// source upload can be skipped on renders where only effect amounts
-    /// changed, not the photo itself. <paramref name="overlayPixels"/> null
-    /// skips drop shadow and the avatar blend entirely, matching
-    /// CompositeOverlayOntoPhoto's own "if (overlayPixels is not null)"
-    /// gate.</summary>
+    /// <summary>DX12 対応 GPU が無ければ false(<paramref name="outputPixels"/> は不変)。
+    /// <paramref name="photoPixels"/> は書き換えない pristine な写真バッファ
+    /// (GpuCompositePipeline.TryRun と同じ契約。効果量だけ変わった回はアップロードを
+    /// スキップできる)。<paramref name="overlayPixels"/> が null ならドロップシャドウと
+    /// アバターブレンドを丸ごとスキップ。</summary>
     public static bool TryRun(
         byte[] photoPixels, byte[] outputPixels, int photoStride, int photoWidth, int photoHeight,
         ImageAdjustment.ColorAdjustments colorAdj, int photoBlurRadiusPixels,
@@ -229,12 +179,9 @@ public static class GpuCompositeChain
 
             int firstStage = FirstDifferingStage(_lastInputs, cur);
 
-            // Every checkpoint texture is rented (not freshly allocated) so
-            // resizing on a photo-dimension change is GpuTexturePool's own
-            // problem, same as every other texture in this pipeline -- and
-            // since a dimension change always makes firstStage come back 0
-            // above, a resized (garbage-content) checkpoint is never read
-            // from, only written into fresh starting at stage 0.
+            // チェックポイントも Rent なので寸法変更時のリサイズは GpuTexturePool 任せ。
+            // 寸法変更時は firstStage が必ず 0 になるので、リサイズ直後の中身不定な
+            // チェックポイントは読まれず stage 0 から書き直される。
             var checkpoints = new ReadWriteTexture2D<Bgra32, float4>[StageCount];
             for (int i = 0; i < StageCount; i++)
             {
@@ -243,8 +190,7 @@ public static class GpuCompositeChain
 
             if (firstStage >= StageCount)
             {
-                // Nothing at all changed since the last call -- the final
-                // checkpoint IS this call's answer, no GPU compute needed.
+                // 前回から何も変わっていない ── 最終チェックポイントがそのまま答え。
                 checkpoints[StageCount - 1].CopyTo(outputSpan);
                 _lastInputs = cur;
                 return true;
@@ -282,9 +228,8 @@ public static class GpuCompositeChain
                     return false;
                 }
 
-                // Cheap GPU-to-GPU copy -- refreshes this stage's checkpoint
-                // so a LATER call that only changes something further down
-                // the chain can restore from here instead of stage 0.
+                // このステージのチェックポイントを更新。次回、下流だけ変わった呼び出しが
+                // stage 0 ではなくここから復元できる。
                 main.CopyTo(checkpoints[stage]);
             }
 
@@ -298,12 +243,8 @@ public static class GpuCompositeChain
         }
     }
 
-    /// <summary>Dispatches exactly one stage (by the same 0..8 indices
-    /// <see cref="FirstDifferingStage"/> returns) onto <paramref name="main"/>.
-    /// Split out from <see cref="TryRun"/> purely so the "run stages
-    /// firstStage..8" loop above doesn't have to duplicate each stage's own
-    /// call -- the actual per-stage logic is unchanged from the original
-    /// unconditional chain.</summary>
+    /// <summary><paramref name="main"/> へステージ1つ(<see cref="FirstDifferingStage"/>
+    /// が返すのと同じ 0..8 の番号)をディスパッチする。TryRun のループから切り出しただけ。</summary>
     private static bool RunStage(int stage, ReadWriteTexture2D<Bgra32, float4> main, GraphicsDevice device, int photoWidth, int photoHeight,
         byte[]? overlayPixels, int overlayStride, int overlayWidth, int overlayHeight, int left, int top,
         ImageAdjustment.ColorAdjustments colorAdj, int photoBlurRadiusPixels,
@@ -341,7 +282,7 @@ public static class GpuCompositeChain
                     overlayPixels, overlayStride, overlayWidth, overlayHeight, left, top);
 
             case 3:
-                // Same grouping as GpuFinishingEffects.TryRunPreToneGradient.
+                // GpuFinishingEffects.TryRunPreToneGradient と同じグループ分け。
                 return GpuFinishingEffects.ApplyToTexture(main, device, photoWidth, photoHeight,
                     softnessAmount, sharpnessAmount, finishDetailScale,
                     clarityAmount, clarityScale,
@@ -358,7 +299,7 @@ public static class GpuCompositeChain
                     toneGradientDarkR, toneGradientDarkG, toneGradientDarkB);
 
             case 5:
-                // Same grouping as GpuFinishingEffects.TryRunPreScanlines.
+                // GpuFinishingEffects.TryRunPreScanlines と同じグループ分け。
                 return GpuFinishingEffects.ApplyToTexture(main, device, photoWidth, photoHeight,
                     softnessAmount: 0, sharpnessAmount: 0, finishDetailScale: 1.0,
                     clarityAmount: 0, clarityScale: 1.0,
@@ -373,7 +314,7 @@ public static class GpuCompositeChain
                 return GpuScanlines.ApplyToTexture(main, device, photoWidth, photoHeight, scanlineAmount, vhsScale);
 
             case 7:
-                // Same grouping as GpuFinishingEffects.TryRunVignette.
+                // GpuFinishingEffects.TryRunVignette と同じグループ分け。
                 return GpuFinishingEffects.ApplyToTexture(main, device, photoWidth, photoHeight,
                     softnessAmount: 0, sharpnessAmount: 0, finishDetailScale: 1.0,
                     clarityAmount: 0, clarityScale: 1.0,

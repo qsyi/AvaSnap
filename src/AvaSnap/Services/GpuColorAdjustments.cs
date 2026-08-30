@@ -3,28 +3,15 @@ using ComputeSharp;
 
 namespace AvaSnap.Services;
 
-/// <summary>GPU offload for ImageAdjustment.AdjustColors via ComputeSharp/
-/// DX12 -- see TryAdjustColors' own doc comment for why this specific
-/// effect was picked as the first one to move off the CPU. Kept in its own
-/// file/class (not inside ImageAdjustment.cs itself) so the CPU
-/// implementation there stays untouched and easy to fall back to.</summary>
+/// <summary>ImageAdjustment.AdjustColors の GPU 版(ComputeSharp/DX12)。CPU 実装を
+/// そのまま残してフォールバックしやすいよう、別ファイル/クラスにしてある。</summary>
 public static class GpuColorAdjustments
 {
-    /// <summary>Runs the exact same math as ImageAdjustment's private
-    /// AdjustColors, but as a single DX12 compute-shader dispatch instead
-    /// of a CPU Parallel.For -- AdjustColors is called UNCONDITIONALLY on
-    /// every single composite render (not gated behind an amount>0 check
-    /// like the other finishing effects below it), so it's on the hot path
-    /// for every tick of every color/placement slider drag regardless of
-    /// which other effects are even enabled, making it the highest-value
-    /// first target for GPU offload. It's also a pure per-pixel transform
-    /// with no neighbor/multi-pass dependency, so a straight 1:1 port to a
-    /// compute shader is both natural and easy to verify against the CPU
-    /// path (see the GpuVerify scratch harness used to confirm this).
-    /// Returns false (leaving <paramref name="pixels"/> untouched) if no
-    /// DX12-capable GPU/driver is available, so callers can transparently
-    /// fall back to the CPU implementation instead of crashing on older
-    /// hardware.</summary>
+    /// <summary>CPU の AdjustColors と同じ計算を DX12 コンピュートシェーダ1回で。
+    /// AdjustColors は毎回の合成レンダーで無条件に呼ばれる(他の仕上げエフェクトと
+    /// 違い amount>0 ゲート無し)ホットパスで、かつ近傍/複数パス依存の無い純
+    /// per-pixel 変換なので、GPU 移行の最初の対象に選んだ。DX12 対応 GPU が無ければ
+    /// false(<paramref name="pixels"/> は不変)で、呼び出し側は CPU 実装へフォールバック。</summary>
     public static bool TryAdjustColors(byte[] pixels, int stride, int width, int height, ImageAdjustment.ColorAdjustments adj)
     {
         if (adj.IsIdentity) return true;
@@ -44,17 +31,14 @@ public static class GpuColorAdjustments
         }
         catch (Exception)
         {
-            // No DX12-capable adapter, driver rejected the shader, etc. --
-            // whatever the reason, the caller falls back to the CPU path.
+            // DX12 非対応・ドライバがシェーダを拒否、等。理由を問わず CPU 経路へ。
             return false;
         }
     }
 
-    /// <summary>Builds an AdjustColorsShader instance targeting an already-
-    /// allocated texture -- factored out of TryAdjustColors so
-    /// GpuCompositePipeline can chain this same shader onto a texture it's
-    /// already uploaded for another effect, instead of each effect paying
-    /// for its own separate upload/download round trip.</summary>
+    /// <summary>確保済みテクスチャ向けの AdjustColorsShader を組み立てる。
+    /// GpuCompositePipeline が、別エフェクト用にアップロード済みのテクスチャへ
+    /// このシェーダを連鎖させられるよう TryAdjustColors から切り出したもの。</summary>
     public static AdjustColorsShader BuildShader(IReadWriteNormalizedTexture2D<float4> texture, ImageAdjustment.ColorAdjustments adj)
     {
         double satFactor = 1 + adj.Saturation / 100.0;
