@@ -123,14 +123,14 @@ public sealed class UndoManager
 
     public void CommitChange()
     {
-        if (_depth == 0) return; // stray Commit with no matching Begin
+        if (_depth == 0) return; // 対応する Begin の無い迷子 Commit
         _depth--;
-        if (_depth > 0) return; // still inside an outer, not-yet-committed BeginChange
+        if (_depth > 0) return; // まだ外側の未コミット BeginChange 内
 
         if (_pendingBefore is not { } before) return;
         _pendingBefore = null;
         var after = Capture();
-        if (before == after) return; // nothing actually changed; don't clutter the undo stack
+        if (before == after) return; // 実質変化なし。undo スタックを汚さない
         _undoStack.Push(before);
         _redoStack.Clear();
     }

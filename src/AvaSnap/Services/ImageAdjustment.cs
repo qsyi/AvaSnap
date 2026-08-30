@@ -625,8 +625,8 @@ public static class ImageAdjustment
     // コントラスト/色温度/色かぶり/彩度 は強めに抑える(小さな統計差で大きく振れる)、
     // それ以外(明るさ/Hue/階調領域)はほぼフル。
     private const double MatchContrastStrength = 0.3;
-    private const double MatchColorBalanceStrength = 0.2; // temperature, tint, saturation
-    private const double MatchMinorStrength = 0.3; // brightness/hue/tone-regions
+    private const double MatchColorBalanceStrength = 0.2; // 色温度・色かぶり・彩度
+    private const double MatchMinorStrength = 0.3; // 明るさ/色相/トーン領域
 
     /// <summary><see cref="SolveMatchAdjustments"/> のクラスタ版。各
     /// <paramref name="sourceClusters"/> を Lab 距離で最近傍の

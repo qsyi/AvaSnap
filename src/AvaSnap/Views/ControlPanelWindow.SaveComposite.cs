@@ -14,12 +14,10 @@ namespace AvaSnap.Views;
 //      保存後の「フォルダを開く」ボタン、保存ステータス通知(自動消去タイマー)。 ----
 public partial class ControlPanelWindow
 {
-    /// <summary>PNG-encodes and writes a full-resolution VRChat-screenshot-
-    /// sized composite -- slow enough (same order of cost as the recompose
-    /// itself) that doing it synchronously on the UI thread visibly froze
-    /// the window for the save's duration. Safe to encode off the UI thread
-    /// because _lastComposite is always one of CompositeOverlayOntoPhoto/
-    /// CropToAspect's own frozen outputs.</summary>
+    /// <summary>フル解像度(VRChat スクショサイズ)の合成を PNG エンコードして書き出す ──
+    /// 再合成と同程度に遅く、UI スレッドで同期実行すると保存中ずっと窓が固まる。
+    /// _lastComposite は常に CompositeOverlayOntoPhoto/CropToAspect の凍結済み出力なので
+    /// UI スレッド外でエンコードして安全。</summary>
     private async void SaveCompositeButton_Click(object sender, RoutedEventArgs e)
     {
         if (_lastComposite is null) return;

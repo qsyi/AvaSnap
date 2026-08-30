@@ -41,7 +41,7 @@ public static class GpuAvatarEdgeBlur
             device.For(width, height, new PremultiplyShader(source, premulA));
             device.For(width, height, new PremulBoxBlurPassShader(premulA, premulB, width, height, radius, horizontal: true));
             device.For(width, height, new PremulBoxBlurPassShader(premulB, premulA, width, height, radius, horizontal: false));
-            // premulA now holds the blurred premultiplied color+alpha.
+            // premulA はこの時点でぼかし済みの乗算済みカラー + アルファを保持する。
 
             int count = width * height;
             using ReadWriteBuffer<float> seedX0 = device.AllocateReadWriteBuffer<float>(count);

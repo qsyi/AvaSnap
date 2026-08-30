@@ -9,11 +9,10 @@ using System.Windows.Threading;
 
 namespace AvaSnap.Views;
 
-/// <summary>A single non-intrusive screenshot notification: shows a thumbnail
-/// and lets the user open it in Composite mode, or dismiss it. Never steals
-/// keyboard focus (WS_EX_NOACTIVATE) and never shows in the taskbar/Alt-Tab
-/// (WS_EX_TOOLWINDOW) -- clicking it doesn't interrupt whatever the user is
-/// doing in VRChat, unlike a normal window popping up would.</summary>
+/// <summary>控えめなスクショ通知1枚: サムネイルを表示し、合成モードで開くか
+/// 閉じるかを選ばせる。キーボードフォーカスを奪わず(WS_EX_NOACTIVATE)、
+/// タスクバー/Alt-Tab にも出ない(WS_EX_TOOLWINDOW)ので、VRChat の操作を
+/// 邪魔しない。</summary>
 public partial class ScreenshotToastWindow : Window
 {
     public event Action<ScreenshotToastWindow>? OpenRequested;
@@ -44,11 +43,11 @@ public partial class ScreenshotToastWindow : Window
         }
         catch (NotSupportedException)
         {
-            // Not a decodable image yet somehow; show the blank placeholder.
+            // まだデコードできない画像。空のプレースホルダーを表示する。
         }
         catch (IOException)
         {
-            // File vanished/locked between the ready-check and now; harmless.
+            // 準備チェックから今の間にファイルが消えた/ロックされた。無害。
         }
 
         _dismissTimer = new DispatcherTimer { Interval = AutoDismissAfter };
@@ -81,12 +80,10 @@ public partial class ScreenshotToastWindow : Window
         DismissRequested?.Invoke(this);
     }
 
-    /// <summary>Doesn't dismiss the toast (no DismissRequested/OpenRequested
-    /// call) -- opening the folder is a side action, not a resolution of
-    /// the notification, so "合成する" should still be there afterward if
-    /// the user comes back to it. The auto-dismiss timer is already stopped
-    /// by Window_MouseEnter for as long as the mouse is over the toast to
-    /// click this, so nothing needs to be done with it here either.</summary>
+    /// <summary>トーストは閉じない ── フォルダを開くのは副次的な操作で通知の解決では
+    /// ないので、戻ってきたときに「合成する」が残っているべき。自動非表示タイマーは
+    /// マウスがトースト上にある間 Window_MouseEnter で止まっているので、ここでは
+    /// 何もしなくてよい。</summary>
     private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -95,13 +92,13 @@ public partial class ScreenshotToastWindow : Window
         }
         catch (Win32Exception)
         {
-            // Explorer failed to launch; nothing more to do.
+            // エクスプローラーの起動に失敗。ほかにできることはない。
         }
     }
 
-    // ---- WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW: a toast that would otherwise
-    //      steal keyboard focus from VRChat the instant it appears, and show
-    //      up as its own Alt-Tab/taskbar entry, is not "non-intrusive". ----
+    // ---- WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW: 出た瞬間に VRChat から
+    //      キーボードフォーカスを奪い、Alt-Tab/タスクバーに独自エントリを出す
+    //      トーストは「控えめ」とは言えない。 ----
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_NOACTIVATE = 0x08000000;

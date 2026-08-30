@@ -42,8 +42,8 @@ public partial class ControlPanelWindow
         // 焼き直して差し替えるので init ではなく set。
         public required ImageAdjustment.PixelBuffer Pixels { get; set; }
         public required BitmapSource Thumbnail { get; set; }
-        public double X, Y, Width, Height; // full-res photo-pixel space, same convention as _compositePlaceX/Y/Width/Height
-        public double Rotation; // degrees, same convention (positive = clockwise) as _compositeRotation
+        public double X, Y, Width, Height; // フル解像度の写真ピクセル空間、_compositePlaceX/Y/Width/Height と同じ規約
+        public double Rotation; // 度、_compositeRotation と同じ規約(正 = 時計回り)
         public double Opacity = 1.0; // 0..1、このデカール個別の不透明度
 
         // ---- 枠線デカール専用。IsFrame == false = 従来どおりの画像デカール(以降の
@@ -613,7 +613,7 @@ public partial class ControlPanelWindow
                 double halfW = Math.Abs(sx * hw0 + dLocalX); // 中心 → 掴んだ辺
                 newW = Math.Clamp(2 * halfW, 12, crop.Width);
             }
-            else if (isEdge) // Top / Bottom
+            else if (isEdge) // 上/下
             {
                 double sy = kind == DecalHandleKind.Top ? -1.0 : 1.0;
                 double halfH = Math.Abs(sy * hh0 + dLocalY);
@@ -954,9 +954,8 @@ public partial class ControlPanelWindow
         double rad = decal.Rotation * Math.PI / 180.0;
         double cos = Math.Cos(rad), sin = Math.Sin(rad);
 
-        // Rotated bounding box to iterate over -- same padding formula
-        // ImageAdjustment.RenderOverlayForComposite uses for the avatar's
-        // own rotated bounds.
+        // 走査する回転後のバウンディングボックス ── ImageAdjustment.RenderOverlayForComposite が
+        // アバターの回転後範囲に使うのと同じパディング式。
         double boundHalfW = Math.Abs(halfW * cos) + Math.Abs(halfH * sin);
         double boundHalfH = Math.Abs(halfW * sin) + Math.Abs(halfH * cos);
 
@@ -973,7 +972,7 @@ public partial class ControlPanelWindow
             for (int dx = xStart; dx < xEnd; dx++)
             {
                 double relX = dx + 0.5 - centerX;
-                // Inverse-rotate (screen space -> decal's own local space).
+                // 逆回転(スクリーン空間 → デカールのローカル空間)。
                 double localX = relX * cos + relY * sin;
                 double localY = -relX * sin + relY * cos;
                 if (localX < -halfW || localX >= halfW || localY < -halfH || localY >= halfH) continue;
