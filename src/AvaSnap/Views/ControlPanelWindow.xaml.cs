@@ -20,10 +20,6 @@ using AvaSnap.Services;
 
 namespace AvaSnap.Views;
 
-/// <summary>Composite-mode-only state that isn't part of OverlayState (photo
-/// look, grain/vignette, and where the avatar sits on the photo) -- folded
-/// into UndoManager's single timeline via CaptureExtra/ApplyExtra so Ctrl+Z
-/// covers it too, alongside the avatar-image look it already tracked.</summary>
 /// <summary>写真ルックカードのスライダー値(明るさ〜黒レベル + 色被せ + 事前ぼかし)。
 /// フィールド名は分割前の <see cref="CompositeSnapshot"/> のときと同じなので、
 /// 参照側は頭に <c>.PhotoLook.</c> が付くだけ。</summary>
@@ -128,16 +124,10 @@ public partial class ControlPanelWindow : Window
         Left = SystemParameters.WorkArea.Right - Width - 20;
         Top = 40;
 
-        // FOVガイドの「Unity連携状況」表示: DataUpdated fires on
-        // UnityCameraGuideService's own thread context via its
-        // Dispatcher.BeginInvoke calls, so no extra marshaling needed here.
-        // Unity is request-driven (see RequestGuideButton_Click/
-        // UnityCameraGuideService.RequestUpdate); no more "同期" toggle --
-        // a successful fetch just writes into GuideManualFov/Pitch/Roll
-        // directly, the same as typing a value in by hand. OverlayWindow
-        // picks this up on its own via _state.PropertyChanged, same as
-        // every other OverlayState field; no separate DataUpdated
-        // subscription needed over there any more.
+        // FOVガイドの「Unity連携状況」表示。DataUpdated は UnityCameraGuideService の
+        // Dispatcher.BeginInvoke 経由で来るのでここでのマーシャリングは不要。取得成功時は
+        // GuideManualFov/Pitch/Roll へ直接書く(手入力と同じ)。OverlayWindow は
+        // _state.PropertyChanged で自前に拾う。
         _unityCameraGuide.DataUpdated += data =>
         {
             ShowGuideFetchedNotification();
@@ -158,72 +148,55 @@ public partial class ControlPanelWindow : Window
         RefreshSplitGapRowEnabled();
         PreviewKeyDown += ControlPanelWindow_PreviewKeyDown;
 
-        // Set here (after InitializeComponent), not via IsChecked="True" in
-        // XAML directly: that fired LookLinkToggle_Changed synchronously
-        // WHILE still parsing the rest of the XAML, before LookLinkConnector
-        // (declared later in the file) was assigned to its field yet --
-        // EnsureLookLinkAdorner crashed on a null reference. This still fires
-        // the same Checked handler, but only once every named element in the
-        // file actually exists. CompositePanel is still Collapsed at this
-        // point, though, so the resulting label/adorner positions won't be
-        // meaningful yet -- ShowComposite's own UpdateLinkedRowStyles call
-        // fixes that up for real the first time the user actually opens
-        // Composite mode.
+        // XAML の IsChecked="True" ではなくここ(InitializeComponent 後)でセットする:
+        // XAML パース中に同期発火すると、後方で宣言される LookLinkConnector が未代入で
+        // EnsureLookLinkAdorner が null 参照で落ちた。ここなら全名前付き要素が存在済み。
+        // この時点で CompositePanel はまだ Collapsed なのでラベル/アドーナー位置は
+        // 無意味だが、ShowComposite の UpdateLinkedRowStyles が初回オープン時に直す。
         LookLinkToggle.IsChecked = true;
 
-        // Fold the composite-mode-only fields into the shared undo timeline
-        // (see CompositeSnapshot) so Ctrl+Z covers photo look/grain/vignette/
-        // placement too, not just the avatar-image look already in OverlayState.
+        // 合成モード専用フィールドを共有 undo タイムラインに畳み込む
+        // (<see cref="CompositeSnapshot"/> 参照)。Ctrl+Z が写真ルック/グレイン/
+        // ビネット/配置もカバーする。
         _undo.CaptureExtra = CaptureCompositeSnapshot;
         _undo.ApplyExtra = ApplyCompositeSnapshot;
         _undo.Applied += OnUndoRedoApplied;
 
-        // Re-apply the position estimate automatically when the VRChat
-        // window's size changes (resize/maximize/restore) or its orientation
-        // changes -- the estimate depends on both, so the old position is
-        // stale the moment either one does. Neither needs a full re-attach
-        // (Z-order + WinEventHook are already established); they just
-        // reapply the estimate using the already-known hwnd/rect.
+        // VRChat 窓のサイズ変更(リサイズ/最大化/復元)や向きの変更で位置推定を
+        // 自動再適用する ── 推定は両方に依存するので、どちらか変わった時点で旧位置は
+        // 陳腐化する。再アタッチ(Z 順 + WinEventHook)は不要、既知の hwnd/rect で
+        // 推定を再適用するだけ。
         _overlayWindow.ClientResized += OnVrChatClientResized;
         _oscListener.OrientationChanged += OnOscOrientationChanged;
 
-        // The overlay itself stays hidden until VRChat's camera is confirmed
-        // open (see OverlayWindow.InitializeCameraVisibility/ApplyCameraOpenState),
-        // which is invisible and confusing if the user doesn't already know
-        // that -- show an unmissable banner in Align mode whenever it isn't
-        // confirmed open, not just when it's confirmed closed.
+        // オーバーレイは VRChat カメラが開いたと確認できるまで隠れている
+        // (OverlayWindow.InitializeCameraVisibility/ApplyCameraOpenState 参照)。
+        // 事情を知らないと戸惑うので、未確認の間は位置合わせモードで目立つバナーを出す。
         _oscListener.CameraModeChanged += (open) => Dispatcher.Invoke(() => UpdateCameraBanner(open));
         UpdateCameraBanner(_oscListener.IsCameraOpen);
 
         ShowHome();
     }
 
-    /// <summary>Makes the control panel an "owned" window of the VRChat window
-    /// (see <see cref="WindowOwnership"/>), so it comes forward along with
-    /// VRChat too instead of getting buried behind it when the user clicks
-    /// back into the game.</summary>
+    /// <summary>コントロールパネルを VRChat 窓の owned window にする
+    /// (<see cref="WindowOwnership"/> 参照)。ゲームに戻ったとき背後に埋もれず
+    /// VRChat と一緒に前へ出る。</summary>
     public void AttachToOwner(IntPtr ownerHwnd) => WindowOwnership.SetOwner(this, ownerHwnd);
 
-    /// <summary>Only Visible when the camera is NOT confirmed open (either
-    /// confirmed closed, or unknown because VRChat hasn't reported anything
-    /// via OSC yet) -- both cases mean the live overlay is currently hidden,
-    /// so Align mode is otherwise showing an empty VRChat window with no clue
-    /// why nothing appears there.</summary>
+    /// <summary>カメラが開いていると確認できていないとき(確認済みで閉、または OSC
+    /// 未報告で不明)だけ表示。どちらもライブオーバーレイは今隠れているので、
+    /// 位置合わせモードは理由の分からない空の VRChat 窓を映すことになる。</summary>
     private void UpdateCameraBanner(bool? isOpen)
     {
         CameraClosedBanner.Visibility = isOpen == true ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    // ---- Navigation: a compact home screen picks between the two modes, each
-    //      sized appropriately for its own content (composite mode needs real
-    //      room for a photo preview, so it opens larger than the home/align
-    //      screens). ----
+    // ---- ナビゲーション: 小さなホーム画面から2モードを選ぶ。各画面は中身に合わせた
+    //      サイズ(合成モードは写真プレビューのぶんホーム/位置合わせより大きく開く)。 ----
 
-    // HomeSettingsPanel floats over the top-right corner of Home (anchored
-    // below the ⚙️ button, not inside HomePanel's centered StackPanel).
-    // Opening it no longer resizes the window -- it just overlays the mode
-    // cards underneath, like an ordinary dropdown -- so Home stays a
-    // constant size regardless of whether it's open.
+    // HomeSettingsPanel はホーム右上に浮く(⚙️ ボタンの下にアンカー、HomePanel の
+    // 中央 StackPanel の中ではない)。開いても窓はリサイズせず、下のモードカードに
+    // 普通のドロップダウンのように重なるだけ。
     private const double HomeHeight = 460;
 
     private void ShowHome() => WithRedrawSuspended(() =>
@@ -241,18 +214,15 @@ public partial class ControlPanelWindow : Window
         Height = HomeHeight;
         PinToRightEdge();
 
-        // Home isn't for positioning anything, so the live overlay just
-        // sits on top of VRChat unhelpfully here regardless of whether its
-        // camera UI happens to be open -- SetManuallyHidden (not a plain
-        // Hide()) also keeps it suppressed if the camera opens while still
-        // on Home, see its own doc comment.
+        // ホームは位置合わせ用ではないので、ライブオーバーレイがここで VRChat の上に
+        // 乗っても邪魔なだけ。SetManuallyHidden(単なる Hide() ではない)は、ホーム表示中に
+        // カメラが開いても抑制を維持する(同メソッドの doc 参照)。
         _overlayWindow.SetManuallyHidden(true);
     });
 
-    // ⚙️ only makes sense on Home (the watch folder isn't a per-mode
-    // setting), so every other Show*/EnterCompact hides both it and its
-    // dropdown -- otherwise they'd float on top of Align/Composite/Compact
-    // too, since neither is nested inside HomePanel's own Visibility toggle.
+    // ⚙️ はホームでしか意味がない(監視フォルダはモード別設定ではない)ので、他の
+    // Show*/EnterCompact はこれとドロップダウンを両方隠す。どちらも HomePanel の
+    // Visibility トグルの中に無いため、放置すると他モード上に浮いてしまう。
     private void HideHomeSettings()
     {
         HomeSettingsToggle.Visibility = Visibility.Collapsed;
@@ -274,8 +244,7 @@ public partial class ControlPanelWindow : Window
         Height = 880;
         PinToRightEdge();
 
-        // Un-suppresses whatever ShowHome/EnterCompact set -- re-syncs to
-        // VRChat's actual current camera state rather than assuming open.
+        // ShowHome/EnterCompact の抑制を解除し、VRChat の現在のカメラ状態へ再同期する。
         _overlayWindow.SetManuallyHidden(false);
     });
 
@@ -292,48 +261,29 @@ public partial class ControlPanelWindow : Window
             TitleBarMinimizeButton.Visibility = Visibility.Visible;
             TitleBarMaximizeButton.Visibility = Visibility.Visible;
             HideHomeSettings();
-            // Rescanned fresh every time this mode is entered (not cached),
-            // so it always reflects whatever's actually in the watch folder
-            // right now rather than a snapshot from whenever it was last
-            // refreshed.
+            // このモードに入るたび再スキャン(キャッシュしない)。監視フォルダの今の中身を常に映す。
             RefreshRecentPhotosUI();
-            // Close to the full work area, just a bit smaller -- this mode
-            // benefits the most from extra room (photo preview + two columns
-            // of controls), unlike Home/Align which are single narrow
-            // columns.
+            // 作業領域ぎりぎりまで(少しだけ小さく)。このモードは写真プレビュー +
+            // 2列コントロールで一番広さの恩恵がある。
             Width = SystemParameters.WorkArea.Width - 60;
             Height = SystemParameters.WorkArea.Height - 60;
             PinToRightEdge();
 
-            // The actual render (see below) is deferred rather than done
-            // right here: it can be genuinely slow on a large photo (the
-            // distance-transform-based edge blur especially), and
-            // WithRedrawSuspended holds off repainting until this WHOLE
-            // action finishes, so showing the loading text from inside here
-            // wouldn't do anything -- it couldn't paint until the slow call
-            // already returned, same as not showing it at all.
+            // 実レンダー(下)はここでは行わず遅延する: 大きい写真では本当に遅く
+            // (距離変換ベースのエッジぼかしが特に)、WithRedrawSuspended はこの
+            // アクション全体が終わるまで再描画を止めるので、ここでローディング表示しても
+            // 描画されない。
             ShowCompositeLoading();
         });
 
-        // Now that WithRedrawSuspended's action above has finished and
-        // repainted once (showing the loading text), queue the actual render
-        // for right after. ApplicationIdle (lower priority than the
-        // Background this used before) only runs once the dispatcher queue
-        // is genuinely empty of every higher-priority item, which includes
-        // WPF's own Render-priority layout/paint pass -- a stronger
-        // guarantee that the window (loading spinner and all) has actually
-        // finished being shown before this heavy computation starts, versus
-        // Background alone (which could in principle still race a slow
-        // first-time layout pass over the newly-Visible CompositePanel).
-        // Also (re-)establishes 一括調整's label highlighting/connector
-        // adorner here rather than at construction time: _lookLinked/
-        // LookLinkToggle both default to on, but EnsureLookLinkAdorner/
-        // PositionLookLinkConnector need an actual layout pass over
-        // CompositePanel to have happened (for AdornerLayer.GetAdornerLayer
-        // and TranslatePoint to give sensible answers), which doesn't happen
-        // while it's Collapsed -- true from construction until the user
-        // opens Composite mode for the first time, hence doing it here
-        // instead.
+        // 上の WithRedrawSuspended が終わり一度再描画された(ローディング表示)ので、
+        // 実レンダーを直後にキューする。ApplicationIdle は、WPF 自身の Render 優先度の
+        // レイアウト/描画パスを含む全上位アイテムが片付いてから走るので、重い計算の
+        // 開始前に窓(ローディング含む)が確実に表示済みになる。
+        // ここで 一括調整 のラベルハイライト/コネクターアドーナーも(再)確立する:
+        // EnsureLookLinkAdorner/PositionLookLinkConnector は CompositePanel への実際の
+        // レイアウトパスを必要とし、Collapsed の間は起きない ── 初回オープンまで
+        // Collapsed なのでここで行う。
         Dispatcher.InvokeAsync(() =>
         {
             UpdateLinkedRowStyles();
@@ -341,11 +291,9 @@ public partial class ControlPanelWindow : Window
         }, DispatcherPriority.ApplicationIdle);
     }
 
-    /// <summary>Shows CompositeLoadingPanel (spinner + text) and starts its
-    /// rotation. Paired with <see cref="HideCompositeLoading"/> -- always
-    /// call both rather than setting CompositeLoadingPanel.Visibility
-    /// directly, or the spinner keeps spinning (wasting a little CPU)
-    /// forever after the panel is hidden.</summary>
+    /// <summary>CompositeLoadingPanel(スピナー + テキスト)を表示して回転を開始する。
+    /// <see cref="HideCompositeLoading"/> と対。Visibility を直接いじらず必ず両方を
+    /// 呼ぶ ── そうしないとパネルを隠したあともスピナーが回り続ける。</summary>
     private void ShowCompositeLoading()
     {
         CompositeLoadingPanel.Visibility = Visibility.Visible;
@@ -358,13 +306,10 @@ public partial class ControlPanelWindow : Window
         ((Storyboard)FindResource("CompositeLoadingSpinStoryboard")).Stop(this);
     }
 
-    /// <summary>Each mode has a different Width, but WPF resizing keeps the
-    /// LEFT edge fixed -- switching from Home (420 wide) to a wider mode
-    /// (Align 760 / Composite 1080) without also moving Left just grows the
-    /// window off the right edge of the screen. Re-anchors the right edge at
-    /// the same 20px-from-the-work-area-edge spot the window starts at,
-    /// every time the width changes; clamps to the work area's left edge too,
-    /// for a mode wider than the whole screen.</summary>
+    /// <summary>モードごとに Width が違うが WPF のリサイズは左端を固定するので、
+    /// Left を動かさず幅だけ広げると窓が画面右端からはみ出す。幅が変わるたびに
+    /// 右端を起動時と同じ「作業領域端から 20px」の位置に再アンカーする。画面より
+    /// 広いモード用に作業領域の左端でクランプもする。</summary>
     private void PinToRightEdge()
     {
         double left = SystemParameters.WorkArea.Right - Width - 20;
@@ -372,13 +317,9 @@ public partial class ControlPanelWindow : Window
         Left = left;
     }
 
-    // ---- Mode switches change Width/Height/Left and toggle several panels'
-    //      Visibility as separate property writes, each of which can trigger
-    //      its own native window move/resize/repaint -- visible as a brief
-    //      flicker (grow-then-reposition, or old-panel-gone-before-new-panel-
-    //      shown). WM_SETREDRAW suppresses repainting the native window for
-    //      the whole batch of changes, then forces exactly one repaint at the
-    //      end once everything's already in its final state. ----
+    // ---- モード切替は Width/Height/Left と複数パネルの Visibility を個別に書き、
+    //      それぞれが窓の移動/リサイズ/再描画を起こしてチラつく。WM_SETREDRAW で
+    //      一連の変更中は再描画を止め、最終状態になってから1回だけ再描画させる。 ----
 
     private const int WM_SETREDRAW = 0x000B;
     private const uint RDW_INVALIDATE = 0x0001;
@@ -444,15 +385,13 @@ public partial class ControlPanelWindow : Window
         }
         catch (Win32Exception)
         {
-            // Default browser failed to launch; nothing more to do.
+            // 既定ブラウザの起動に失敗。ほかにできることはない。
         }
     }
 
-    /// <summary>PatchNotesText is populated once, the first time this opens,
-    /// from PATCHNOTES.md -- embedded as a WPF resource (see the csproj) so
-    /// it's readable from inside the shipped exe with no network access
-    /// needed. License/third-party notices live in the separate
-    /// LicensePanel instead (see ShowLicense).</summary>
+    /// <summary>PatchNotesText は初回オープン時に一度だけ PATCHNOTES.md から読む。
+    /// WPF リソースとして埋め込んであり(csproj 参照)ネットワーク無しで読める。
+    /// ライセンス/サードパーティ表記は別の LicensePanel(ShowLicense 参照)。</summary>
     private void ShowAbout() => WithRedrawSuspended(() =>
     {
         if (!_aboutContentLoaded)
@@ -463,9 +402,8 @@ public partial class ControlPanelWindow : Window
             _aboutContentLoaded = true;
         }
 
-        // The title-bar update button IS the notification (see
-        // ShowUpdateAvailableNotification) -- moot now that the user is
-        // looking straight at the update section this opens into.
+        // タイトルバーの更新ボタン自体が通知(ShowUpdateAvailableNotification 参照)。
+        // ここで開く更新セクションを今まさに見ているので不要。
         TitleBarUpdateButton.Visibility = Visibility.Collapsed;
 
         HomePanel.Visibility = Visibility.Collapsed;
@@ -484,11 +422,9 @@ public partial class ControlPanelWindow : Window
         _ = RefreshUpdateSectionAsync();
     });
 
-    /// <summary>LicenseText/ThirdPartyNoticesText are populated once, the
-    /// first time this opens, from LICENSE.md/THIRD-PARTY-NOTICES.md --
-    /// embedded as WPF resources (see the csproj) so they're readable from
-    /// inside the shipped exe with no network access needed, which several
-    /// of the notices in there (SIL OFL, MIT) require.</summary>
+    /// <summary>LicenseText/ThirdPartyNoticesText は初回オープン時に一度だけ
+    /// LICENSE.md / THIRD-PARTY-NOTICES.md から読む。WPF リソースとして埋め込んであり
+    /// (csproj 参照)、中の一部の表記(SIL OFL、MIT)が要求するオフライン閲覧に対応する。</summary>
     private void ShowLicense() => WithRedrawSuspended(() =>
     {
         if (!_licenseContentLoaded)
@@ -512,29 +448,21 @@ public partial class ControlPanelWindow : Window
         PinToRightEdge();
     });
 
-    /// <summary>Called from App.xaml.cs once a background CheckForUpdatesAsync
-    /// finds something newer than the running build. This button IS the
-    /// notification (no separate badge elsewhere) -- nothing downloads
-    /// until the user clicks it, opens バージョン情報, and picks a version
-    /// themselves (see UpdateApplyButton_Click).</summary>
+    /// <summary>バックグラウンドの CheckForUpdatesAsync が実行中ビルドより新しいものを
+    /// 見つけたとき App.xaml.cs から呼ばれる。このボタン自体が通知(他にバッジは無い)。
+    /// ユーザーが押してバージョン情報を開き、自分でバージョンを選ぶまで何も
+    /// ダウンロードしない(UpdateApplyButton_Click 参照)。</summary>
     public void ShowUpdateAvailableNotification() => TitleBarUpdateButton.Visibility = Visibility.Visible;
 
-    /// <summary>Real WindowState.Maximized (not a hand-rolled fill-the-
-    /// workarea substitute) specifically so two pieces of native behavior
-    /// come for free: dragging the title bar of a maximized window
-    /// restores it and keeps following the cursor (built into DragMove(),
-    /// which TitleBar_MouseLeftButtonDown already calls), and edge-drag
-    /// resizing (ResizeMode="CanResize"). RestoreBounds tracks the pre-
-    /// maximize size/position automatically -- no manual bookkeeping
-    /// needed here, unlike an earlier version of this that faked
-    /// maximizing via manual Width/Height/Left/Top.</summary>
+    /// <summary>作業領域を手で埋める代替ではなく本物の WindowState.Maximized を使う。
+    /// ネイティブ挙動が2つ無料で付く: 最大化窓のタイトルバードラッグで復元しつつ
+    /// カーソル追従(DragMove() 組込)と、端ドラッグリサイズ。RestoreBounds が
+    /// 最大化前のサイズ/位置を自動追跡する。</summary>
     private void TitleBarMaximizeButton_Click(object sender, RoutedEventArgs e) =>
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
-    /// <summary>Keeps the maximize button's icon in sync regardless of HOW
-    /// WindowState changed -- the button above, double-clicking the title
-    /// bar (not currently wired, but this covers it if that's ever added),
-    /// Aero Snap, or the taskbar's own right-click menu.</summary>
+    /// <summary>WindowState がどう変わっても最大化ボタンのアイコンを同期する
+    /// (上のボタン、タイトルバーのダブルクリック、Aero Snap、タスクバー右クリック)。</summary>
     private void Window_StateChanged(object sender, EventArgs e)
     {
         bool maximized = WindowState == WindowState.Maximized;
@@ -542,13 +470,11 @@ public partial class ControlPanelWindow : Window
         RestoreIcon.Visibility = maximized ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // ---- WindowStyle="None" + WindowState="Maximized" has a well-known
-    //      WPF bug: without this hook, a maximized borderless window
-    //      expands to the monitor's FULL bounds (covering the taskbar)
-    //      instead of just its work area. Intercepting WM_GETMINMAXINFO and
-    //      filling in the actual work-area bounds ourselves is the standard
-    //      fix -- see OnSourceInitialized, which installs this hook once
-    //      the window's Win32 handle exists (too early in the constructor). ----
+    // ---- WindowStyle="None" + WindowState="Maximized" の既知の WPF バグ: この
+    //      フックが無いと、最大化したボーダーレス窓が作業領域ではなくモニタ全域
+    //      (タスクバーを覆う)まで広がる。WM_GETMINMAXINFO を横取りして実際の
+    //      作業領域を自前で埋めるのが定番の対処 ── OnSourceInitialized が
+    //      Win32 ハンドル確定後にこのフックを入れる。 ----
 
     private const int WM_GETMINMAXINFO = 0x0024;
     private const int MONITOR_DEFAULTTONEAREST = 0x00000002;
@@ -593,30 +519,20 @@ public partial class ControlPanelWindow : Window
         }
     }
 
-    // WM_NCCALCSIZE: ResizeMode="CanResize" reserves a thin non-client
-    // border even with WindowStyle="None" -- DWM paints its own default
-    // (white) background into that sliver since none of our WPF content
-    // renders there, which is what showed up as a hairline at the top
-    // edge. Treating the whole window as client area (no border reserved)
-    // removes it, but ALSO removes the OS's own edge-hit-testing that
-    // "no border" area would otherwise still provide for drag-to-resize --
-    // see WM_NCHITTEST below, which is what actually restores that.
+    // WM_NCCALCSIZE: ResizeMode="CanResize" は WindowStyle="None" でも細い
+    // 非クライアント境界を確保し、そこに DWM が既定の白背景を描く(上端のヘアライン)。
+    // 窓全体をクライアント領域扱いにすると消えるが、OS の端ヒットテスト(端ドラッグ
+    // リサイズ)も一緒に消える ── それは下の WM_NCHITTEST で戻す。
     private const int WM_NCCALCSIZE = 0x0083;
 
-    // WM_NCACTIVATE: DWM's default handling repaints a non-client border
-    // on activate/deactivate (e.g. switching back from another window) even
-    // though WM_NCCALCSIZE above already claims there's no non-client area
-    // -- that's the white flash reported when refocusing this window.
-    // Returning TRUE and marking the message handled (instead of letting
-    // DefWindowProc run) skips that default repaint entirely.
+    // WM_NCACTIVATE: DWM の既定処理はアクティブ/非アクティブ時に非クライアント境界を
+    // 再描画する(他窓から戻ったときの白フラッシュ)。TRUE を返して handled にすると
+    // その既定再描画をまるごとスキップする。
     private const int WM_NCACTIVATE = 0x0086;
 
-    // WM_NCHITTEST: with WM_NCCALCSIZE above claiming zero non-client area,
-    // Windows has nothing left to classify as a resize edge, so dragging
-    // near the window's border stopped resizing it. Classifying the outer
-    // few pixels as HTLEFT/HTRIGHT/HTTOP/HTBOTTOM/corners ourselves (pure
-    // hit-testing, no visible border reserved) hands that back to the OS's
-    // own native resize-drag loop, exactly like a normal window's border.
+    // WM_NCHITTEST: 上の WM_NCCALCSIZE で非クライアント領域ゼロにしたため OS が
+    // リサイズ端を判定できなくなる。外周数ピクセルを自前で HTLEFT/HTRIGHT/HTTOP/
+    // HTBOTTOM/隅に分類し、OS のネイティブなリサイズドラッグループへ戻す。
     private const int WM_NCHITTEST = 0x0084;
     private const int HTCLIENT = 1;
     private const int HTLEFT = 10;
@@ -663,9 +579,8 @@ public partial class ControlPanelWindow : Window
                 handled = true;
                 return new IntPtr(hit);
             }
-            // Not on an edge -- fall through to default handling (HTCLIENT),
-            // which leaves the title bar's own DragMove()-based dragging and
-            // every button's own click handling untouched.
+            // 端ではない ── 既定処理(HTCLIENT)へ。タイトルバーの DragMove()
+            // ドラッグや各ボタンのクリック処理はそのまま。
             return IntPtr.Zero;
         }
         if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero)
@@ -699,12 +614,9 @@ public partial class ControlPanelWindow : Window
         return IntPtr.Zero;
     }
 
-    /// <summary>Populates UpdateVersionCombo from every version currently
-    /// published to the repo's release feed (newest first, newest
-    /// preselected) and sets UpdateStatusText accordingly. Runs every time
-    /// AboutPanel opens (not cached like the license text) so it reflects
-    /// whatever's actually published right now, not a snapshot from
-    /// whenever the panel was last opened.</summary>
+    /// <summary>リリースフィードに公開中の全バージョンで UpdateVersionCombo を埋め
+    /// (新しい順、先頭を選択)、UpdateStatusText を更新する。AboutPanel を開くたびに
+    /// 実行し(ライセンステキストと違いキャッシュしない)、今公開されている実状を映す。</summary>
     private async Task RefreshUpdateSectionAsync()
     {
         if (!UpdateService.IsInstalled)
@@ -735,7 +647,7 @@ public partial class ControlPanelWindow : Window
             var label = $"v{asset.Version}" + (asset.Version == current ? "(現在)" : "");
             UpdateVersionCombo.Items.Add(new ComboBoxItem { Content = label, Tag = asset });
         }
-        UpdateVersionCombo.SelectedIndex = 0; // newest first, preselected as the default
+        UpdateVersionCombo.SelectedIndex = 0; // 新しい順、先頭を既定で選択
         UpdateVersionRow.Visibility = Visibility.Visible;
     }
 
@@ -750,9 +662,8 @@ public partial class ControlPanelWindow : Window
         {
             await UpdateService.DownloadAndApplyAsync(asset, percent =>
                 Dispatcher.Invoke(() => UpdateStatusText.Text = $"ダウンロード中… {percent}%"));
-            // ApplyUpdatesAndRestart (inside DownloadAndApplyAsync) restarts
-            // the process itself -- normal execution doesn't continue past
-            // this point on success.
+            // DownloadAndApplyAsync 内の ApplyUpdatesAndRestart がプロセスを
+            // 再起動する ── 成功時はここから先は実行されない。
         }
         catch (Exception ex)
         {
@@ -771,17 +682,11 @@ public partial class ControlPanelWindow : Window
         return reader.ReadToEnd();
     }
 
-    // ---- Custom title bar: WindowStyle="None" removes the native one (it
-    //      was just wasteful chrome), so dragging and closing have to be
-    //      hand-rolled. Checks whether the press originated on a Button (the
-    //      close button) before starting a drag -- an earlier version instead
-    //      had the close button mark PreviewMouseLeftButtonDown handled on
-    //      itself to stop the drag, but that also suppressed the button's own
-    //      internal click-on-release logic (ButtonBase's class handler for the
-    //      paired bubbling MouseLeftButtonDown never saw the event, since it
-    //      was already Handled by the time it got there), so the button never
-    //      registered a press and Click never fired. Checking the origin here
-    //      instead leaves the button's own event handling untouched. ----
+    // ---- カスタムタイトルバー: WindowStyle="None" でネイティブのを消したので
+    //      ドラッグと閉じるは自前。ドラッグ開始前に、押下が Button(閉じるボタン)
+    //      上で始まったかを確認する ── ボタン側で PreviewMouseLeftButtonDown を
+    //      handled にする方式はボタン自身の click 判定まで潰したので、ここで発生元を
+    //      見る方式にした。 ----
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -799,14 +704,10 @@ public partial class ControlPanelWindow : Window
         return false;
     }
 
-    // ---- Shared Slider template (see Window.Resources): pressing down
-    //      anywhere on PART_Track and dragging without releasing should keep
-    //      following the mouse the whole time, not just jump once on the
-    //      initial click (IsMoveToPointEnabled's part) and then ignore
-    //      further movement. Track.ValueFromPoint does the actual
-    //      point-to-value math (accounting for the Thumb's own width the
-    //      same way the Track already does internally), so this only needs
-    //      to capture the mouse and keep feeding it the current point. ----
+    // ---- 共有 Slider テンプレート(Window.Resources 参照): PART_Track の
+    //      どこかで押してそのままドラッグしたら、初回クリックで1回跳ぶだけでなく
+    //      ずっとマウスに追従させたい。Track.ValueFromPoint が座標→値の計算を
+    //      するので、ここはマウスをキャプチャして現在座標を渡し続けるだけ。 ----
 
     private bool _sliderTrackDragging;
     private Track? _sliderTrackDraggingTrack;
@@ -816,8 +717,7 @@ public partial class ControlPanelWindow : Window
     private void SliderTrack_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Track track) return;
-        // A click that lands on the Thumb itself is left alone -- it
-        // already drags correctly via its own built-in mechanism.
+        // Thumb 自体へのクリックは触らない ── 組込機構で正しくドラッグされる。
         if (e.OriginalSource is DependencyObject source && HasAncestorOrSelf<Thumb>(source)) return;
 
         _sliderTrackDragging = true;
@@ -825,24 +725,17 @@ public partial class ControlPanelWindow : Window
         track.CaptureMouse();
         track.Value = track.ValueFromPoint(e.GetPosition(track));
         CompositionTarget.Rendering += SliderTrackDragging_Rendering;
-        // Without this, the still-unhandled event keeps tunneling/bubbling
-        // into the DecreaseRepeatButton/IncreaseRepeatButton underneath
-        // (styled transparent, but still functionally real RepeatButtons),
-        // which then ALSO fires its own built-in Click-driven LargeChange
-        // step on top of the value this just set -- the two fighting over
-        // the Value each press/move is what made track-dragging feel
-        // heavier/laggier than grabbing the Thumb directly.
+        // これが無いと、未処理のイベントが下の Decrease/IncreaseRepeatButton
+        // (透明スタイルだが実体は RepeatButton)へ届き、今セットした値の上に
+        // さらに LargeChange ステップを発火する。両者が Value を奪い合うと
+        // トラックドラッグが重く感じる。
         e.Handled = true;
     }
 
-    /// <summary>Only records the latest mouse position here -- the actual
-    /// Value assignment (and everything it cascades into: RefreshFromState
-    /// touching ~20 controls, ScheduleCompositeRender, etc.) happens at most
-    /// once per rendered frame, via CompositionTarget.Rendering below, not
-    /// once per raw WM_MOUSEMOVE. A high-poll-rate mouse can deliver far
-    /// more of those than the UI can (or needs to) redraw for; the built-in
-    /// Thumb drag is implicitly bound to the same render cadence, which is
-    /// why grabbing the Thumb directly didn't feel this heavy.</summary>
+    /// <summary>ここでは最新のマウス座標を記録するだけ ── 実際の Value 代入
+    /// (と連鎖する RefreshFromState / ScheduleCompositeRender など)は下の
+    /// CompositionTarget.Rendering 経由で1フレームにつき最大1回。高ポーリングの
+    /// マウスは UI が再描画できる以上の WM_MOUSEMOVE を送ってくる。</summary>
     private void SliderTrack_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (!_sliderTrackDragging) return;
@@ -878,10 +771,8 @@ public partial class ControlPanelWindow : Window
         ThemeService.Apply(ThemeToggleButton.IsChecked == true);
     }
 
-    // ---- Compact mode: shrinks the whole window down to a small widget
-    //      pinned to the top-right corner, so it doesn't cover VRChat while
-    //      the user is positioning things live. Remembers which mode and
-    //      where the window was so "元に戻す" can put it back exactly. ----
+    // ---- コンパクトモード: 窓全体を右上隅の小ウィジェットに縮める。ライブ調整中に
+    //      VRChat を覆わないため。元のモードと窓位置を覚えて「元に戻す」で正確に復元する。 ----
 
     private enum PanelMode { Align, Composite }
 
@@ -892,7 +783,7 @@ public partial class ControlPanelWindow : Window
 
     private void EnterCompact(PanelMode mode) => WithRedrawSuspended(() =>
     {
-        // A tiny corner widget should never be shown maximized.
+        // 小さな隅ウィジェットを最大化状態で見せない。
         WindowState = WindowState.Normal;
         _preCompactMode = mode;
         _preCompactLeft = Left;
@@ -905,36 +796,29 @@ public partial class ControlPanelWindow : Window
         AboutPanel.Visibility = Visibility.Collapsed;
         LicensePanel.Visibility = Visibility.Collapsed;
         TitleBarMinimizeButton.Visibility = Visibility.Collapsed;
-        // Compact mode has its own "make it bigger again" mechanism
-        // (ExpandButton), so the maximize button would be redundant here.
+        // コンパクトモードには専用の拡大機構(ExpandButton)があるので最大化ボタンは不要。
         TitleBarMaximizeButton.Visibility = Visibility.Collapsed;
         HideHomeSettings();
         CompactModeText.Text = mode == PanelMode.Align ? "位置合わせモード" : "写真合成モード";
 
         MinWidth = 260;
-        // +4 vs this panel's original budget: the title bar grew 28->32px
-        // when it was resized to match Windows' standard caption height,
-        // which otherwise ate straight into CompactPanel's already-tight
-        // content row and squished its button/text.
+        // 元の想定 +4: タイトルバーを Windows 標準のキャプション高に合わせて
+        // 28→32px にしたぶん、CompactPanel の狭いコンテンツ行を圧迫していた。
         MinHeight = 104;
         Width = 300;
         Height = 116;
         PinToRightEdge();
         Top = 20;
 
-        // The alignment overlay only helps while actively positioning the
-        // avatar against VRChat's camera UI; once minimized to the compact
-        // widget, it just sits on top of VRChat unhelpfully, so hide it
-        // until ExpandButton_Click brings it back. SetManuallyHidden (not a
-        // plain Hide()) also keeps it hidden if the user reopens VRChat's
-        // camera while minimized -- see its own doc comment.
+        // 位置合わせオーバーレイはアバターを VRChat カメラUIに合わせている間しか
+        // 役に立たない。コンパクトウィジェットに畳んだら VRChat の上に乗って邪魔なだけ
+        // なので、ExpandButton_Click で戻すまで隠す。SetManuallyHidden(単なる Hide()
+        // ではない)は、最小化中にカメラを開き直しても隠したままにする。
         _overlayWindow.SetManuallyHidden(true);
     });
 
-    /// <summary>Shared by Align and Composite mode now (moved into the
-    /// title bar itself -- see TitleBarMinimizeButton's own XAML comment),
-    /// so it has to work out which mode is actually open rather than being
-    /// told directly like the two per-mode buttons it replaced were.</summary>
+    /// <summary>位置合わせ/合成の両モード共通(タイトルバーへ移設)。置き換え前の
+    /// モード別ボタンと違い、どちらのモードが開いているか自分で判定する。</summary>
     private void TitleBarMinimizeButton_Click(object sender, RoutedEventArgs e) =>
         EnterCompact(CompositePanel.Visibility == Visibility.Visible ? PanelMode.Composite : PanelMode.Align);
 
@@ -956,8 +840,7 @@ public partial class ControlPanelWindow : Window
         {
             ApplyPositionEstimate(hwnd, region);
         }
-        // Not attached yet: nothing to reposition -- the next manual Reset
-        // will pick up this orientation anyway.
+        // 未アタッチ。再配置するものは無い ── 次の手動リセットでこの向きを拾う。
     });
 
     private void ControlPanelWindow_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1010,19 +893,12 @@ public partial class ControlPanelWindow : Window
         }
     }
 
-    /// <summary>Ctrl+Z/Ctrl+Y can jump across a whole batch of look-
-    /// adjustment values at once (e.g. undoing a Match button's result --
-    /// see MatchAvatarToPhotoButton_Click), which hits the exact same full-
-    /// resolution-recomposite cost that motivated FinishMatchRender/
-    /// ShowCompositeLoading there: without the same treatment here, Undo/
-    /// Redo would apply instantly but then freeze the UI thread for that
-    /// recomposite with no loading indicator to explain why. Wraps the
-    /// actual jump with _isCompositeDragging (so whatever intermediate
-    /// renders it triggers along the way don't get treated as the final
-    /// save-quality result -- see RenderCompositePreview's own doc comment)
-    /// and reuses FinishMatchRender for the one render that actually
-    /// commits after -- only while Composite mode is actually showing,
-    /// since that's the only place this cost exists.</summary>
+    /// <summary>Ctrl+Z/Ctrl+Y は複数のルック調整値をまとめて飛べる(Match ボタンの
+    /// 結果を取り消すなど)。これは FinishMatchRender/ShowCompositeLoading を用意した
+    /// のと同じフル解像度の再合成コストを踏むので、同じ扱いをしないと Undo/Redo が
+    /// 即適用されたあと UI スレッドが無言で固まる。実際のジャンプを
+    /// _isCompositeDragging で包み(途中レンダーを最終品質扱いしない)、確定後の1回は
+    /// FinishMatchRender を使う ── コストがあるのは合成モード表示中だけなのでそのときだけ。</summary>
     private void PerformUndoOrRedo(bool isRedo)
     {
         bool showsComposite = CompositePanel.Visibility == Visibility.Visible;
@@ -1035,43 +911,21 @@ public partial class ControlPanelWindow : Window
         if (showsComposite) FinishMatchRender();
     }
 
-    /// <summary>Reacts to an actual Undo/Redo jump (see UndoManager.Applied):
-    /// flashes every row whose value the jump actually changed -- avatar
-    /// placement/look via the OverlaySnapshot fields, photo look/placement/
-    /// finishing effects via the CompositeSnapshot Extra -- covering every
-    /// field either snapshot carries, not just the look-adjustment sliders.
-    /// Also shows a small fading undo/redo icon unconditionally, since a
-    /// jump can legitimately change nothing about (or find no row for) a
-    /// couple of fields -- see the Width/Height/CompositePlaceHeight
-    /// comments below -- and the icon alone still confirms something
-    /// happened.</summary>
-    /// <summary>Which row to flash for each OverlaySnapshot field (see
-    /// OnUndoRedoApplied) -- a table instead of ~20 near-identical "if
-    /// (before.X != after.X) FlashRow(...)" lines, so adding a new undoable
-    /// field is one row here instead of a new if-statement to remember.
-    /// Built lazily (not a static initializer) since it closes over this
-    /// instance's own named XAML elements. A few entries key on more than
-    /// one field at once (the tint/light-leak/color groups below) by
-    /// returning a value tuple -- Equals on a boxed tuple does the same
-    /// field-by-field structural comparison the old "||"-chained conditions
-    /// did.</summary>
+    /// <summary>OverlaySnapshot の各フィールドについて、どの行をフラッシュするかの表
+    /// (OnUndoRedoApplied 参照)。約20本の「if (before.X != after.X) FlashRow(...)」を
+    /// 表に置き換えたもの。名前付き XAML 要素をキャプチャするので遅延構築する。
+    /// 複数フィールドをまとめて見るエントリは値タプルを返す。</summary>
     private List<(Func<OverlaySnapshot, object?> Key, FrameworkElement Row)>? _overlayFlashTable;
 
     private List<(Func<OverlaySnapshot, object?> Key, FrameworkElement Row)> BuildOverlayFlashTable() => new()
     {
-        // No X/Y/Width/Height/RotationDegrees rows left in Align mode at all
-        // (see this panel's own XAML comment on their removal -- OverlayWindow's
-        // own drag handles are the only UI for these now) and no other row in
-        // this card is a FlashRow-compatible anchor for them (FlashRow needs
-        // anchor.Parent to be the Grid row itself, and ImageVisibleToggle's
-        // parent is an inner StackPanel, not that Grid), so these five simply
-        // aren't flashed on undo/redo any more -- the live overlay window
-        // visibly jumping to the restored position is its own feedback.
+        // 位置合わせモードには X/Y/Width/Height/RotationDegrees の行がもう無く
+        // (OverlayWindow のドラッグハンドルが唯一のUI)、このカードに FlashRow 対応の
+        // アンカーも無いので、この5つは undo/redo でフラッシュしない ── ライブ
+        // オーバーレイが復元位置へ跳ぶこと自体がフィードバックになる。
         (s => s.Opacity, OpacitySlider),
         (s => s.EdgeBlurRadius, CompositeEdgeBlurSlider),
-        // Brightness..Blacks only have a slider on the Composite side now
-        // (see AlignPanel's own comment on why they were dropped from Align
-        // mode), so only that one flashes.
+        // Brightness..Blacks は今は合成側にしかスライダーが無いのでそれだけフラッシュする。
         (s => s.Brightness, CompositeBrightnessSlider),
         (s => s.Contrast, CompositeContrastSlider),
         (s => s.Saturation, CompositeSaturationSlider),
@@ -1086,8 +940,8 @@ public partial class ControlPanelWindow : Window
         (s => (s.ColorTintStrength, s.ColorTintR, s.ColorTintG, s.ColorTintB), CompositeColorTintStrengthSlider),
     };
 
-    /// <summary>Same idea as <see cref="BuildOverlayFlashTable"/>, for
-    /// CompositeSnapshot's fields.</summary>
+    /// <summary><see cref="BuildOverlayFlashTable"/> と同じ考え方の、
+    /// CompositeSnapshot 用の表。</summary>
     private List<(Func<CompositeSnapshot, object?> Key, FrameworkElement Row)>? _compositeFlashTable;
 
     private List<(Func<CompositeSnapshot, object?> Key, FrameworkElement Row)> BuildCompositeFlashTable() => new()
@@ -1124,17 +978,18 @@ public partial class ControlPanelWindow : Window
         (s => s.DropShadow.DropShadowBlur, DropShadowBlurSlider),
         (s => (s.DropShadow.DropShadowColorB, s.DropShadow.DropShadowColorG, s.DropShadow.DropShadowColorR), DropShadowColorButton),
         (s => s.DropShadow.DropShadowBlendMode, DropShadowBlendModeCombo),
-        // No dedicated crop-width/position row anymore (see 切り抜き幅/位置X/Y's
-        // own removal comment elsewhere -- the interactive 切り抜きモード drag
-        // replaced them), so those two undo-tracked properties have no
-        // FlashRow-compatible anchor left; simply not flashed on undo/redo.
+        // 切り抜き幅/位置X/Y の専用行はもう無い(インタラクティブな切り抜きモード
+        // ドラッグが置き換えた)ので、この2つは undo/redo でフラッシュしない。
         (s => s.CanvasCrop.CanvasAspectRatio, CanvasAspectCombo),
-        // No dedicated X/Y/幅/回転 rows anymore either (see
-        // AvatarPlacementModeToggle_Changed's own removal comment) -- all 5
-        // properties instead flash the toggle's own row as one group.
+        // X/Y/幅/回転 の専用行も無い ── 5プロパティともトグルの行を1グループとして
+        // フラッシュする。
         (s => (s.Placement.CompositePlaceX, s.Placement.CompositePlaceY, s.Placement.CompositePlaceWidth, s.Placement.CompositePlaceHeight, s.Placement.CompositeRotation), AvatarPlacementModeToggle),
     };
 
+    /// <summary>実際の Undo/Redo ジャンプ(UndoManager.Applied)に反応し、値が
+    /// 変わった行をフラッシュする(OverlaySnapshot と CompositeSnapshot Extra の
+    /// 両方をカバー)。行が見つからないフィールドもあるので、消えていく undo/redo
+    /// アイコンは無条件で表示する。</summary>
     private void OnUndoRedoApplied(bool isRedo, OverlaySnapshot before, OverlaySnapshot after, object? extraBefore, object? extraAfter)
     {
         _overlayFlashTable ??= BuildOverlayFlashTable();
@@ -1155,13 +1010,10 @@ public partial class ControlPanelWindow : Window
         ShowUndoRedoReaction(isRedo);
     }
 
-    /// <summary>Briefly highlights one row (its enclosing Grid -- found via
-    /// <paramref name="anchor"/>'s own Parent, so none of the ~50 existing
-    /// rows need an x:Name added just for this) with a fading tint, inserted
-    /// behind the row's own content so the label/slider/box still read
-    /// clearly on top of it. <paramref name="anchor"/> is typically a
-    /// Slider, but a couple of rows (Width/Height) only have a TextBox --
-    /// any FrameworkElement sitting directly in the row's Grid works.</summary>
+    /// <summary>1行(<paramref name="anchor"/> の Parent の Grid)を消えていく
+    /// ティントで一瞬ハイライトする。行のコンテンツの背面に挿入するのでラベル/
+    /// スライダーは上で読める。<paramref name="anchor"/> は通常 Slider だが、
+    /// 行の Grid に直接載る FrameworkElement なら何でもよい。</summary>
     private void FlashRow(FrameworkElement? anchor)
     {
         if (anchor?.Parent is not Grid row) return;
@@ -1179,10 +1031,8 @@ public partial class ControlPanelWindow : Window
         flash.BeginAnimation(OpacityProperty, fade);
     }
 
-    /// <summary>Fades UndoRedoReactionBadge in, holds briefly, then fades it
-    /// back out -- shown for every Undo/Redo that actually applies a
-    /// change, regardless of whether OnUndoRedoApplied found any look-
-    /// adjustment row to flash alongside it.</summary>
+    /// <summary>UndoRedoReactionBadge をフェードイン→短く保持→フェードアウト。
+    /// 変更を適用した Undo/Redo すべてで表示する(フラッシュ対象行の有無に関わらず)。</summary>
     private void ShowUndoRedoReaction(bool isRedo)
     {
         UndoReactionIcon.Visibility = isRedo ? Visibility.Collapsed : Visibility.Visible;
@@ -1197,16 +1047,11 @@ public partial class ControlPanelWindow : Window
         UndoRedoReactionBadge.BeginAnimation(OpacityProperty, keyFrames);
     }
 
-    /// <summary>Which OverlayState properties each RefreshFromState section
-    /// below actually depends on -- gates that section instead of running
-    /// unconditionally on every single _state change (position/size/
-    /// rotation/opacity, all 12 look sliders, guide toggles, etc. all used
-    /// to get rewritten together on, say, a single Rotation slider tick).
-    /// Same pattern already used for OverlayWindow.ApplyState/UpdateGuide's
-    /// own gating. <paramref name="changedProperty"/> null means "unknown/
-    /// many properties changed" (the initial call, LoadImageFile's full
-    /// reload, and OverlayState's own batched-change notification -- see
-    /// its BeginBatch doc comment) -- treated as "refresh everything".</summary>
+    /// <summary>下の各 RefreshFromState セクションが依存する OverlayState
+    /// プロパティ。全 _state 変更で無条件に走らせず、そのセクションだけを回す。
+    /// <paramref name="changedProperty"/> が null は「不明/多数変更」
+    /// (初回呼び出し、LoadImageFile の全リロード、OverlayState のバッチ通知)を意味し、
+    /// 「全部更新」として扱う。</summary>
     private static readonly HashSet<string?> PositionRefreshPropertyNames = new()
     {
         nameof(OverlayState.X), nameof(OverlayState.Y), nameof(OverlayState.Width), nameof(OverlayState.Height),
@@ -1235,9 +1080,8 @@ public partial class ControlPanelWindow : Window
 
             if (all || PositionRefreshPropertyNames.Contains(changedProperty))
             {
-                // No X/Y/幅/高さ/回転(度) fields left to sync here at all (see
-                // this panel's own XAML comment on their removal) -- only
-                // 不透明度/表示 still have Align-mode UI of their own.
+                // ここで同期する X/Y/幅/高さ/回転(度) はもう無い ── 不透明度/表示
+                // だけが位置合わせモード専用UIを持つ。
                 double opacityPercent = _state.Opacity * 100;
                 OpacityBox.Text = opacityPercent.ToString("F0", CultureInfo.InvariantCulture);
                 OpacitySlider.Value = opacityPercent;
@@ -1259,13 +1103,10 @@ public partial class ControlPanelWindow : Window
 
             if (all || LookRefreshPropertyNames.Contains(changedProperty))
             {
-                // Composite panel's mirrored PNG controls (see the "PNG look"
-                // handlers below) -- same _state, kept in sync from here too.
-                // The look sliders (Brightness..Blacks), and now 境界ぼかし too,
-                // only exist on the Composite side (see AlignPanel's own comment
-                // on why they were dropped from Align mode), so these read
-                // straight from _state instead of mirroring an Align-mode
-                // Box.Text that no longer exists.
+                // 合成パネルのミラー PNG コントロール(下の「PNG look」ハンドラ参照)。
+                // 同じ _state をここからも同期する。ルックスライダー(Brightness..Blacks)
+                // と境界ぼかしは合成側にしか無いので、存在しない位置合わせ側の Box.Text を
+                // ミラーせず _state から直接読む。
                 CompositeEdgeBlurBox.Text = _state.EdgeBlurRadius.ToString("F0", CultureInfo.InvariantCulture);
                 CompositeEdgeBlurSlider.Value = _state.EdgeBlurRadius;
                 CompositeBrightnessBox.Text = _state.Brightness.ToString("F0", CultureInfo.InvariantCulture);
@@ -1323,24 +1164,18 @@ public partial class ControlPanelWindow : Window
         _undo.CommitChange();
         RefreshFromState();
 
-        // A different avatar image likely has a different aspect ratio/size
-        // than whatever the composite placement was fitted to, so it needs a
-        // fresh auto-placement guess too -- same as picking a new photo does
-        // (see TryLoadPhotoPixels' own reset of this flag).
+        // 別のアバター画像は縦横比/サイズが違うので、写真を選び直したときと同様に
+        // 自動配置の推定もやり直す。
         _compositePlacementInitialized = false;
-        // Explicitly (re-)loading an avatar is a clear signal the user wants
-        // it back in the composite, overriding any earlier "アバターなしで
-        // 進める" choice.
+        // アバターを明示的に(再)読み込むのは、合成に戻したいという明確な意思表示。
+        // 以前の「アバターなしで進める」選択を上書きする。
         _compositeSkipAvatar = false;
         RefreshSkipAvatarUI();
         ScheduleCompositeRender();
         AddRecentAvatarPath(path);
     }
 
-    // ---- Recent avatars / recent photos: moved to
-    //      ControlPanelWindow.RecentFiles.cs (a self-contained concern,
-    //      split out per the god-object cleanup -- see that file's own
-    //      header comment). ----
+    // ---- 最近のアバター / 最近の写真: ControlPanelWindow.RecentFiles.cs に分離。 ----
 
     private void Window_DragOver(object sender, DragEventArgs e)
     {
@@ -1363,17 +1198,11 @@ public partial class ControlPanelWindow : Window
         return Array.Find(files, f => string.Equals(Path.GetExtension(f), ".png", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>Manual Reset: establishes the Z-order attachment + move-follow
-    /// (only needed here -- the auto-triggers below are already attached by
-    /// the time they fire) and then applies the position estimate. Also
-    /// invoked automatically right after loading a new image (see
-    /// <see cref="LoadImageFile"/>) and once at app startup if VRChat is
-    /// already running (see App.OnStartup) -- a freshly-picked image, or a
-    /// freshly-launched app, should both start from a known-good,
-    /// camera-width-fitted position instead of wherever the box happened to
-    /// be (a size/position left over from a previous session, centered but
-    /// otherwise untouched, was the actual bug behind "position isn't fitted
-    /// to the camera width right after opening the app").</summary>
+    /// <summary>手動リセット: Z 順アタッチ + 移動追従を確立してから位置推定を適用する
+    /// (自動トリガーは発火時点で既にアタッチ済みなのでここだけ必要)。新規画像の
+    /// 読み込み直後(<see cref="LoadImageFile"/>)と、VRChat 起動済みならアプリ起動時
+    /// (App.OnStartup)にも自動で呼ばれる ── 新しい画像や起動直後は、前セッションの
+    /// 残り位置ではなくカメラ幅にフィットした既知の良い位置から始めるべき。</summary>
     private void ResetButton_Click(object sender, RoutedEventArgs e) => PerformReset();
 
     public void PerformReset()
@@ -1396,30 +1225,21 @@ public partial class ControlPanelWindow : Window
         ApplyPositionEstimate(hwnd.Value, region);
     }
 
-    /// <summary>Positions the overlay at the estimated camera-frame rect for
-    /// the current orientation (see the formula above), fitting the loaded
-    /// image's own aspect ratio into that frame. Falls back to just
-    /// re-centering at the current size if VRChat hasn't reported an
-    /// orientation yet. Takes an already-known hwnd/rect -- callers that
-    /// already have current values (the resize/orientation auto-triggers)
-    /// should never redo a FindVRChatWindow() scan or an AttachToOwner just to
-    /// call this. Wrapped in undo for every caller, manual or automatic --
-    /// UndoManager's nested Begin/Commit handles any overlap with a
-    /// concurrently in-progress unrelated edit correctly.</summary>
+    /// <summary>現在の向きの推定カメラ枠矩形にオーバーレイを置き、読み込んだ画像の
+    /// 縦横比をその枠にフィットさせる。向き未報告なら現サイズで再センタリングに
+    /// フォールバック。既知の hwnd/rect を受け取る ── 現在値を持つ呼び出し元は
+    /// FindVRChatWindow() や AttachToOwner をやり直さない。手動/自動どちらの
+    /// 呼び出しも undo で包む(入れ子 Begin/Commit が並行編集との重なりを正しく扱う)。</summary>
     private void ApplyPositionEstimate(IntPtr hwnd, System.Drawing.Rectangle region)
     {
         _undo.BeginChange();
-        // X/Y/Width/Height below are one logical move, not four separate
-        // ones -- batching collapses them into a single OverlayState
-        // notification instead of four (see OverlayState.BeginBatch), which
-        // matters here since this runs on every VRChat window resize/move
-        // tick, not just the manual "位置をリセット" button.
+        // 下の X/Y/Width/Height は1つの論理移動。バッチで OverlayState 通知を
+        // 4回でなく1回にまとめる(OverlayState.BeginBatch 参照)。ここは手動ボタン
+        // だけでなく VRChat 窓のリサイズ/移動ごとに走るので効く。
         _state.BeginBatch();
 
-        // Unknown orientation still gets the same frame-rect formula as a
-        // known one, just assuming landscape (the more common case) rather
-        // than falling back to a generic re-center -- a landscape-shaped
-        // guess is more likely to already be close than a plain center.
+        // 向き不明でも既知時と同じ枠矩形式を使い、汎用の再センタリングではなく
+        // 横向き(多い方)を仮定する ── 横向きの推測の方が中央よりも近い可能性が高い。
         bool? knownOrientation = _oscListener.IsLandscape;
         bool landscape = knownOrientation ?? true;
         var (frameLeft, frameTop, frameWidth, frameHeight) = VRChatWindowService.ComputeCameraFrameRect(region, landscape);
@@ -1427,8 +1247,7 @@ public partial class ControlPanelWindow : Window
         var nativeSize = _overlayWindow.ImageNativeSize;
         if (nativeSize is { Width: > 0, Height: > 0 } size)
         {
-            // Fit (not stretch) the image into the frame, preserving its own
-            // aspect ratio, centered within the frame.
+            // 引き伸ばさず、縦横比を保って枠にフィットさせ、枠内で中央寄せ。
             double scale = Math.Min(frameWidth / size.Width, frameHeight / size.Height);
             double fitWidth = size.Width * scale;
             double fitHeight = size.Height * scale;
@@ -1445,43 +1264,36 @@ public partial class ControlPanelWindow : Window
             _state.Height = frameHeight;
         }
 
-        // Cleared rather than a "it worked" confirmation message -- the
-        // overlay visibly moving into place already shows that it happened,
-        // and this also clears out any earlier error text (VRChatウィンドウが
-        // 見つかりませんでした, etc.) that a later successful reset shouldn't
-        // leave stuck on screen.
+        // 「成功」メッセージではなくクリアする ── オーバーレイが所定位置へ動くこと
+        // 自体が成功の表れで、以前のエラー文(「VRChatウィンドウが見つかりませんでした」
+        // 等)も消す。
         ResetStatusText.Text = "";
 
         _state.EndBatch();
         _undo.CommitChange();
     }
 
-    /// <summary>Focus-based undo grouping for text boxes: everything changed
-    /// between focus-in and focus-out becomes one undo step, same principle as
-    /// the drag-gesture grouping on the overlay's own mouse handlers.</summary>
+    /// <summary>テキストボックスのフォーカスベース undo グルーピング: フォーカス
+    /// 取得〜喪失の間の変更が1 undo ステップになる(オーバーレイのドラッグ
+    /// グルーピングと同じ原理)。</summary>
     private void Field_GotFocus(object sender, RoutedEventArgs e) => _undo.BeginChange();
 
     private void Field_LostFocus(object sender, RoutedEventArgs e) => _undo.CommitChange();
 
-    /// <summary>Mouse-based undo grouping for sliders specifically: a WPF
-    /// Slider keeps keyboard focus after you release the drag (LostFocus only
-    /// fires once you click something else), so focus-based grouping alone left
-    /// the edit "open" -- Ctrl+Z right after letting go of a slider wouldn't
-    /// commit it yet. Tying Begin/Commit to the actual mouse down/up instead
-    /// finalizes the moment the drag gesture itself ends. UndoManager's nested
-    /// Begin/Commit means this can safely coexist with Field_GotFocus/LostFocus
-    /// also firing for the same interaction.</summary>
+    /// <summary>スライダー専用のマウスベース undo グルーピング: WPF Slider は
+    /// ドラッグを離してもキーボードフォーカスを保つため、フォーカスベースだけだと
+    /// 編集が「開いたまま」になる。Begin/Commit を実際のマウス down/up に結び付けて
+    /// ドラッグ終了の瞬間に確定する。入れ子 Begin/Commit のおかげで
+    /// Field_GotFocus/LostFocus と同時に発火しても安全。</summary>
     private void Field_MouseDown(object sender, MouseButtonEventArgs e) => _undo.BeginChange();
 
     private void Field_MouseUp(object sender, MouseButtonEventArgs e) => _undo.CommitChange();
 
-    // ---- Brightness/contrast/saturation/vibrance/temperature/tint/hue
-    //      (both the avatar-image copies and the photo-look copies) report
-    //      their own drag start/end, so intermediate renders during the
-    //      drag don't get committed as the save-quality result until it
-    //      ends -- see OverlayWindow.SetColorDragging and
-    //      RenderCompositePreview's _isCompositeDragging check. Edge blur
-    //      itself uses the separate handlers below instead. ----
+    // ---- 明るさ/コントラスト/彩度/自然な彩度/色温度/色かぶり/色相
+    //      (アバター側と写真ルック側の両コピー)はドラッグ開始/終了を報告し、
+    //      ドラッグ中の途中レンダーを保存品質として確定しない
+    //      (OverlayWindow.SetColorDragging と _isCompositeDragging 参照)。
+    //      境界ぼかしは下の別ハンドラを使う。 ----
 
     private void PngColorSliderMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -1498,10 +1310,8 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- Edge blur: now live-previews during the drag like every other
-    //      slider (see OverlayWindow.SetColorDragging) -- it runs on the GPU
-    //      via GpuAvatarEdgeBlur these days, cheap enough not to need the
-    //      old freeze-until-release treatment. ----
+    // ---- 境界ぼかし: 今は他スライダー同様ドラッグ中もライブプレビューする。
+    //      GpuAvatarEdgeBlur で GPU 実行なので離すまで固める旧処理は不要。 ----
 
     private void EdgeBlurSliderMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -1535,7 +1345,7 @@ public partial class ControlPanelWindow : Window
     {
         _undo.BeginChange();
         _state.BeginBatch();
-        _state.EdgeBlurRadius = 5; // the default, not 0 -- an unblurred edge isn't the neutral baseline here
+        _state.EdgeBlurRadius = 5; // 0 ではなく既定値。ぼかし無しは中立の基準ではない
         _state.Brightness = 0;
         _state.Contrast = 0;
         _state.Saturation = 0;
@@ -1564,11 +1374,9 @@ public partial class ControlPanelWindow : Window
         if (TryParse(OpacityBox.Text, out var percent)) _state.Opacity = percent / 100.0;
     }
 
-    /// <summary>Pulls a dragged slider value onto the nearest target when
-    /// within tolerance -- a soft/magnetic snap, not a hard step: the thumb
-    /// still moves freely everywhere else, it just settles exactly on a
-    /// meaningful value (center, a 90-degree turn, half opacity) when dragged
-    /// close to one.</summary>
+    /// <summary>許容範囲内なら最寄りのターゲットへ値を引き寄せる磁石スナップ
+    /// (ハードステップではない)。他の位置では自由に動き、意味のある値
+    /// (中央、90度、半分)の近くでだけそこにピタッと収まる。</summary>
     private static double SoftSnap(double value, double tolerance, params double[] targets)
     {
         foreach (var target in targets)
@@ -1591,13 +1399,11 @@ public partial class ControlPanelWindow : Window
         _state.Opacity = snapped / 100.0;
     }
 
-    // ---- PNG look (edge blur/brightness/contrast/saturation): shared _state,
-    //      editable from BOTH the Align panel's controls and the Composite
-    //      panel's mirrored controls -- sender-based (not a hardcoded control
-    //      name) so the same handler serves both copies. RefreshFromState
-    //      (triggered by _state.PropertyChanged right after the assignment
-    //      below) re-syncs every box/slider on both sides, so there's no need
-    //      to separately write back to the sender's sibling control here. ----
+    // ---- PNG ルック(境界ぼかし/明るさ/コントラスト/彩度): 共有 _state。位置合わせ
+    //      パネルと合成パネルのミラーコントロールの両方から編集でき、sender ベース
+    //      なので同じハンドラが両コピーを処理する。代入直後の _state.PropertyChanged で
+    //      RefreshFromState が両側のボックス/スライダーを再同期するので、ここで
+    //      兄弟コントロールへ書き戻す必要はない。 ----
 
     private void EdgeBlurBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -1619,11 +1425,9 @@ public partial class ControlPanelWindow : Window
         _state.IsImageVisible = ImageVisibleToggle.IsChecked == true;
     }
 
-    /// <summary>Opens Explorer with UnityCameraGuideService's export file
-    /// pre-selected, same "/select," trick ScreenshotToastWindow's own
-    /// folder button uses -- lets the file be inspected directly (does it
-    /// exist yet, when was it last written) when the 接続状況 badge alone
-    /// isn't enough to tell what's going on.</summary>
+    /// <summary>UnityCameraGuideService のエクスポートファイルを選択した状態で
+    /// エクスプローラーを開く。接続状況バッジだけでは分からないとき、ファイルの
+    /// 有無や最終更新を直接確認できる。</summary>
     private void OpenGuideFileButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -1632,17 +1436,16 @@ public partial class ControlPanelWindow : Window
         }
         catch (Win32Exception)
         {
-            // Explorer failed to launch; nothing more to do.
+            // エクスプローラーの起動に失敗。ほかにできることはない。
         }
     }
 
     private const double UnityIntegrationGuideOffscreenY = -400;
 
-    /// <summary>Slides UnityIntegrationGuidePanel down from above (the
-    /// overlay itself was already Visibility=Visible-toggled, this just
-    /// animates it in) -- same BeginAnimation-on-a-DependencyProperty
-    /// pattern as ShowUndoRedoReaction/ShowGuideFetchedNotification, just
-    /// TranslateTransform.Y instead of Opacity.</summary>
+    /// <summary>UnityIntegrationGuidePanel を上からスライドインさせる
+    /// (Visibility は既に切替済み、ここはアニメーションのみ)。
+    /// ShowUndoRedoReaction 等と同じ DependencyProperty への BeginAnimation で、
+    /// Opacity の代わりに TranslateTransform.Y。</summary>
     private void OpenUnityIntegrationGuideButton_Click(object sender, RoutedEventArgs e)
     {
         UnityIntegrationGuideOverlay.Visibility = Visibility.Visible;
@@ -1683,8 +1486,7 @@ public partial class ControlPanelWindow : Window
         }
         catch (Win32Exception)
         {
-            // VCC isn't installed / the vcc:// protocol isn't registered --
-            // nothing more to do here.
+            // VCC 未インストール / vcc:// プロトコル未登録。ほかにできることはない。
         }
     }
 
@@ -1720,13 +1522,8 @@ public partial class ControlPanelWindow : Window
         _state.GuideVisible = GuideVisibleToggle.IsChecked == true;
     }
 
-    /// <summary>No _suppressEvents management of its own -- every caller is
-    /// already inside a suppression scope of its own (RefreshFromState's, or
-    /// the constructor's DataUpdated handler). It could now safely push/pop
-    /// _suppressEventsDepth itself (the counter nests), but there's no reason
-    /// to: the callers already cover it. (Historically it DID set a bool flag
-    /// and reset it partway through, which fired RefreshFromState's later
-    /// handlers early -- the bug that motivated the depth counter.)</summary>
+    /// <summary>自前の _suppressEvents 管理は無し ── 呼び出し元が既に抑制区間の
+    /// 中にいる(RefreshFromState、またはコンストラクタの DataUpdated ハンドラ)。</summary>
     private void SetGuideFovPitchRollDisplay(double fov, double pitch, double roll)
     {
         GuideFovBox.Text = fov.ToString("F0", CultureInfo.InvariantCulture);
@@ -2076,12 +1873,10 @@ public partial class ControlPanelWindow : Window
         ShiftPhotoIfLinked(ref _photoBlacks, delta, -100, 100);
     }
 
-    // ---- Composite mode: pick a photo (manually, or via a screenshot-watcher
-    //      toast), then composite the aligned PNG onto it. The PNG's own look
-    //      (edge blur/brightness/contrast/saturation) is the SAME shared _state
-    //      used by Align mode; the photo's own brightness/contrast/saturation
-    //      below is independent, composite-mode-only state -- the two can be
-    //      adjusted separately or together, as requested. ----
+    // ---- 合成モード: 写真を選び(手動またはスクショ監視トースト経由)、位置合わせ済み
+    //      PNG をその上に合成する。PNG のルック(境界ぼかし/明るさ/コントラスト/彩度)は
+    //      位置合わせモードと同じ共有 _state。下の写真側の明るさ/コントラスト/彩度は
+    //      独立した合成モード専用の状態で、別々にも一緒にも調整できる。 ----
 
     private ImageAdjustment.PixelBuffer? _photoPixelBuffer;
     private string? _photoPath;
@@ -2092,144 +1887,116 @@ public partial class ControlPanelWindow : Window
     private double _photoColorTintStrength;
     private byte _photoColorTintR = 255, _photoColorTintG = 255, _photoColorTintB = 255;
 
-    /// <summary>Last meaningfully-picked hue/saturation for each of the two
-    /// ティント color wheels (avatar-side and photo-side), cached separately
-    /// from the RGB fields the same way DropShadow's own _dropShadowHue/Sat
-    /// are -- RGB alone can't represent hue when saturation is 0 (gray/
-    /// white), so without this the wheel cursor would snap around while
-    /// dragging 明度 through gray.</summary>
+    /// <summary>アバター側/写真側それぞれのティント色ホイールで最後に選んだ
+    /// 色相/彩度。RGB だけでは彩度0(グレー/白)のとき色相を表せないので、
+    /// _dropShadowHue/Sat と同様に RGB とは別にキャッシュする。</summary>
     private double _avatarColorTintHue, _avatarColorTintSat;
     private double _photoColorTintHue, _photoColorTintSat;
 
-    /// <summary>Whole-photo blur (0..100, 0 = off; defaults to 0). Unlike
-    /// 境界ぼかし (which only feathers the avatar cutout's own edge), this
-    /// softens the entire background photo, applied before the avatar is
-    /// composited on top so the avatar itself stays sharp. No avatar-side
-    /// counterpart, so it's excluded from the 一括調整 link the other 7
-    /// photo-look fields share.</summary>
+    /// <summary>写真全体のぼかし(0..100、0 = オフ、既定0)。境界ぼかし(アバター
+    /// 切り抜きの縁だけ)と違い背景写真全体を柔らかくする。アバター合成前に適用する
+    /// のでアバター自体はシャープなまま。アバター側に対応が無いので 一括調整 リンク
+    /// からは除外。</summary>
     private double _photoBlurAmount;
 
     private double _grainAmount, _vignetteAmount;
 
-    /// <summary>0..100, 0 = off. Unlike PhotoBlurAmount (photo only, before
-    /// the avatar is composited on top), these two apply to the WHOLE final
-    /// composite -- avatar and photo together -- as a finishing pass, same
-    /// scope as Grain/Vignette. See ImageAdjustment.ApplySoftness/
-    /// ApplySharpness.</summary>
+    /// <summary>0..100、0 = オフ。PhotoBlurAmount(写真のみ、アバター合成前)と違い、
+    /// この2つは最終合成全体(アバター + 写真)へ仕上げパスとして適用する。範囲は
+    /// グレイン/ビネットと同じ。ImageAdjustment.ApplySoftness/ApplySharpness 参照。</summary>
     private double _softnessAmount, _sharpnessAmount;
 
-    /// <summary>0..100, 0 = off. Same "whole composite, finishing pass"
-    /// scope as Grain/Vignette/Softness/Sharpness. See
-    /// ImageAdjustment.ApplyFade/ApplyGlow.</summary>
+    /// <summary>0..100、0 = オフ。グレイン/ビネット/ソフト/シャープと同じ
+    /// 「合成全体・仕上げパス」範囲。ImageAdjustment.ApplyFade/ApplyGlow 参照。</summary>
     private double _fadeAmount, _glowAmount;
 
-    /// <summary>0..100, 0 = off. Same "whole composite, finishing pass"
-    /// scope as the rest -- VHS-style artifacts. See
-    /// ImageAdjustment.ApplyChromaticAberration/ApplyColorBleed/
-    /// ApplyScanlines.</summary>
+    /// <summary>0..100、0 = オフ。他と同じ「合成全体・仕上げパス」範囲の VHS 風
+    /// アーティファクト。ImageAdjustment.ApplyChromaticAberration/ApplyColorBleed/
+    /// ApplyScanlines 参照。</summary>
     private double _chromaticAberrationAmount, _colorBleedAmount, _scanlineAmount;
 
-    /// <summary>0..100, 0 = off. Same "whole composite, finishing pass"
-    /// scope as the rest. See ImageAdjustment.ApplyClarity/ApplyLightLeak.</summary>
+    /// <summary>0..100、0 = オフ。他と同じ「合成全体・仕上げパス」範囲。
+    /// ImageAdjustment.ApplyClarity/ApplyLightLeak 参照。</summary>
     private double _clarityAmount, _lightLeakAmount;
 
-    /// <summary>0..360 degrees, clockwise, 0 = straight down -- same free-
-    /// angle convention as _dropShadowDirection/_toneGradientRotation
-    /// (see ImageAdjustment.ApplyLightLeak's own doc comment for how this
-    /// subsumes the old discrete corner/edge/diagonal position system).</summary>
+    /// <summary>0..360 度、時計回り、0 = 真下。_dropShadowDirection/
+    /// _toneGradientRotation と同じ自由角度規約(ImageAdjustment.ApplyLightLeak 参照)。</summary>
     private double _lightLeakAngle = 225;
 
-    /// <summary>0..1, how far from center toward LightLeakDial's own edge
-    /// the light's anchor sits -- 1 (the default) reproduces the original
-    /// always-on-the-border behavior, 0 is dead center. See
-    /// ImageAdjustment.ApplyLightLeak's own doc comment.</summary>
+    /// <summary>0..1、光のアンカーが中心から LightLeakDial の縁へどれだけ寄るか。
+    /// 1(既定)は常に縁の従来動作、0 は中央。ImageAdjustment.ApplyLightLeak 参照。</summary>
     private double _lightLeakDistance = 1.0;
 
-    /// <summary>Defaults to the old "暖色" preset's own RGB, now that color
-    /// selection is the same custom wheel+RGB popup as ドロップシャドウ
-    /// instead of a fixed warm/cool dropdown.</summary>
+    /// <summary>色選択がドロップシャドウと同じホイール+RGB ポップアップになったので、
+    /// 旧「暖色」プリセットの RGB を既定にする。</summary>
     private byte _lightLeakColorB = 60, _lightLeakColorG = 160, _lightLeakColorR = 255;
 
-    /// <summary>Cache of the light leak color popup's own last meaningful
-    /// hue/saturation -- same reasoning as _dropShadowHue/_dropShadowSat.</summary>
+    /// <summary>ライトリーク色ポップアップの最後の有効な色相/彩度のキャッシュ。
+    /// _dropShadowHue/_dropShadowSat と同じ理由。</summary>
     private double _lightLeakHue, _lightLeakSat;
 
-    /// <summary>0..100, 0 = off. Same "whole composite, finishing pass"
-    /// scope as the rest. See ImageAdjustment.ApplyToneGradient -- unlike
-    /// LightLeak's fixed tint, this screens a linear gradient built from the
-    /// FULL composite's own weighted bright/dark tones (avatar and
-    /// background photo together).</summary>
+    /// <summary>0..100、0 = オフ。他と同じ「合成全体・仕上げパス」範囲。
+    /// ImageAdjustment.ApplyToneGradient 参照 ── ライトリークの固定ティントと違い、
+    /// 合成全体の重み付き明暗トーン(アバター + 背景写真)から作った線形グラデを
+    /// スクリーン合成する。</summary>
     private double _toneGradientAmount;
 
-    /// <summary>0..360 degrees, clockwise, 0 = straight down -- same
-    /// convention as _dropShadowDirection/_lightLeakAngle. Defaults to 180
-    /// (straight up, bright at the top) rather than the convention's own
-    /// 0 -- see ImageAdjustment.GpuToneGradient's own doc comment for why
-    /// the dot points toward bright, not dark.</summary>
+    /// <summary>0..360 度、時計回り、0 = 真下。_dropShadowDirection/_lightLeakAngle と
+    /// 同じ規約。規約上の 0 ではなく 180(真上、上が明るい)を既定にする ──
+    /// ドットが暗ではなく明を指す理由は ImageAdjustment.GpuToneGradient 参照。</summary>
     private double _toneGradientRotation = 180;
 
-    /// <summary>The gradient's two endpoint colors -- white/black by
-    /// default (matching GpuToneGradient.TryDetectColors' own no-GPU
-    /// fallback), user-editable via 明色/暗色, and refreshed from the
-    /// current photo on demand by the 自動判定 button (ToneGradientAutoDetectButton_Click)
-    /// rather than recomputed on every render like before.</summary>
+    /// <summary>グラデの両端色 ── 既定は白/黒(GpuToneGradient.TryDetectColors の
+    /// GPU 無しフォールバックと一致)。明色/暗色 で編集でき、自動判定 ボタン
+    /// (ToneGradientAutoDetectButton_Click)で現在の写真から都度更新する。</summary>
     private byte _toneGradientLightR = 255, _toneGradientLightG = 255, _toneGradientLightB = 255;
     private byte _toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB;
 
-    /// <summary>Last meaningfully-picked hue/saturation for each of the two
-    /// gradient colors' own wheel popups -- same caching reason as
-    /// _dropShadowHue/_dropShadowSat (see SyncColorPickerUI's own comment):
-    /// RGB alone can't represent hue at saturation 0.</summary>
+    /// <summary>グラデ2色それぞれのホイールポップアップで最後に選んだ色相/彩度。
+    /// _dropShadowHue/_dropShadowSat と同じキャッシュ理由(彩度0で RGB だけでは
+    /// 色相を表せない)。</summary>
     private double _toneGradientLightHue, _toneGradientLightSat;
     private double _toneGradientDarkHue, _toneGradientDarkSat;
 
-    /// <summary>0..100, 0 = off. Duplicates the avatar's own silhouette,
-    /// offset/blurred/tinted -- see ImageAdjustment.ApplyDropShadow. Only
-    /// has any effect with an avatar loaded (needs its shape to duplicate),
-    /// so it's simply skipped in RenderCompositePreview's no-avatar branch.</summary>
+    /// <summary>0..100、0 = オフ。アバターのシルエットをオフセット/ぼかし/着色して
+    /// 複製する(ImageAdjustment.ApplyDropShadow 参照)。アバター読み込み時のみ効果が
+    /// あるので、RenderCompositePreview のアバター無し分岐ではスキップされる。</summary>
     private double _dropShadowAmount;
 
-    /// <summary>0..360 degrees, clockwise, 0 = straight down -- same
-    /// convention as _toneGradientRotation.</summary>
+    /// <summary>0..360 度、時計回り、0 = 真下。_toneGradientRotation と同じ規約。</summary>
     private double _dropShadowDirection;
 
-    /// <summary>Offset distance in full-resolution photo pixels.</summary>
+    /// <summary>フル解像度の写真ピクセル単位のオフセット距離。</summary>
     private double _dropShadowDistance = 100;
 
     private double _dropShadowBlur = 10;
 
-    /// <summary>Defaults to black, the conventional drop shadow color.</summary>
+    /// <summary>既定は黒、ドロップシャドウの定番色。</summary>
     private byte _dropShadowColorB, _dropShadowColorG, _dropShadowColorR;
 
-    /// <summary>How the shadow color combines with the photo underneath --
-    /// see ImageAdjustment.DropShadowBlendMode's own doc comment. Multiply
-    /// by default (the original, only-ever-supported look).</summary>
+    /// <summary>影の色が下の写真とどう混ざるか ── ImageAdjustment.DropShadowBlendMode
+    /// 参照。既定は Multiply(従来からの唯一のルック)。</summary>
     private ImageAdjustment.DropShadowBlendMode _dropShadowBlendMode = ImageAdjustment.DropShadowBlendMode.Multiply;
 
-    /// <summary>The full quality "after" composite from the last real render
-    /// (frozen during an active drag, same treatment as before) -- what Save
-    /// actually writes out, regardless of where CompareSlider is sitting.</summary>
+    /// <summary>直近の実レンダーのフル品質「アフター」合成(ドラッグ中は凍結)。
+    /// CompareSlider の位置に関わらず、保存が実際に書き出すのはこれ。</summary>
     private WriteableBitmap? _lastComposite;
 
-    /// <summary>The "before" counterpart to _lastComposite: same placement/
-    /// rotation, but with none of the look adjustments or finishing effects
-    /// applied to either layer (see RenderCompositePreview) -- null whenever
-    /// there's no photo+avatar to build one from.</summary>
+    /// <summary>_lastComposite の「ビフォー」版: 配置/回転は同じだが、どちらの
+    /// レイヤーにもルック調整も仕上げ効果も適用しない(RenderCompositePreview 参照)。
+    /// 素材が無ければ null。</summary>
     private WriteableBitmap? _lastBeforeComposite;
 
-    /// <summary>CompareSlider's value, 0..100. 0 (its default) shows
-    /// _lastComposite ("after") across the whole preview, same as if this
-    /// feature didn't exist; higher values sweep the before/after split line
-    /// further right, revealing more of _lastBeforeComposite from the left
-    /// edge inward.</summary>
+    /// <summary>CompareSlider の値、0..100。0(既定)はプレビュー全体に
+    /// _lastComposite(アフター)を表示。値を上げるとビフォー/アフターの分割線が
+    /// 右へ進み、左から _lastBeforeComposite が現れる。</summary>
     private double _beforeAfterSplit;
 
     private void CompareSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         _beforeAfterSplit = CompareSlider.Value;
-        // Computed lazily, the first time it's actually needed, rather than
-        // on every RenderCompositePreview call regardless of whether
-        // CompareSlider is even touched -- see ComputeBeforeComposite.
+        // 必要になった初回にだけ計算する(全 RenderCompositePreview 呼び出しでは
+        // なく)。ComputeBeforeComposite 参照。
         if (_beforeAfterSplit > 0 && _lastBeforeComposite is null)
         {
             _lastBeforeComposite = ComputeBeforeComposite();
@@ -2237,11 +2004,10 @@ public partial class ControlPanelWindow : Window
         UpdateComparisonPreview(_lastComposite, _lastBeforeComposite);
     }
 
-    /// <summary>Merges <paramref name="after"/>/<paramref name="before"/>
-    /// per CompareSlider's current position and shows the result -- split
-    /// separately from RenderCompositePreview's own before/after rendering so
-    /// dragging CompareSlider itself only redoes this cheap merge, not the
-    /// whole composite pipeline both of those bitmaps came from.</summary>
+    /// <summary>CompareSlider の現在位置に応じて <paramref name="after"/>/
+    /// <paramref name="before"/> をマージして表示する。RenderCompositePreview の
+    /// ビフォー/アフター生成とは分けてあるので、CompareSlider のドラッグはこの
+    /// 軽いマージだけをやり直す。</summary>
     private void UpdateComparisonPreview(WriteableBitmap? after, WriteableBitmap? before)
     {
         if (after is null) return;
@@ -2251,20 +2017,11 @@ public partial class ControlPanelWindow : Window
         UpdateCompareSplitLine();
     }
 
-    /// <summary>Positions CompareSplitLine at the same x the merge itself
-    /// split on -- PreviewBorder.Width doubles as "the image's own displayed
-    /// width" (see SizePreviewToImage), so the fraction converts directly to
-    /// a Margin.Left with no separate scale factor to track. Deliberately a
-    /// plain Value/100 fraction, NOT adjusted for where the round 16px Thumb
-    /// visually centers (WPF's Track insets it by half its own width at each
-    /// end, so the thumb's actual center never quite reaches the track's
-    /// edges) -- an earlier version compensated for that, but doing so means
-    /// the boundary can never reach the image's true 0%/100% edges either,
-    /// which matters more: at Value=100 the image should show fully
-    /// "before", not still an ~8px sliver of "after" pinned to the edge. The
-    /// thumb sitting a few px short of the line at the extremes (and
-    /// matching it everywhere else) is the normal, expected look for this
-    /// kind of slider -- most image comparison sliders work the same way.</summary>
+    /// <summary>マージの分割位置と同じ x に CompareSplitLine を置く。
+    /// PreviewBorder.Width が「画像の表示幅」を兼ねる(SizePreviewToImage 参照)ので、
+    /// 割合がそのまま Margin.Left になる。Thumb の視覚中心の補正はあえてしない ──
+    /// 補正すると Value=100 でも縁に約8px の「アフター」が残る。端で Thumb が線から
+    /// 数 px ずれるのはこの種のスライダーの通常の見た目。</summary>
     private void UpdateCompareSplitLine()
     {
         if (_beforeAfterSplit <= 0 || double.IsNaN(PreviewBorder.Width))
@@ -2277,18 +2034,12 @@ public partial class ControlPanelWindow : Window
             PreviewBorder.Width * _beforeAfterSplit / 100.0 - CompareSplitLine.Width / 2, 0, 0, 0);
     }
 
-    /// <summary>True while the "一括調整" toggle links the avatar-image look
-    /// and the photo look: moving one shifts the OTHER by the same delta
-    /// instead of forcing them to match -- so if they started at different
-    /// values (e.g. the photo deliberately dialed brighter), that difference
-    /// is preserved while still moving together. A mode toggle like
-    /// IsClickThrough, not itself an undoable edit and doesn't touch either
-    /// side's values on its own -- only actually dragging/typing a linked
-    /// slider does (see ShiftPhotoIfLinked and each avatar-look handler's own
-    /// delta computation below). Defaults to on (matches LookLinkToggle's own
-    /// IsChecked="True" in XAML) -- moving avatar-image and photo look
-    /// together is the more commonly wanted behavior, so it's the default
-    /// rather than something to discover and turn on.</summary>
+    /// <summary>「一括調整」トグルがアバタールックと写真ルックをリンクしている間 true。
+    /// 一方を動かすともう一方を同じ差分だけずらす(一致させるのではない)ので、
+    /// 元々あった差(例: 写真をわざと明るめ)は保たれる。IsClickThrough のような
+    /// モードトグルで、それ自体は undo 対象ではなく値も動かさない ── 実際にリンク
+    /// スライダーをドラッグ/入力したときだけ動く(ShiftPhotoIfLinked 参照)。
+    /// 既定はオン(一緒に動かす方がよく使われるため)。</summary>
     private bool _lookLinked = true;
 
     private void LookLinkToggle_Changed(object sender, RoutedEventArgs e)
@@ -2297,17 +2048,11 @@ public partial class ControlPanelWindow : Window
         UpdateLinkedRowStyles();
     }
 
-    /// <summary>Highlights the label of each shared parameter (in
-    /// BOTH the avatar-image look card and the photo look card) and shows the
-    /// connector bar+icon between the two cards while 一括調整 is on, so it's
-    /// visually obvious which sliders are the ones currently moving together
-    /// -- 境界ぼかし/ぼかし/仕上げ have no counterpart on the other side and
-    /// are left alone (each card's own divider marks that boundary, and the
-    /// connector bar stops there too). Colors the label text itself rather
-    /// than adding new elements around it, so it can't disturb the row
-    /// alignment between the two cards (see the 3-column layout comment on
-    /// CompositePanel) the way a variable-width badge next to the label
-    /// could.</summary>
+    /// <summary>一括調整 がオンの間、共有パラメータのラベル(アバタールックカードと
+    /// 写真ルックカードの両方)をハイライトし、2カード間にコネクターバー+アイコンを
+    /// 表示して、どのスライダーが連動中かを見て分かるようにする。境界ぼかし/ぼかし/
+    /// 仕上げ は対応が無いので対象外。ラベルの周りに要素を足さずテキスト色だけ変える
+    /// ので、2カード間の行ぞろえを乱さない。</summary>
     private void UpdateLinkedRowStyles()
     {
         if (_lookLinked)
@@ -2339,23 +2084,16 @@ public partial class ControlPanelWindow : Window
     private Border? _lookLinkIcon;
     private Adorner? _lookLinkAdorner;
 
-    /// <summary>Builds (once) the bar+icon visuals and attaches them to
-    /// LookLinkConnector's AdornerLayer. An Adorner instead of a Popup: a
-    /// Popup fixed the original problem (see below) but, with
-    /// AllowsTransparency="True" for the rounded corners, turned out to be an
-    /// honest-to-god always-on-top WINDOW -- rendered above every other
-    /// window on the desktop, not just above this one. An Adorner renders
-    /// above the normal visual tree the SAME way a Popup does, but stays
-    /// confined to this window (via the AdornerLayer added by the
-    /// AdornerDecorator wrapping the window's whole content -- see
-    /// ControlPanelWindow.xaml), avoiding that side effect entirely.
-    /// The ORIGINAL problem this (and the Popup before it) fixed: every
-    /// "Card" Border has a DropShadowEffect (see the Card style), and a WPF
-    /// element with a non-null Effect renders its subtree through a separate
-    /// composited layer that does NOT reliably respect Panel.ZIndex or
-    /// declaration order against a plain sibling overlapping it -- that's why
-    /// the icon kept ending up underneath a card's white background no
-    /// matter how the Grid ordering/ZIndex was arranged.</summary>
+    /// <summary>バー+アイコンの見た目を一度だけ作り、LookLinkConnector の
+    /// AdornerLayer に付ける。Popup ではなく Adorner を使う: 角丸のため
+    /// AllowsTransparency="True" にした Popup は実質「常に最前面の窓」になり、
+    /// デスクトップ上の全窓の上に描かれてしまった。Adorner は Popup と同じく
+    /// 通常のビジュアルツリーの上に描くが、この窓内に閉じる(AdornerDecorator の
+    /// AdornerLayer 経由)。
+    /// 元の問題: 各「Card」Border は DropShadowEffect を持ち、Effect 付き要素の
+    /// サブツリーは別の合成レイヤーで描かれ、重なる兄弟に対して Panel.ZIndex や
+    /// 宣言順を確実には尊重しない ── そのためアイコンがカードの白背景の下に
+    /// 潜っていた。</summary>
     private void EnsureLookLinkAdorner()
     {
         if (_lookLinkAdorner is not null) return;
@@ -2392,15 +2130,11 @@ public partial class ControlPanelWindow : Window
         layer.Add(_lookLinkAdorner);
     }
 
-    /// <summary>Measures where AvatarBrightnessRow (the first of the 7 shared
-    /// rows) and AvatarLookDivider (the boundary before 境界ぼかし) actually
-    /// rendered, in LookLinkConnector's own coordinate space (which the
-    /// adorner shares, since it's anchored to that same element), and
-    /// positions LookLinkBar/LookLinkIcon to span exactly that -- both
-    /// cards' rows line up (see the 3-column layout comment on
-    /// CompositePanel), so the avatar card's own positions are a reliable
-    /// stand-in for "where the shared block starts and ends" without needing
-    /// to measure the photo card too.</summary>
+    /// <summary>AvatarBrightnessRow(共有7行の先頭)と AvatarLookDivider
+    /// (境界ぼかし の前の境目)が実際に描かれた位置を LookLinkConnector 座標系で
+    /// 測り、LookLinkBar/LookLinkIcon をちょうどその範囲に配置する。両カードの行は
+    /// そろっているので、写真カードを測らなくてもアバターカードの位置で
+    /// 「共有ブロックの始点と終点」が分かる。</summary>
     private void PositionLookLinkConnector()
     {
         if (_lookLinkBar is null || _lookLinkIcon is null) return;
@@ -2409,24 +2143,21 @@ public partial class ControlPanelWindow : Window
         double bottom = AvatarLookDivider.TranslatePoint(new Point(0, 0), LookLinkConnector).Y;
         double height = Math.Max(0, bottom - top);
 
-        // LookLinkConnector is this 12px gutter column; center the 3px bar
-        // and 22px icon over it instead of at its left edge.
+        // LookLinkConnector は 12px の溝カラム。3px バーと 22px アイコンを
+        // 左端ではなく中央に置く。
         Canvas.SetLeft(_lookLinkBar, (12 - _lookLinkBar.Width) / 2.0);
         Canvas.SetTop(_lookLinkBar, top);
         _lookLinkBar.Height = height;
 
-        // Centered on the bar's own span, not the whole column's height.
+        // カラム全体の高さではなくバーの範囲に対して中央寄せ。
         Canvas.SetLeft(_lookLinkIcon, (12 - _lookLinkIcon.Width) / 2.0);
         Canvas.SetTop(_lookLinkIcon, top + height / 2 - _lookLinkIcon.Height / 2);
     }
 
-    /// <summary>Hosts an arbitrary UIElement (here, the bar+icon Canvas) as an
-    /// Adorner -- a large fixed Measure/Arrange size rather than the
-    /// adorned element's own tiny size, since adorners routinely need to
-    /// render outside the element they're attached to (that's the entire
-    /// point of using one here), and Canvas doesn't use its own assigned
-    /// size to constrain where its Canvas.Left/Top-positioned children end up
-    /// anyway.</summary>
+    /// <summary>任意の UIElement(ここではバー+アイコンの Canvas)を Adorner として
+    /// ホストする。付与先要素の小さいサイズではなく大きな固定 Measure/Arrange
+    /// サイズを使う ── Adorner は付与先の外に描く必要があり、Canvas は
+    /// Canvas.Left/Top 配置の子を自身のサイズで制約しないため。</summary>
     private sealed class ConnectorAdorner : Adorner
     {
         private readonly UIElement _child;
@@ -2454,15 +2185,11 @@ public partial class ControlPanelWindow : Window
         }
     }
 
-    /// <summary>The avatar-look-changed half of the link: shifts the given
-    /// photo-look field by <paramref name="delta"/> (clamped to its valid
-    /// range) instead of copying the avatar's new value outright, so an
-    /// existing difference between the two survives the move. Called from
-    /// each avatar-look slider/box handler with that field's own delta --
-    /// there's no single shared OverlayState.PropertyChanged hook for this
-    /// direction (unlike the old copy-based link) because computing a delta
-    /// needs the value from just before this specific change, which a
-    /// property-changed callback firing after the fact no longer has.</summary>
+    /// <summary>リンクの「アバタールック変更」側: 指定の写真ルックフィールドを
+    /// <paramref name="delta"/> ぶんずらす(有効範囲でクランプ)。アバターの新しい値を
+    /// そのままコピーしないので、両者の既存の差は保たれる。各アバタールックの
+    /// ハンドラからそのフィールドの delta 付きで呼ばれる ── 差分計算にはこの変更
+    /// 直前の値が要り、事後に飛ぶ property-changed コールバックにはそれが無い。</summary>
     private void ShiftPhotoIfLinked(ref double photoField, double delta, double min, double max)
     {
         if (!_lookLinked || delta == 0) return;
@@ -2471,71 +2198,52 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    /// <summary>True while any color-adjustment slider (avatar-image or
-    /// photo look) is being actively dragged -- RenderCompositePreview
-    /// skips updating the save-quality result (_lastComposite) until it
-    /// goes back to false. See PngColorSlider*/PhotoColorSlider*.</summary>
+    /// <summary>色調補正スライダー(アバター/写真ルック)をドラッグ中の間 true ──
+    /// false に戻るまで RenderCompositePreview は保存品質の結果(_lastComposite)を
+    /// 更新しない。PngColorSlider*/PhotoColorSlider* 参照。</summary>
     private bool _isCompositeDragging;
 
-    /// <summary>True once the user explicitly chooses "アバターなしで進める"
-    /// -- makes RenderCompositePreview treat the avatar as absent for this
-    /// composite even if one happens to be loaded (e.g. restored from the
-    /// last session), since the avatar image is shared global state with
-    /// Align mode and unloading it outright would affect that too. Cleared
-    /// automatically the moment an avatar is (re-)loaded, since that's an
-    /// explicit signal the user wants it back in the composite.</summary>
+    /// <summary>ユーザーが「アバターなしで進める」を選ぶと true ── アバターが
+    /// 読み込まれていても(前セッションからの復元など)この合成ではアバター無し扱いに
+    /// する。アバター画像は位置合わせモードと共有のグローバル状態なので、実際に
+    /// アンロードするとそちらにも影響するため。アバター再読み込みで自動クリア。</summary>
     private bool _compositeSkipAvatar;
 
-    // ---- Where the avatar lands on the photo: in photo PIXEL coordinates
-    //      (not a fraction), initialized once per photo from either VRChat's
-    //      live frame or a fit-nicely fallback, then editable via the
-    //      CompositeX/Y/Width/Rotation sliders in the "配置" card (or
-    //      resettable back to that initial guess) -- independent of Align
-    //      mode's own X/Y/Width, which are screen pixels relative to VRChat
-    //      and meaningless once divorced from a live VRChat window. ----
+    // ---- アバターが写真上のどこに載るか: 写真ピクセル座標(割合ではない)。写真ごとに
+    //      1回、VRChat のライブ枠かフィットのフォールバックから初期化し、その後
+    //      「配置」カードのスライダーで編集できる。位置合わせモードの X/Y/Width とは独立
+    //      (あちらは VRChat 相対のスクリーンピクセルで、ライブ窓が無いと無意味)。 ----
 
     private double _compositePlaceX, _compositePlaceY, _compositePlaceWidth, _compositePlaceHeight;
     private double _compositeRotation;
 
     private bool _compositePlacementInitialized;
 
-    /// <summary>null = no crop (saved image stays the photo's own size,
-    /// today's default) -- otherwise a width/height ratio applied to the
-    /// FINISHED composite as the last step. See ImageAdjustment.CropToAspect
-    /// and ApplyCanvasCrop below.</summary>
+    /// <summary>null = 切り抜き無し(保存画像は写真そのままのサイズ、既定)。
+    /// それ以外は完成した合成に最後のステップとして適用する幅/高さ比。
+    /// ImageAdjustment.CropToAspect と下の ApplyCanvasCrop 参照。</summary>
     private double? _canvasAspectRatio;
 
-    /// <summary>0..100, where the crop window sits along whichever axis has
-    /// slack once <see cref="_canvasAspectRatio"/> is applied (50 = centered,
-    /// the default). Only matters when a non-null ratio is selected.</summary>
+    /// <summary>0..100、<see cref="_canvasAspectRatio"/> 適用後に余裕のある軸で
+    /// 切り抜き窓がどこに座るか(50 = 中央、既定)。null でない比のときだけ意味を持つ。</summary>
     private double _canvasCropOffsetX = 50, _canvasCropOffsetY = 50;
 
-    /// <summary>10..100, percentage of the ratio-maximal crop box (100 =
-    /// today's default: the largest box of <see cref="_canvasAspectRatio"/>
-    /// that fits in the photo). Values below 100 shrink the crop box without
-    /// changing the ratio -- a zoom-in-place knob layered on the aspect-ratio
-    /// pick, which also gives the crop position slack on BOTH axes even
-    /// when the ratio alone would otherwise pin one axis to the photo's own
-    /// full extent.</summary>
+    /// <summary>10..100、比で最大の切り抜きボックスに対する割合(100 = 既定: 写真に
+    /// 収まる <see cref="_canvasAspectRatio"/> の最大ボックス)。100 未満は比を変えずに
+    /// 縮小する ── その場ズームのノブ。両軸に切り抜き位置の余裕も生まれる。</summary>
     private double _canvasCropWidthPercent = 100;
 
-    /// <summary>10..100, same idea as _canvasCropWidthPercent's own zoom-in-
-    /// place knob, but only meaningful in 自由 (free) mode -- i.e. when
-    /// _canvasAspectRatio is null. In every fixed-ratio mode the ratio ties
-    /// height to width, so _canvasCropWidthPercent alone drives both; 自由
-    /// has no ratio to tie them together, so height needs its own
-    /// independent knob.</summary>
+    /// <summary>10..100、_canvasCropWidthPercent と同じその場ズームだが、自由モード
+    /// (_canvasAspectRatio が null)でのみ意味を持つ。固定比モードでは比が高さを
+    /// 幅に縛るので _canvasCropWidthPercent だけで両方動くが、自由には縛る比が
+    /// 無いので高さ用に独立ノブが要る。</summary>
     private double _canvasCropHeightPercent = 100;
 
-    /// <summary>True while 切り抜きモード is toggled on, keeping the crop
-    /// boundary + corner handles up on the preview to drag directly. While
-    /// true, RenderCompositePreview skips the final crop step and shows the
-    /// FULL uncropped composite instead, with UpdateCanvasCropBoundary
-    /// dimming the part that would be thrown away -- the standard photo-
-    /// editor crop-tool convention, so it's clear how much of the photo the
-    /// current crop keeps without having to guess from the already-cropped
-    /// result alone. See CropModeToggle_Changed, CanvasCropHandle_*,
-    /// CanvasCropBoundary_*.</summary>
+    /// <summary>切り抜きモード がオンの間 true。プレビュー上に切り抜き境界 + 隅ハンドルを
+    /// 出して直接ドラッグできる。true の間、RenderCompositePreview は最終の切り抜きを
+    /// スキップして未切り抜きの合成全体を表示し、UpdateCanvasCropBoundary が
+    /// 捨てられる部分を暗くする(写真編集ソフトの定番)。CropModeToggle_Changed、
+    /// CanvasCropHandle_*、CanvasCropBoundary_* 参照。</summary>
     private bool _isCropModeActive;
 
     /// <summary>切り抜きモード / アバター配置モード中は、まだ確定していない
@@ -2552,45 +2260,26 @@ public partial class ControlPanelWindow : Window
         _photoHighlights, _photoShadows, _photoWhites, _photoBlacks,
         _photoColorTintStrength, _photoColorTintR, _photoColorTintG, _photoColorTintB);
 
-    /// <summary>The avatar's own current look-adjustment values, mirroring
-    /// <see cref="PhotoAdjustments"/> -- used by the "look match" buttons
-    /// (see MatchAvatarToPhotoButton_Click/MatchPhotoToAvatarButton_Click)
-    /// to render the avatar's CURRENT look when it's the match target.</summary>
+    /// <summary>アバターの現在のルック調整値(<see cref="PhotoAdjustments"/> のミラー)。
+    /// ルック一致ボタンがアバターを一致先にするとき、現在のルックで描くのに使う。</summary>
     private ImageAdjustment.ColorAdjustments CurrentAvatarAdjustments => new(
         _state.Brightness, _state.Contrast, _state.Saturation,
         _state.Vibrance, _state.Temperature, _state.Tint, _state.Hue,
         _state.Highlights, _state.Shadows, _state.Whites, _state.Blacks);
 
-    /// <summary>Dominant-color count for both Match buttons' clustering
-    /// pass (see ImageAdjustment.ComputeDominantClusters/
-    /// SolveMatchAdjustmentsClustered) -- enough to separate an avatar's
-    /// main color regions (skin/hair/clothing) without over-fragmenting
-    /// into noise.</summary>
+    /// <summary>両 Match ボタンのクラスタリングパスの主要色数。アバターの主な
+    /// 色領域(肌/髪/服)を分けるのに十分で、ノイズまで細分化しない程度。</summary>
     private const int MatchLookClusterCount = 4;
 
-    /// <summary>Nudges the avatar's look-adjustment sliders toward the
-    /// background photo's current look (see ImageAdjustment.
-    /// SolveMatchAdjustmentsClustered) -- the source stats come from the avatar's
-    /// pristine, unadjusted pixels (masked to its opaque cutout only), the
-    /// target stats from the photo as CURRENTLY adjusted, so matching
-    /// against an already-tweaked photo look targets what's actually
-    /// visible right now, not the raw screenshot. Hue is deliberately left
-    /// untouched (the solved value is computed but never applied) -- per
-    /// explicit request, the avatar's own hue shouldn't shift just because
-    /// its clustering happened to pair against an unrelated background
-    /// color. Turns 一括調整 off first (matching is a one-sided nudge, the
-    /// opposite of what "move together" means) and shows the spinning
-    /// loading indicator. The actual number-crunching runs on a background
-    /// thread (Task.Run) rather than just being deferred to the next
-    /// Dispatcher tick like ShowComposite's own slow render is -- a
-    /// synchronous call on the UI thread would still block WPF's own
-    /// rendering/animation pump for its whole duration, which is exactly
-    /// why the spinner used to visibly freeze mid-spin instead of rotating
-    /// the entire time. ComputeLookStats/ComputeDominantClusters/
-    /// SolveMatchAdjustmentsClustered and ApplyColorToPixelBuffer (used
-    /// here instead of ApplyColorOnly/ApplyColor) all operate on plain
-    /// PixelBuffer byte arrays with no WPF/Dispatcher-affinitized objects,
-    /// so they're safe to run off the UI thread.</summary>
+    /// <summary>アバターのルック調整スライダーを背景写真の現在のルックへ寄せる
+    /// (ImageAdjustment.SolveMatchAdjustmentsClustered 参照)。ソース統計はアバターの
+    /// 無調整ピクセル(不透明部分のみマスク)、ターゲット統計は現在調整済みの写真から
+    /// 取るので、生スクショではなく今見えているものに合わせる。色相はあえて触らない
+    /// (要望による)。まず 一括調整 をオフにし、ローディング表示を出す。実計算は
+    /// バックグラウンドスレッド(Task.Run)で走る ── UI スレッドの同期呼び出しは
+    /// WPF の描画/アニメーションポンプを止めるため。使う各関数は WPF/Dispatcher
+    /// 依存オブジェクトを持たない PixelBuffer バイト配列だけを扱うので
+    /// UI スレッド外で安全。</summary>
     private async void MatchAvatarToPhotoButton_Click(object sender, RoutedEventArgs e)
     {
         if (_overlayWindow.OriginalPixelBuffer is not { } avatarRaw) return;
@@ -2613,12 +2302,9 @@ public partial class ControlPanelWindow : Window
         });
 
         _undo.BeginChange();
-        // Each of these 11 assignments fires _state.PropertyChanged, which
-        // synchronously triggers a preview render -- with _isCompositeDragging
-        // set, none of those intermediate renders gets treated as the save-
-        // quality result (see RenderCompositePreview's own doc comment).
-        // FinishMatchRender does the one render that actually commits,
-        // afterward.
+        // 下の各代入が _state.PropertyChanged を発火してプレビューレンダーを
+        // 同期で起こす。_isCompositeDragging 中なので途中レンダーは保存品質扱い
+        // されない。確定レンダーはあとで FinishMatchRender が1回行う。
         _isCompositeDragging = true;
         _state.BeginBatch();
         _state.Brightness = result.Brightness;
@@ -2633,20 +2319,17 @@ public partial class ControlPanelWindow : Window
         _state.Blacks = result.Blacks;
         _state.EndBatch();
         _isCompositeDragging = false;
-        // The quick low-res renders just triggered above (via
-        // _state.PropertyChanged) each re-enable these buttons on their own
-        // (see RenderCompositePreview) -- re-disable here so they stay
-        // disabled through FinishMatchRender's still-pending full-res pass.
+        // 上の低解像度レンダーが各自このボタンを再有効化するので、
+        // FinishMatchRender のフル解像度パスが終わるまで無効に戻す。
         MatchAvatarToPhotoButton.IsEnabled = false;
         MatchPhotoToAvatarButton.IsEnabled = false;
         _undo.CommitChange();
         FinishMatchRender();
     }
 
-    /// <summary>The reverse of <see cref="MatchAvatarToPhotoButton_Click"/>:
-    /// nudges the photo's look-adjustment sliders toward the avatar's
-    /// current (already-adjusted) look. Same Hue-left-untouched/一括調整-off/
-    /// background-thread treatment as that method.</summary>
+    /// <summary><see cref="MatchAvatarToPhotoButton_Click"/> の逆: 写真のルック
+    /// 調整スライダーをアバターの現在(調整済み)のルックへ寄せる。色相不変/
+    /// 一括調整オフ/バックグラウンドスレッドの扱いは同じ。</summary>
     private async void MatchPhotoToAvatarButton_Click(object sender, RoutedEventArgs e)
     {
         if (_photoPixelBuffer is not { } photoBuffer) return;
@@ -2686,39 +2369,24 @@ public partial class ControlPanelWindow : Window
         FinishMatchRender();
     }
 
-    /// <summary>True once <see cref="WarmUpGpuPipelineAsync"/> has actually
-    /// run -- see its own doc comment for why this exists at all. Set
-    /// synchronously (before the first `await`) so a re-entrant call from
-    /// the UI thread never sees the check-then-set race a genuinely async
-    /// guard would need.</summary>
+    /// <summary><see cref="WarmUpGpuPipelineAsync"/> が実行済みなら true。
+    /// 最初の await より前に同期でセットし、UI スレッドからの再入呼び出しが
+    /// check-then-set レースを見ないようにする。</summary>
     private bool _gpuPipelineWarmedUp;
 
-    /// <summary>Runs the ENTIRE GPU effect chain once, on a tiny throwaway
-    /// buffer whose output is discarded, so every shader's one-time driver-
-    /// side compile cost (see GpuCompositeChain's own doc comment, and
-    /// GpuProfile's "ComputeSharp compiles each shader lazily on its first-
-    /// ever dispatch" finding) lands here -- always under
-    /// ShowCompositeLoading/HideCompositeLoading, since this only ever runs
-    /// from inside FinishMatchRender's own loading-covered dispatch --
-    /// instead of on whichever slider the user happens to touch first.
+    /// <summary>GPU エフェクトチェーン全体を、出力を捨てる小さなバッファで1回走らせ、
+    /// 各シェーダの初回ドライバコンパイルコストをここ(ローディング表示中)で
+    /// 引き受ける ── ユーザーが最初に触ったスライダーで発生させない。
     ///
-    /// The composite-mode-entry render alone does NOT already cover this,
-    /// even though it also runs under the loading spinner: most finishing
-    /// effects default to amount=0 (off), and every one of them
-    /// early-returns WITHOUT ever dispatching its own shader when
-    /// amount&lt;=0 (see e.g. GpuFilmGrain.ApplyToTexture, GpuFinishingEffects'
-    /// own `any` guard) -- so a render at default settings never actually
-    /// compiles most of this pipeline. This forces every stage on instead
-    /// (non-zero amounts, drop shadow tone AND blur AND a real overlay) so
-    /// nothing is skipped. Runs at most once per app session (see
-    /// _gpuPipelineWarmedUp) -- every call after the first is a no-op.
+    /// 合成モード入場時のレンダーだけでは足りない: 仕上げ効果の多くは既定 amount=0 で、
+    /// amount&lt;=0 だと自前シェーダを dispatch せず early-return するため、既定設定の
+    /// レンダーはパイプラインの大半をコンパイルしない。ここでは全ステージを強制オンに
+    /// する(非ゼロ量、ドロップシャドウのトーン + ぼかし + 実オーバーレイ)。
+    /// _gpuPipelineWarmedUp によりアプリセッションで最大1回、以降は no-op。
     ///
-    /// Also warms GpuAvatarEdgeBlur (境界ぼかし) separately: its JFA-based
-    /// shaders (ImageAdjustment.BlurPng, used by OverlayWindow.
-    /// ApplyImageAdjustments for the avatar's own edge-blur slider, in
-    /// EITHER Align or Composite mode) are a completely different shader
-    /// pair from anything CompositeOverlayOntoPhoto touches, so the call
-    /// above wouldn't have compiled them.</summary>
+    /// GpuAvatarEdgeBlur(境界ぼかし)も別途ウォームする: その JFA ベースの
+    /// シェーダは CompositeOverlayOntoPhoto が触るものとは別なので、上の呼び出しでは
+    /// コンパイルされない。</summary>
     private Task WarmUpGpuPipelineAsync()
     {
         if (_gpuPipelineWarmedUp) return Task.CompletedTask;
@@ -2767,20 +2435,11 @@ public partial class ControlPanelWindow : Window
         });
     }
 
-    /// <summary>Finishes a Match button click: does the one full-resolution
-    /// preview render both handlers above still need (see their own
-    /// _isCompositeDragging-wrapped quick renders), deferred to the next
-    /// Background-priority dispatch so the loading spinner gets a chance to
-    /// actually animate before that render starts, and only hides the
-    /// loading indicator once it's genuinely done -- a full-resolution
-    /// recomposite of a multi-megapixel photo is unavoidably slow enough to
-    /// block the UI thread for a moment (see RenderCompositePreview/
-    /// CompositeRenderThrottle's own comment on this), so this keeps the
-    /// spinner up through that moment instead of hiding it early and
-    /// leaving the preview looking frozen with no loading indicator to
-    /// explain why. Also where WarmUpGpuPipelineAsync runs (see its own
-    /// doc comment) -- this is the first render of every composite-mode
-    /// session, so the loading spinner is already up regardless.</summary>
+    /// <summary>Match ボタン処理の締め: 上の両ハンドラが必要とするフル解像度の
+    /// プレビューレンダーを1回行う。Background 優先度に遅延してローディング表示を
+    /// アニメーションさせ、本当に終わってから隠す ── 数メガピクセル写真のフル解像度
+    /// 再合成は一瞬 UI スレッドを止めるので、その間スピナーを維持する。
+    /// WarmUpGpuPipelineAsync もここで走る(合成モードの初回レンダー)。</summary>
     private void FinishMatchRender()
     {
         _pendingCompositeRenderTimer?.Stop();
@@ -2926,9 +2585,8 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    /// <summary>The currently-loaded composite photo's path, or null -- read
-    /// by App.xaml.cs at exit to persist it, the same way OverlayState's own
-    /// ImagePath already is.</summary>
+    /// <summary>現在読み込んでいる合成写真のパス。null もあり得る。終了時に
+    /// App.xaml.cs が読んで永続化する(OverlayState.ImagePath と同様)。</summary>
     public string? PhotoPath => _photoPath;
 
     private bool TryLoadPhotoPixels(string path)
@@ -2942,9 +2600,8 @@ public partial class ControlPanelWindow : Window
             bitmap.EndInit();
             bitmap.Freeze();
             _photoPixelBuffer = ImageAdjustment.PrepareBuffer(bitmap);
-            // Film grain's noise field only depends on width/height (fixed
-            // seed), so build it now instead of paying for it on the first
-            // render -- see PrecomputeFilmGrainNoise.
+            // フィルムグレインのノイズは幅/高さのみに依存(固定シード)なので、
+            // 初回レンダーでなく今作る。PrecomputeFilmGrainNoise 参照。
             ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
         }
         catch (Exception ex) when (ex is IOException or NotSupportedException or UriFormatException)
@@ -2952,7 +2609,7 @@ public partial class ControlPanelWindow : Window
             return false;
         }
 
-        _compositePlacementInitialized = false; // a new photo needs its own fresh placement guess
+        _compositePlacementInitialized = false; // 新しい写真は配置推定をやり直す
         _photoPath = path;
         PhotoPathText.Text = Path.GetFileName(path);
         // 実写真に切り替えたら「背景なしで作成」の色/グラデーションUIは
@@ -3003,11 +2660,10 @@ public partial class ControlPanelWindow : Window
         _undo.CommitChange();
     }
 
-    /// <summary>Loads a photo (from the manual picker or a screenshot-watcher
-    /// toast click) and brings the control panel to the front -- a toast is
-    /// deliberately non-activating (see <see cref="ScreenshotToastWindow"/>),
-    /// so clicking "合成する" on one wouldn't otherwise bring this window
-    /// forward on its own.</summary>
+    /// <summary>写真を読み込み(手動ピッカーまたはスクショ監視トーストのクリック)、
+    /// コントロールパネルを前面へ出す ── トーストはあえて非アクティブ化
+    /// (<see cref="ScreenshotToastWindow"/> 参照)なので、そのままでは
+    /// この窓が前に出ない。</summary>
     public void LoadPhotoForComposite(string path)
     {
         Show();
@@ -3029,10 +2685,8 @@ public partial class ControlPanelWindow : Window
         ShowComposite();
     }
 
-    /// <summary>Restores the last-used composite photo at startup -- silently,
-    /// without switching to Composite mode or stealing focus, the same
-    /// "ready if you go there" treatment as the PNG's own restored
-    /// ImagePath.</summary>
+    /// <summary>起動時に前回の合成写真を復元する ── 合成モードに切り替えず、
+    /// フォーカスも奪わず静かに。PNG の ImagePath 復元と同じ扱い。</summary>
     public void RestorePhotoSilently(string path) => TryLoadPhotoPixels(path);
 
     private void PickPhotoButton_Click(object sender, RoutedEventArgs e)
@@ -3466,20 +3120,13 @@ public partial class ControlPanelWindow : Window
         ShowComposite();
     }
 
-    /// <summary>Where on the photo (as fractions of the photo's own pixel
-    /// dimensions) the aligned overlay should land: the live preview places
-    /// the overlay at _state.X/Y/Width/Height relative to the estimated
-    /// camera-frame rect within VRChat's CURRENT client area, and the photo IS
-    /// exactly that frame's content at its own output resolution -- so the
-    /// same fractional position/size within the frame maps directly onto the
-    /// photo. Takes the photo's own aspect ratio and uses it for the frame's
-    /// WIDTH instead of the hardcoded 16:9/9:16 assumption -- otherwise, if
-    /// VRChat's camera resolution isn't exactly 16:9/9:16, fracW and fracH
-    /// would be scaled by DIFFERENT amounts once applied to the photo's
-    /// actual pixel dimensions, stretching the overlay (the reported bug:
-    /// the overlay came out taller/narrower than the source PNG even with a
-    /// same-resolution test photo, because the frame estimate itself assumed
-    /// the wrong aspect ratio, not because of anything about the PNG file).</summary>
+    /// <summary>位置合わせ済みオーバーレイが写真上のどこに載るか(写真ピクセル寸法に
+    /// 対する割合)。ライブプレビューは VRChat の現クライアント領域内の推定カメラ枠
+    /// 矩形を基準に _state.X/Y/Width/Height でオーバーレイを置き、写真はまさにその
+    /// 枠の内容(その出力解像度)なので、枠内の同じ割合位置/サイズが写真へ直接写る。
+    /// 16:9/9:16 決め打ちではなく写真自身の縦横比を枠の幅に使う ── そうしないと
+    /// カメラ解像度が 16:9/9:16 でないとき fracW と fracH が異なる倍率でスケールされ、
+    /// オーバーレイが伸びる。</summary>
     private (double FracX, double FracY, double FracW, double FracH)? ComputeOverlayFrameFraction(double photoAspect)
     {
         if (_oscListener.IsLandscape is not { } landscape) return null;
@@ -3497,15 +3144,11 @@ public partial class ControlPanelWindow : Window
         return (fracX, fracY, fracW, fracH);
     }
 
-    /// <summary>One-time-per-photo placement guess: VRChat's live frame if
-    /// it's running and has reported a position/orientation, otherwise the
-    /// avatar's own aspect ratio fit into a comfortable margin of the photo
-    /// (rather than a flat height guess, so it looks reasonable regardless of
-    /// the photo's or the avatar's own aspect ratio). After this, the user
-    /// drags/wheel-zooms directly on the preview to adjust it -- see
-    /// PreviewImage_MouseLeftButtonDown/MouseMove/MouseWheel below -- so
-    /// re-running this (via "自動配置に戻す") is the only other way it
-    /// changes.</summary>
+    /// <summary>写真ごとに1回の配置推定: VRChat が起動中で位置/向きを報告して
+    /// いればそのライブ枠、なければアバターの縦横比を写真の余白にフィットさせる。
+    /// 以降はユーザーがプレビュー上で直接ドラッグ/ホイールズームして調整するので
+    /// (PreviewImage_MouseLeftButtonDown 等)、「自動配置に戻す」でこれを再実行する
+    /// のがもう一つの変更手段。</summary>
     private void InitializeCompositePlacementIfNeeded(ImageAdjustment.PixelBuffer photoBuffer, BitmapSource overlaySource)
     {
         if (_compositePlacementInitialized) return;
@@ -3522,10 +3165,8 @@ public partial class ControlPanelWindow : Window
         }
         else
         {
-            // Fit the avatar's own aspect ratio into 100% of the photo --
-            // whichever dimension is more constraining (the "longer" side
-            // relative to the photo's own shape) determines the scale, so it
-            // touches the photo's edge on that axis with no wasted margin.
+            // アバターの縦横比を写真の 100% にフィットさせる。制約が強い方の軸で
+            // スケールが決まり、その軸で写真の端に接する。
             var native = _overlayWindow.ImageNativeSize;
             double nativeWidth = native is { Width: > 0 } n ? n.Width : overlaySource.PixelWidth;
             double nativeHeight = native is { Height: > 0 } n2 ? n2.Height : overlaySource.PixelHeight;
@@ -3539,21 +3180,19 @@ public partial class ControlPanelWindow : Window
         RefreshCompositePlacementUI();
     }
 
-    /// <summary>No X/Y/幅/回転(度) UI left to sync here at all (see
-    /// AvatarPlacementModeToggle_Changed's own removal comment) -- this now
-    /// just re-derives the on-preview highlight/handles from
-    /// _compositePlaceX/Y/Width/Height/_compositeRotation, alongside
-    /// RefreshCanvasAspectUI for the same panel's crop controls.</summary>
+    /// <summary>ここで同期する X/Y/幅/回転(度) UI はもう無い ── 今は
+    /// _compositePlaceX/Y/Width/Height/_compositeRotation からプレビュー上の
+    /// ハイライト/ハンドルを再導出し、同じパネルの切り抜きコントロール用に
+    /// RefreshCanvasAspectUI を呼ぶだけ。</summary>
     private void RefreshCompositePlacementUI()
     {
         RefreshCanvasAspectUI();
         UpdateAvatarPlacementHighlight();
     }
 
-    /// <summary>Syncs the aspect-ratio radio group and crop-position
-    /// sliders to _canvasAspectRatio/_canvasCropOffsetX/Y -- called
-    /// alongside RefreshCompositePlacementUI (same 配置 panel, same
-    /// refresh occasions: construction, undo/redo, snapshot restore).</summary>
+    /// <summary>縦横比ラジオ群と切り抜き位置スライダーを
+    /// _canvasAspectRatio/_canvasCropOffsetX/Y に同期する ── RefreshCompositePlacementUI
+    /// と一緒に呼ばれる(同じ配置パネル、同じ更新機会: 構築、undo/redo、スナップショット復元)。</summary>
     private void RefreshCanvasAspectUI()
     {
         _suppressEventsDepth++;
@@ -3564,19 +3203,14 @@ public partial class ControlPanelWindow : Window
             0.8 => 2,
             0.5625 => 3,
             1.7778 => 4,
-            _ => 5, // カスタム -- any ratio that doesn't match one of the five presets
+            _ => 5, // カスタム -- 5プリセットのどれにも一致しない比
         };
         CanvasAspectCombo.SelectedIndex = index;
-        // Only shown/populated for カスタム -- see CanvasAspectCustomRow's own
-        // XAML comment on why these two boxes read _canvasAspectRatio directly
-        // rather than needing their own persisted state. RefreshCanvasAspectUI
-        // is called constantly for reasons that have nothing to do with these
-        // two boxes specifically (e.g. every CanvasCropHandle_MouseMove tick
-        // while dragging a crop corner), so it must NOT blindly stomp
-        // whatever the user actually typed (e.g. "3"/"4") back to a derived
-        // "0.75"/"1" on every one of those calls -- only rewrite when the
-        // boxes' own current text no longer reduces to the same ratio
-        // (undo/redo, a preset pick, or a fresh custom-ratio load).
+        // カスタム のときだけ表示/設定する。RefreshCanvasAspectUI はこの2ボックスと
+        // 無関係な理由でも頻繁に呼ばれる(切り抜き隅ドラッグの各 tick など)ので、
+        // ユーザーが打った値("3"/"4" など)を毎回 "0.75"/"1" に上書きしてはいけない。
+        // 現在のテキストが同じ比に還元されなくなったとき(undo/redo、プリセット選択、
+        // カスタム比の新規読み込み)だけ書き換える。
         CanvasAspectCustomRow.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
         if (index == 5 && _canvasAspectRatio is { } customRatio)
         {
@@ -3599,11 +3233,8 @@ public partial class ControlPanelWindow : Window
         var tag = (string)item.Tag;
         if (tag == "custom")
         {
-            // Keeps whatever ratio is already active (falling back to 1:1
-            // only the first time, when there was no ratio at all) instead
-            // of resetting it -- picking カスタム right after already being
-            // on 4:5, say, should just let the boxes show/refine 0.8:1, not
-            // silently jump to some other starting value.
+            // 現在有効な比を保つ(比が無かった初回だけ 1:1 にフォールバック)。
+            // 4:5 の直後に カスタム を選んだら 0.8:1 を編集させたい。
             _canvasAspectRatio ??= 1.0;
             _suppressEventsDepth++;
             CanvasAspectCustomRow.Visibility = Visibility.Visible;
@@ -3618,11 +3249,8 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    /// <summary>Shared by both CanvasAspectCustomWidthBox and
-    /// CanvasAspectCustomHeightBox (sender-based, like the PNG-look handlers
-    /// elsewhere in this file): _canvasAspectRatio is just their quotient,
-    /// recomputed from whichever two numbers are currently in the boxes
-    /// every time either one changes.</summary>
+    /// <summary>CanvasAspectCustomWidthBox と CanvasAspectCustomHeightBox の共通
+    /// ハンドラ: _canvasAspectRatio はその商で、どちらかが変わるたびに再計算する。</summary>
     private void CanvasAspectCustomRatio_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressEvents) return;
@@ -3636,59 +3264,48 @@ public partial class ControlPanelWindow : Window
     {
         bool turningOn = CropModeToggle.IsChecked == true && !_isCropModeActive;
         _isCropModeActive = CropModeToggle.IsChecked == true;
-        // Captured on the OFF->ON transition only, so a キャンセル click (see
-        // PreviewModeCancelButton_Click) can restore exactly what was there
-        // right before this particular session of dragging started.
+        // OFF→ON の遷移時だけキャプチャ。キャンセル(PreviewModeCancelButton_Click)で
+        // このドラッグ開始直前の状態へ正確に戻せる。
         if (turningOn) _cropModeEntrySnapshot = CaptureCompositeSnapshot();
-        // Mutually exclusive with アバター配置モード -- both want the
-        // preview's own click-drag gestures to themselves; see
-        // AvatarPlacementModeToggle_Changed's matching check.
+        // アバター配置モードと排他 ── どちらもプレビューのクリックドラッグを独占する。
+        // AvatarPlacementModeToggle_Changed の対応チェック参照。
         if (_isCropModeActive && _isAvatarPlacementModeActive)
         {
             AvatarPlacementModeToggle.IsChecked = false;
         }
-        // Also mutually exclusive with デカール配置中 -- unlike the other two
-        // modes this one has no toggle of its own (it's entered by adding a
-        // decal). 既存デカールの再編集なら確定して抜ける、新規未確定なら破棄。
+        // デカール配置中とも排他 ── これは専用トグルを持たない(デカール追加で入る)。
+        // 既存デカールの再編集なら確定して抜ける、新規未確定なら破棄。
         if (_isCropModeActive && _isDecalPlacementModeActive)
         {
             if (_editingExistingDecal) ExitDecalPlacementMode();
             else CancelDecalPlacement();
         }
         ScheduleCompositeRender();
-        // Also update immediately rather than waiting for the (debounced)
-        // render to come back around to its own UpdateCanvasCropBoundary
-        // call -- toggling should show/hide the boundary+handles the
-        // instant it's clicked, not after a render-cycle delay.
+        // デバウンスされたレンダーの UpdateCanvasCropBoundary を待たず即更新する ──
+        // トグルは押した瞬間に境界+ハンドルを出し入れすべき。
         UpdateCanvasCropBoundary();
 
         CropModeLabel.Foreground = _isCropModeActive
             ? (Brush)FindResource("PrimaryBrush")
             : (Brush)FindResource("TextSecondaryBrush");
         CropModeLabel.FontWeight = _isCropModeActive ? FontWeights.SemiBold : FontWeights.Normal;
-        // Avatar placement (X/Y/幅/回転) edits alongside a crop drag would
-        // be confusing -- see CompositePlacementControlsPanel's own XAML
-        // comment -- so the whole group is disabled instead of left
-        // interactive but misleading.
+        // 切り抜きドラッグ中にアバター配置(X/Y/幅/回転)を編集できると紛らわしいので
+        // グループごと無効化する。
         CompositePlacementControlsPanel.IsEnabled = !_isCropModeActive;
         RefreshSliderLockState();
     }
 
-    /// <summary>No more X/Y/幅/回転(度) sliders at all in Composite mode's
-    /// 配置 panel -- this toggle plus direct drag on the preview fully
-    /// replaces them (matching how Align mode's own placement always
-    /// worked, via OverlayWindow's handle/gizmo drag on the live VRChat
-    /// overlay), so there's nothing left to gray out here besides itself.</summary>
+    /// <summary>合成モードの配置パネルに X/Y/幅/回転(度) スライダーはもう無い ──
+    /// このトグル + プレビュー上の直接ドラッグが完全に置き換えた(位置合わせモードが
+    /// ずっとそうだったのと同じ)。</summary>
     private void AvatarPlacementModeToggle_Changed(object sender, RoutedEventArgs e)
     {
         bool turningOn = AvatarPlacementModeToggle.IsChecked == true && !_isAvatarPlacementModeActive;
         _isAvatarPlacementModeActive = AvatarPlacementModeToggle.IsChecked == true;
-        // Captured on the OFF->ON transition only, so a キャンセル click (see
-        // PreviewModeCancelButton_Click) can restore exactly what was there
-        // right before this particular session of dragging started.
+        // OFF→ON の遷移時だけキャプチャ。キャンセル(PreviewModeCancelButton_Click)で
+        // このドラッグ開始直前の状態へ正確に戻せる。
         if (turningOn) _avatarPlacementModeEntrySnapshot = CaptureCompositeSnapshot();
-        // Mutually exclusive with 切り抜きモード; see CropModeToggle_Changed's
-        // matching check.
+        // 切り抜きモードと排他。CropModeToggle_Changed の対応チェック参照。
         if (_isAvatarPlacementModeActive && _isCropModeActive)
         {
             CropModeToggle.IsChecked = false;
@@ -3703,27 +3320,18 @@ public partial class ControlPanelWindow : Window
             ? (Brush)FindResource("PrimaryBrush")
             : (Brush)FindResource("TextSecondaryBrush");
         AvatarPlacementModeLabel.FontWeight = _isAvatarPlacementModeActive ? FontWeights.SemiBold : FontWeights.Normal;
-        // Switches the preview between the cropped/full-photo view (see
-        // RenderCompositePreview's own cropAdjusting local); scheduled, not
-        // instant, but UpdateAvatarPlacementHighlight below still repositions
-        // the handles/highlight against GetDisplayedCropRect's new answer
-        // immediately, so they don't lag a render cycle behind the toggle.
+        // プレビューを切り抜き/写真全体の表示で切り替える(スケジュール実行)。
+        // 下の UpdateAvatarPlacementHighlight は GetDisplayedCropRect の新しい値で
+        // ハンドル/ハイライトを即座に再配置するので、トグルから1レンダー遅れない。
         ScheduleCompositeRender();
         UpdateAvatarPlacementHighlight();
         RefreshSliderLockState();
     }
 
-    /// <summary>Common choke point for every "preview interaction mode"
-    /// that wants exclusive ownership of the preview's own drag gestures
-    /// (currently 切り抜きモード and アバター配置モード) -- graying out
-    /// every look/finishing-effect slider on the right and showing
-    /// SliderLockNotice while ANY of them is active, so editing a slider
-    /// mid-drag can't be confused with what the drag itself is doing (see
-    /// SliderLockNotice's own XAML comment). Called from each mode's own
-    /// _Changed handler after it updates its own _is*ModeActive flag; a
-    /// future mode just needs to OR its own flag into `locked` below and
-    /// call this same method, not duplicate the IsEnabled/Visibility wiring
-    /// itself.</summary>
+    /// <summary>プレビューのドラッグを独占する「プレビュー操作モード」共通の集約点
+    /// (現在は切り抜きモードとアバター配置モード)。いずれか有効な間は右のルック/
+    /// 仕上げ効果スライダーをグレーアウトし SliderLockNotice を出す。各モードの
+    /// _Changed ハンドラが _is*ModeActive を更新した後に呼ぶ。</summary>
     private void RefreshSliderLockState()
     {
         // クロップ/アバター配置はプレビューのドラッグを独占するのでカード列
@@ -3737,19 +3345,15 @@ public partial class ControlPanelWindow : Window
         PreviewModeConfirmBar.Visibility = anyMode ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>Snapshot taken the moment each mode's toggle flips OFF->ON
-    /// (see CropModeToggle_Changed/AvatarPlacementModeToggle_Changed), so
-    /// PreviewModeCancelButton_Click can restore exactly what was there
-    /// before that particular editing session, not just undo one step.</summary>
+    /// <summary>各モードのトグルが OFF→ON した瞬間のスナップショット。
+    /// PreviewModeCancelButton_Click が、1ステップ undo ではなくその編集開始前の
+    /// 状態へ正確に戻せる。</summary>
     private CompositeSnapshot? _cropModeEntrySnapshot;
     private CompositeSnapshot? _avatarPlacementModeEntrySnapshot;
 
-    /// <summary>確定: keeps whatever's currently set and just leaves the
-    /// active mode, the same as clicking its own toggle off directly. Only
-    /// one of the two modes can be active at a time (see the mutual-
-    /// exclusion checks in each mode's own _Changed handler), so checking
-    /// both here and acting on whichever is active is simpler than routing
-    /// through a caller-specified mode.</summary>
+    /// <summary>確定: 現在の設定を保ったままアクティブなモードを抜ける
+    /// (トグルを直接オフにするのと同じ)。同時に有効なモードは1つだけなので、
+    /// ここで両方を見て有効な方を処理する。</summary>
     private void PreviewModeConfirmButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isCropModeActive) CropModeToggle.IsChecked = false;
@@ -3758,13 +3362,9 @@ public partial class ControlPanelWindow : Window
         else if (_isMaskEditModeActive) ConfirmMaskEdit();
     }
 
-    /// <summary>キャンセル: restores the snapshot captured when the active
-    /// mode was turned on (see _cropModeEntrySnapshot/
-    /// _avatarPlacementModeEntrySnapshot) as one atomic undo step -- reusing
-    /// ApplyCompositeSnapshot (normally the undo manager's own replay
-    /// callback, see its ApplyExtra wiring) rather than duplicating its
-    /// field-by-field restore -- then leaves the mode the same way 確定
-    /// does.</summary>
+    /// <summary>キャンセル: モードをオンにしたときのスナップショットを1つの
+    /// アトミックな undo ステップとして復元し(ApplyCompositeSnapshot を再利用)、
+    /// そのあと 確定 と同じようにモードを抜ける。</summary>
     private void PreviewModeCancelButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isDecalPlacementModeActive)
@@ -3790,16 +3390,12 @@ public partial class ControlPanelWindow : Window
         else if (_isAvatarPlacementModeActive) AvatarPlacementModeToggle.IsChecked = false;
     }
 
-    // ---- 切り抜きモード: drag the crop boundary directly on the preview
-    //      instead of the 切り抜き幅/位置X/Y sliders. Two drag kinds share
-    //      the same CanvasCropBoundaryOutline/handle elements: dragging a
-    //      corner resizes (aspect ratio locked, anchored on the opposite
-    //      corner); dragging the body moves it. Both work in PHOTO-pixel
-    //      space via PreviewBorder.Width/photo.Width, matching
-    //      UpdateCanvasCropBoundary's own scale -- while either drag is
-    //      live, RenderCompositePreview shows the FULL uncropped photo (see
-    //      the cropAdjusting local it reads), so PreviewBorder really does
-    //      map 1:1 to the photo's own full extent for the duration. ----
+    // ---- 切り抜きモード: 切り抜き幅/位置X/Y スライダーではなくプレビュー上で
+    //      切り抜き境界を直接ドラッグする。隅ドラッグ = リサイズ(アス比固定、
+    //      対角隅アンカー)、本体ドラッグ = 移動。どちらも PreviewBorder.Width/
+    //      photo.Width で写真ピクセル空間で動く。ドラッグ中は
+    //      RenderCompositePreview が未切り抜きの写真全体を表示するので、その間
+    //      PreviewBorder は写真の全域に 1:1 対応する。 ----
 
     private enum CropHandleCorner { TopLeft, TopRight, BottomLeft, BottomRight }
 
@@ -3823,16 +3419,11 @@ public partial class ControlPanelWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>In a fixed-ratio mode, only the drag's horizontal component
-    /// drives resizing -- width alone already determines height (see
-    /// GetCanvasCropRect), so a second independent input from the vertical
-    /// component would be redundant, not additive. In 自由 (free) mode
-    /// (_canvasAspectRatio null) there's no ratio tying the two together, so
-    /// dx and dy each drive their own axis independently instead. Either
-    /// way, anchors on whichever corner is diagonally OPPOSITE the one being
-    /// dragged: that corner's own photo-pixel position is held fixed by
-    /// re-deriving _canvasCropOffsetX/Y from it after the resize, the
-    /// standard crop-tool convention.</summary>
+    /// <summary>固定比モードではドラッグの水平成分だけがリサイズを動かす ── 幅だけで
+    /// 高さが決まるので垂直成分は冗長。自由モード(_canvasAspectRatio が null)では
+    /// 縛る比が無いので dx と dy が各軸を独立に動かす。どちらの場合も、ドラッグ中の隅と
+    /// 対角の隅をアンカーにする(リサイズ後にその隅から _canvasCropOffsetX/Y を
+    /// 再導出して固定)。</summary>
     private void CanvasCropHandle_MouseMove(object sender, MouseEventArgs e)
     {
         if (!_isDraggingCropHandle || _photoPixelBuffer is not { } photo) return;
@@ -3933,11 +3524,9 @@ public partial class ControlPanelWindow : Window
         CanvasCropBoundaryOutline.ReleaseMouseCapture();
     }
 
-    /// <summary>Single choke point for cropping a finished composite to
-    /// _canvasAspectRatio -- called at every point RenderCompositePreview/
-    /// ComputeBeforeComposite produce a WriteableBitmap that ends up shown,
-    /// saved, or compared, so the crop stays consistent no matter which
-    /// path built the bitmap.</summary>
+    /// <summary>完成した合成を _canvasAspectRatio に切り抜く唯一の集約点 ──
+    /// RenderCompositePreview/ComputeBeforeComposite が表示/保存/比較用の
+    /// WriteableBitmap を作るたびに呼ばれるので、どの経路で作っても切り抜きが一致する。</summary>
     private WriteableBitmap ApplyCanvasCrop(WriteableBitmap composite) =>
         ImageAdjustment.CropToAspect(composite, _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent, _canvasCropHeightPercent);
 
@@ -3950,11 +3539,9 @@ public partial class ControlPanelWindow : Window
         _undo.CommitChange();
     }
 
-    /// <summary>Collapses/expands 配置's body, leaving just its header
-    /// visible when collapsed -- floating over the preview image (see the
-    /// XAML comment on PlacementPanel), it should be easy to tuck out of the
-    /// way once placement is set. Not undo-tracked: purely a display
-    /// preference, not an edit to anything that gets saved.</summary>
+    /// <summary>配置 の本体を折りたたむ/展開する(折りたたみ時はヘッダーのみ表示)。
+    /// プレビュー画像の上に浮くので、配置が決まったら畳んで避けられるように。
+    /// undo 対象外の表示設定。</summary>
     private bool _placementPanelCollapsed;
 
     private void PlacementCollapseButton_Click(object sender, RoutedEventArgs e)
@@ -3971,15 +3558,11 @@ public partial class ControlPanelWindow : Window
         _ = RenderCompositePreview();
     }
 
-    /// <summary>Keeps CompositeSkipAvatarButton's enabled state/label in sync
-    /// with <see cref="_compositeSkipAvatar"/> -- needed because the flag
-    /// also changes programmatically (LoadImageFile clearing it when an
-    /// avatar is (re-)loaded), not just from the button's own click. Also
-    /// grays out AvatarLookCard (nothing to adjust with no avatar) and
-    /// disables BlankCanvasButton -- アバターなし and 背景なし are mutually
-    /// exclusive (an avatar-less blank canvas has nothing left to composite
-    /// at all), the other half of this exclusion lives in
-    /// RefreshBlankCanvasActiveUI.</summary>
+    /// <summary>CompositeSkipAvatarButton の有効状態/ラベルを
+    /// <see cref="_compositeSkipAvatar"/> に同期する ── フラグはボタンクリック以外に
+    /// プログラム的にも変わる(LoadImageFile がアバター再読み込み時にクリア)ため必要。
+    /// AvatarLookCard もグレーアウトし BlankCanvasButton を無効化する ──
+    /// アバターなし と 背景なし は排他(残る排他判定は RefreshBlankCanvasActiveUI)。</summary>
     private void RefreshSkipAvatarUI()
     {
         CompositeSkipAvatarButton.IsEnabled = !_compositeSkipAvatar && !_isBlankCanvasActive;
@@ -3988,14 +3571,10 @@ public partial class ControlPanelWindow : Window
         BlankCanvasButton.IsEnabled = !_compositeSkipAvatar;
     }
 
-    /// <summary>The other half of the アバターなし/背景なし mutual exclusion
-    /// -- called from CreateBlankCanvasButton_Click and TryLoadPhotoPixels
-    /// whenever <see cref="_isBlankCanvasActive"/> changes. Grays out
-    /// PhotoLookCard while a blank canvas is active (mirroring
-    /// AvatarLookCard's own graying-out while no avatar is loaded) and
-    /// keeps CompositeSkipAvatarButton's combined enabled condition
-    /// (RefreshSkipAvatarUI computes the same expression from the other
-    /// side) correct regardless of which flag changed last.</summary>
+    /// <summary>アバターなし/背景なし 排他のもう半分 ── <see cref="_isBlankCanvasActive"/>
+    /// が変わるたびに CreateBlankCanvasButton_Click と TryLoadPhotoPixels から呼ばれる。
+    /// 背景なしキャンバス有効中は PhotoLookCard をグレーアウトし、
+    /// CompositeSkipAvatarButton の有効条件を正しく保つ。</summary>
     private void RefreshBlankCanvasActiveUI()
     {
         PhotoLookCard.IsEnabled = !_isBlankCanvasActive;
@@ -4021,14 +3600,11 @@ public partial class ControlPanelWindow : Window
         BlankCanvasColorPanel.Visibility = _isBlankCanvasActive ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>Extracts an overlay-rendered bitmap's raw BGRA32 pixels --
-    /// the one piece CompositeOverlayOntoPhoto used to do internally before
-    /// it was changed to take raw pixels instead of a BitmapSource (see its
-    /// own doc comment: that change is what makes it safe to run on a
-    /// background thread). Cheap enough (a single CopyPixels over an
-    /// already-rendered, placement-sized bitmap, not a multi-megapixel
-    /// photo) to keep on the UI thread right after RenderOverlayForComposite,
-    /// rather than adding another background hop just for this.</summary>
+    /// <summary>オーバーレイ描画済みビットマップの生 BGRA32 ピクセルを取り出す ──
+    /// CompositeOverlayOntoPhoto が BitmapSource ではなく生ピクセルを取るように
+    /// なる前に内部でやっていた処理(この変更でバックグラウンドスレッド実行が
+    /// 安全になった)。配置サイズのビットマップ1枚の CopyPixels なので軽く、
+    /// RenderOverlayForComposite 直後に UI スレッドのまま行う。</summary>
     private static (byte[] Pixels, int Stride, int Width, int Height) ExtractBgraPixels(BitmapSource source)
     {
         int width = source.PixelWidth, height = source.PixelHeight;
@@ -4041,16 +3617,10 @@ public partial class ControlPanelWindow : Window
         return (pixels, stride, width, height);
     }
 
-    /// <summary>Nearest-neighbor downscale, used ONLY to shrink the live
-    /// preview render while a slider/position drag is actively in progress
-    /// (see RenderCompositePreview's own renderScale computation) --
-    /// quality doesn't matter here since the full-resolution result gets
-    /// recomputed the instant the drag ends (<see cref="_isCompositeDragging"/>
-    /// already gates _lastComposite/save quality separately from this), and
-    /// PreviewImage's own Stretch="Uniform" upscales the smaller result
-    /// back to fill the preview pane regardless -- exactly the same visual
-    /// scaling that already happens today rendering a full-res photo down
-    /// INTO a small pane, just running the opposite direction.</summary>
+    /// <summary>最近傍ダウンスケール。スライダー/位置ドラッグ中のライブプレビュー
+    /// 縮小専用。ドラッグ終了の瞬間にフル解像度で再計算される
+    /// (<see cref="_isCompositeDragging"/> が保存品質を別途ゲート)ので品質は問わない。
+    /// PreviewImage の Stretch="Uniform" が小さい結果をペインに合わせて拡大する。</summary>
     internal static ImageAdjustment.PixelBuffer DownscalePixelBuffer(ImageAdjustment.PixelBuffer source, int targetWidth, int targetHeight)
     {
         targetWidth = Math.Max(1, targetWidth);
@@ -4078,14 +3648,10 @@ public partial class ControlPanelWindow : Window
         return new ImageAdjustment.PixelBuffer(targetPixels, targetWidth, targetHeight, targetStride);
     }
 
-    /// <summary>Single-slot cache for DownscalePixelBuffer's result, keyed by
-    /// REFERENCE to the source buffer (same "replaced wholesale, never
-    /// mutated in place" convention as GpuTexturePool.RentUploaded and
-    /// CachedOverlayRender) plus the target size -- a slider/color drag
-    /// calls RenderCompositePreview many times per second with the SAME
-    /// _photoPixelBuffer reference and the SAME pane size, so this avoids
-    /// redoing the downscale loop on every single tick, only on the first
-    /// tick of a drag (or after the window/pane is resized mid-drag).</summary>
+    /// <summary>DownscalePixelBuffer の結果の1スロットキャッシュ。キーはソース
+    /// バッファの参照 + ターゲットサイズ。スライダー/色ドラッグは同じ
+    /// _photoPixelBuffer 参照・同じペインサイズで毎秒何度も RenderCompositePreview を
+    /// 呼ぶので、縮小ループはドラッグの初回 tick(またはドラッグ中のリサイズ後)だけで済む。</summary>
     private (ImageAdjustment.PixelBuffer? Source, int TargetWidth, int TargetHeight, ImageAdjustment.PixelBuffer Result)? _cachedDownscaledPhoto;
 
     private ImageAdjustment.PixelBuffer GetDownscaledPhoto(ImageAdjustment.PixelBuffer source, int targetWidth, int targetHeight)
@@ -4101,31 +3667,18 @@ public partial class ControlPanelWindow : Window
         return result;
     }
 
-    /// <summary>Never renders the live preview at less than this fraction of
-    /// native resolution, even for a source photo enormously larger than the
-    /// preview pane -- purely a floor against the drag preview looking
-    /// distractingly blocky, not a correctness requirement (a smaller render
-    /// is strictly faster). <see cref="DragPreviewOversample"/> multiplies
-    /// the pane's own DIP size before fitting the photo into it, as a cheap
-    /// stand-in for not knowing the exact DPI scale factor here -- on a
-    /// typical 100%-200%-DPI display this keeps the drag preview close to
-    /// (or above) the pane's actual device-pixel size instead of visibly
-    /// under-resolving it, while still shrinking a multi-megapixel source
-    /// photo down by a large factor.</summary>
+    /// <summary>ライブプレビューをネイティブ解像度のこの割合未満では描かない下限
+    /// (ドラッグプレビューがブロックノイズっぽく見えないため。正しさの要件ではない)。
+    /// <see cref="DragPreviewOversample"/> はペインの DIP サイズに掛けて、正確な DPI
+    /// スケールが分からないぶんの安全マージンにする。</summary>
     private const double MinDragPreviewScale = 0.2;
     private const double DragPreviewOversample = 2.0;
 
-    /// <summary>Returns 1.0 (full native resolution, same as always) unless
-    /// <paramref name="dragging"/> and the preview pane is laid out and
-    /// smaller than the photo -- see RenderCompositePreview's own doc
-    /// comment on why a full-resolution render on every tick of a drag was
-    /// the remaining source of slider lag once GpuCompositeChain's own
-    /// checkpoint cache stopped helping (color/placement/drop-shadow
-    /// sliders sit at or near the FRONT of that chain, so nothing downstream
-    /// can be reused -- but the pane only ever displays the result at a
-    /// small fraction of the photo's native pixel count in the first place,
-    /// so there's no reason to compute more than that while still
-    /// dragging).</summary>
+    /// <summary>1.0(フル解像度)を返す。ただし <paramref name="dragging"/> かつ
+    /// プレビューペインがレイアウト済みで写真より小さいときを除く ── 色/配置/
+    /// ドロップシャドウのスライダーはチェーンの先頭付近にあり下流を再利用できないので、
+    /// ドラッグ中に毎 tick フル解像度で描くのがスライダーラグの残った原因だった。
+    /// ペインは元々写真のごく一部の画素数でしか表示しない。</summary>
     private double ComputeDragPreviewRenderScale(bool dragging, int photoWidth, int photoHeight)
     {
         if (!dragging) return 1.0;
@@ -4137,61 +3690,37 @@ public partial class ControlPanelWindow : Window
         return Math.Clamp(fitScale, MinDragPreviewScale, 1.0);
     }
 
-    /// <summary>Bumped at the top of every RenderCompositePreview call and
-    /// re-checked after each await -- a slider drag can call
-    /// RenderCompositePreview again before an in-flight background render
-    /// finishes, and without this guard the SLOWER (now stale) render could
-    /// finish after the newer one and stomp its result back onto the
-    /// preview/_lastComposite. Same pattern as RefreshRecentPhotosUI's own
-    /// _recentPhotosScanToken.</summary>
+    /// <summary>RenderCompositePreview の冒頭でインクリメントし、各 await 後に
+    /// 再チェックする ── ドラッグ中に前のバックグラウンドレンダーが終わる前に
+    /// 再度呼ばれ得るので、遅い(古い)レンダーが後から結果を上書きしないようにする。
+    /// RefreshRecentPhotosUI の _recentPhotosScanToken と同じパターン。</summary>
     private int _compositeRenderToken;
 
-    /// <summary>See RenderCompositePreview's own comment right before where
-    /// this is used -- caches RenderOverlayForComposite's (WPF-visual-tree-
-    /// dependent, UI-thread-only) output so a render triggered by a slider
-    /// that has nothing to do with the overlay's own look/placement/
-    /// rotation can skip redoing it.</summary>
+    /// <summary>RenderOverlayForComposite(WPF ビジュアルツリー依存、UI スレッド専用)の
+    /// 出力をキャッシュし、オーバーレイのルック/配置/回転と無関係なスライダーで
+    /// 発生したレンダーがこれをやり直さずに済むようにする。</summary>
     private readonly record struct CachedOverlayRender(
         BitmapSource? Source, double Width, double Height, double Rotation,
         byte[] Pixels, int Stride, int PixelsWidth, int PixelsHeight, double OffsetX, double OffsetY);
 
     private CachedOverlayRender? _cachedOverlayRender;
 
-    /// <summary>Recomputes and displays the composite: photo (with its own
-    /// independent look applied) plus the aligned PNG (with the shared Align-
-    /// mode look, resized/rotated to match) on top, at the current placement
-    /// (see <see cref="InitializeCompositePlacementIfNeeded"/> and the preview
-    /// drag/wheel handlers). Falls back to showing whichever one IS loaded
-    /// alone when only the photo or only the avatar image has been loaded.
-    /// While a color/placement drag is in progress (see
-    /// <see cref="_isCompositeDragging"/>), skips updating the saved-quality
-    /// result (<see cref="_lastComposite"/>) until the drag ends, so a mid-
-    /// drag preview frame never gets treated as the thing "保存" would
-    /// actually save.
+    /// <summary>合成を再計算して表示する: 写真(独立ルック適用)+ 位置合わせ済み PNG
+    /// (共有の位置合わせモードルック、サイズ/回転を合わせる)を現在の配置で上に載せる。
+    /// 片方だけ読み込まれている場合はそちらを単独表示する。色/配置ドラッグ中は
+    /// (<see cref="_isCompositeDragging"/>)、ドラッグ終了まで保存品質の結果
+    /// (<see cref="_lastComposite"/>)を更新しない。
     ///
-    /// The actual pixel crunching (CompositeOverlayOntoPhoto + CropToAspect --
-    /// everything except RenderOverlayForComposite's WPF-visual-tree render,
-    /// which has to stay on the UI thread) runs inside Task.Run: a full-
-    /// resolution recomposite of a multi-megapixel VRChat screenshot used to
-    /// block the UI thread directly on every throttled tick of a slider
-    /// drag. Callers that don't need to wait for the result (ScheduleCompositeRender's
-    /// own two call sites) can call this without awaiting; callers that do
-    /// (FinishMatchRender, so it doesn't hide the loading spinner early)
-    /// await the returned Task.
+    /// 実ピクセル処理(CompositeOverlayOntoPhoto + CropToAspect。UI スレッドに
+    /// 残す必要のある RenderOverlayForComposite の WPF 描画を除く)は Task.Run 内で
+    /// 走る。結果を待たない呼び出し元は await 不要、待つ呼び出し元
+    /// (FinishMatchRender)は返り Task を await する。
     ///
-    /// _compositeRenderGate serializes the Task.Run bodies specifically
-    /// (not the whole method -- RenderOverlayForComposite is unrelated WPF
-    /// rendering, not this): the GPU pipeline's caches (GpuTexturePool's
-    /// Slots dictionary, GpuFilmGrain's static noise buffer) and ComputeSharp's
-    /// own GraphicsDevice command submission were built assuming exactly
-    /// one composite render runs at a time (true back when everything was
-    /// synchronous on the UI thread), and were never made thread-safe for
-    /// two Task.Run bodies actually executing concurrently on different
-    /// pool threads -- something a slow-enough render (or a CPU fallback)
-    /// could trigger even with the throttle above. Re-checking the token
-    /// right after acquiring the gate means a render that went stale while
-    /// waiting its turn skips the now-pointless work instead of computing a
-    /// result just to discard it.</summary>
+    /// _compositeRenderGate は Task.Run 本体だけを直列化する: GPU パイプラインの
+    /// キャッシュや ComputeSharp のコマンド送出は「同時に1レンダーのみ」を前提に
+    /// 作られており、2本の Task.Run が別スレッドで並走するスレッド安全性は無い。
+    /// ゲート取得直後にトークンを再チェックし、待機中に古くなったレンダーは
+    /// 無駄な処理をスキップする。</summary>
     private readonly SemaphoreSlim _compositeRenderGate = new(1, 1);
 
     private async Task RenderCompositePreview()
@@ -4201,8 +3730,7 @@ public partial class ControlPanelWindow : Window
 
         if (_photoPixelBuffer is not { } photoBuffer)
         {
-            // No photo yet -- show the PNG alone rather than leaving the
-            // preview blank, if one's already loaded.
+            // 写真未読み込み ── プレビューを空にせず、PNG があればそれだけ表示する。
             PreviewImage.Source = overlaySource;
             _lastComposite = null;
             _lastBeforeComposite = null;
@@ -4214,21 +3742,16 @@ public partial class ControlPanelWindow : Window
         }
 
         bool dragging = _isCompositeDragging;
-        // Skips the final crop while 切り抜きモード or アバター配置モード is on
-        // (positioning near/past the not-yet-committed crop edge must stay
-        // visible). デカール配置モード is deliberately NOT here: decals are
-        // placed on the already-cropped canvas (see GetDisplayedCropRect),
-        // which every decal coordinate conversion must agree with.
+        // 切り抜きモード / アバター配置モード 中は最終切り抜きをスキップする
+        // (未確定の切り抜き端の近く/外への配置が見える必要がある)。デカール配置
+        // モードはここに含めない: デカールは切り抜き済みキャンバス上に置く。
         bool cropAdjusting = PreviewShowsUncropped;
 
         if (overlaySource is null)
         {
-            // No avatar loaded -- run the photo through the same finishing-
-            // effects pipeline CompositeOverlayOntoPhoto applies when an
-            // avatar IS present, just with the blend step skipped (null
-            // overlay), so grain/vignette/glow/light leak/tone gradient/etc.
-            // all still affect what actually gets saved instead of silently
-            // doing nothing.
+            // アバター未読み込み ── アバターありのときと同じ仕上げ効果パイプラインに
+            // 写真を通し、ブレンドだけスキップ(overlay = null)する。グレイン/ビネット/
+            // グロー/ライトリーク/トーングラデ等が保存結果に効く。
             double photoOnlyScale = ComputeDragPreviewRenderScale(dragging, photoBuffer.Width, photoBuffer.Height);
             var renderPhotoBuffer = photoOnlyScale < 1.0
                 ? GetDownscaledPhoto(photoBuffer, (int)Math.Round(photoBuffer.Width * photoOnlyScale), (int)Math.Round(photoBuffer.Height * photoOnlyScale))
@@ -4246,7 +3769,7 @@ public partial class ControlPanelWindow : Window
             WriteableBitmap after;
             try
             {
-                if (token != _compositeRenderToken) return; // superseded while waiting for the gate
+                if (token != _compositeRenderToken) return; // ゲート待ちの間に新しいレンダーに置き換わった
                 after = await Task.Run(() =>
                 {
                     // アバター不在なので変種インデックスは無視。
@@ -4280,12 +3803,10 @@ public partial class ControlPanelWindow : Window
                 _compositeRenderGate.Release();
             }
 
-            if (token != _compositeRenderToken) return; // a newer render started meanwhile; this result is stale
+            if (token != _compositeRenderToken) return; // 途中で新しいレンダーが始まった。結果は古い
 
-            // ComputeBeforeComposite (not an inline recompute here) --
-            // it's cached, and unlike this branch's own "after" it doesn't
-            // depend on any of the finishing-effect sliders that triggered
-            // this render in the first place.
+            // ここでインライン再計算せず ComputeBeforeComposite を使う ── キャッシュ済みで、
+            // このレンダーを起こした仕上げ効果スライダーに依存しない。
             WriteableBitmap? before = _beforeAfterSplit > 0 ? ComputeBeforeComposite() : null;
             if (!dragging)
             {
@@ -4303,12 +3824,10 @@ public partial class ControlPanelWindow : Window
 
         InitializeCompositePlacementIfNeeded(photoBuffer, overlaySource);
 
-        // Full resolution unless a drag is actively in progress -- see
-        // ComputeDragPreviewRenderScale's own doc comment. _compositePlaceX/
-        // Y/Width/Height above stay in FULL-RES photo-pixel coordinates
-        // regardless (that's the canonical space placement/undo/save all
-        // reason about); only the values used for the actual render below
-        // get scaled down, in lockstep with renderPhotoBuffer.
+        // ドラッグ中でなければフル解像度(ComputeDragPreviewRenderScale 参照)。
+        // _compositePlaceX/Y/Width/Height はフル解像度の写真ピクセル座標のまま
+        // (配置/undo/保存が基準にする正準空間)。下の実レンダーに使う値だけ
+        // renderPhotoBuffer と歩調を合わせて縮小する。
         double previewScale = ComputeDragPreviewRenderScale(dragging, photoBuffer.Width, photoBuffer.Height);
         var scaledPhotoBuffer = previewScale < 1.0
             ? GetDownscaledPhoto(photoBuffer, (int)Math.Round(photoBuffer.Width * previewScale), (int)Math.Round(photoBuffer.Height * previewScale))
@@ -4321,26 +3840,18 @@ public partial class ControlPanelWindow : Window
         double placeWidth = _compositePlaceWidth * previewScale;
         double placeHeight = _compositePlaceHeight * previewScale;
 
-        // Opacity is fixed at 100% for the actual composite, regardless of
-        // the Align-mode slider: that slider's whole purpose is seeing
-        // through the overlay to line it up with the live (opaque) VRChat
-        // background, not something meant to end up baked into the output.
-        // Stays on the UI thread (renders an actual WPF visual tree) --
-        // everything from here on is plain byte[]/PixelBuffer work and can
-        // move to Task.Run below.
+        // 実合成では位置合わせモードのスライダーに関わらず不透明度を 100% に固定する:
+        // あのスライダーはライブの(不透明な)VRChat 背景に合わせるためのもので、
+        // 出力に焼き込むものではない。ここは UI スレッドに残る(実 WPF ビジュアル
+        // ツリーを描く)。以降は byte[]/PixelBuffer 処理だけで下の Task.Run へ移せる。
         //
-        // Cached across renders whose inputs to THIS step didn't change --
-        // most of the ~20 composite-only sliders (grain, vignette, photo
-        // look, canvas crop, every finishing effect) have nothing to do
-        // with the overlay's own placement/rotation/look, but every render
-        // used to redo this WPF visual-tree render + pixel extraction
-        // anyway, which is exactly why dragging any of those felt far
-        // heavier whenever an avatar was loaded (the photo-only branch
-        // above never pays this cost at all). overlaySource's reference
-        // only changes when OverlayWindow.ApplyImageAdjustments actually
-        // reprocesses the avatar's own look (see its own doc comment) --
-        // same reference-equality-as-cache-key idea GpuTexturePool.
-        // RentUploaded already uses for the photo buffer.
+        // このステップへの入力が変わらないレンダー間でキャッシュする ── 合成専用
+        // スライダーの大半(グレイン、ビネット、写真ルック、切り抜き、全仕上げ効果)は
+        // オーバーレイの配置/回転/ルックと無関係なのに、以前は毎レンダーこの
+        // WPF 描画 + ピクセル抽出をやり直していた。overlaySource の参照は
+        // OverlayWindow.ApplyImageAdjustments がアバターのルックを再処理したときだけ
+        // 変わる ── GpuTexturePool.RentUploaded が写真バッファに使うのと同じ
+        // 参照等価をキャッシュキーにする発想。
         double overlayLeft, overlayTop;
         byte[] overlayPixels;
         int overlayStride, overlayWidth, overlayHeight;
@@ -4407,15 +3918,13 @@ public partial class ControlPanelWindow : Window
         }
         var overlayVariantArr = overlayVariants.ToArray();
 
-        // Finishing effects (film grain, vignette) apply exactly once, to the
-        // final composite result only -- not per-layer -- so they read as
-        // "one photo shot on film", not doubled-up texture from both the
-        // avatar and the background separately.
+        // 仕上げ効果(フィルムグレイン、ビネット)は最終合成結果にだけ1回かける ──
+        // レイヤーごとにかけると質感が二重になる。
         await _compositeRenderGate.WaitAsync();
         WriteableBitmap afterComposite;
         try
         {
-            if (token != _compositeRenderToken) return; // superseded while waiting for the gate
+            if (token != _compositeRenderToken) return; // ゲート待ちの間に新しいレンダーに置き換わった
             afterComposite = await Task.Run(() =>
             {
                 WriteableBitmap RunAvatar(ImageAdjustment.ColorAdjustments adj, double toneAmt, double leakAmt, int variantIdx) =>
@@ -4449,16 +3958,12 @@ public partial class ControlPanelWindow : Window
             _compositeRenderGate.Release();
         }
 
-        if (token != _compositeRenderToken) return; // a newer render started meanwhile; this result is stale
+        if (token != _compositeRenderToken) return; // 途中で新しいレンダーが始まった。結果は古い
 
-        // "Before" is deliberately NOT recomputed here on every render --
-        // doubling the compositing work (a second full RenderOverlayForComposite
-        // + CompositeOverlayOntoPhoto pass) on every single render, including
-        // ones that have nothing to do with the comparison slider, was a real,
-        // measurable source of lag opening Composite mode. Only build it when
-        // CompareSlider is actually in use (see ComputeBeforeComposite and its
-        // other call site in CompareSlider_ValueChanged, which lazily builds
-        // it the first time the slider moves off 0).
+        // 「ビフォー」はここで毎レンダー再計算しない ── 比較スライダーと無関係な
+        // レンダーでも合成作業を倍にするのは、合成モードを開くときのラグの実測原因
+        // だった。CompareSlider を実際に使うときだけ作る(ComputeBeforeComposite と
+        // CompareSlider_ValueChanged が 0 から動いた初回に遅延構築する)。
         WriteableBitmap? beforeComposite = _beforeAfterSplit > 0 ? ComputeBeforeComposite() : null;
 
         UpdateComparisonPreview(afterComposite, beforeComposite);
@@ -4474,31 +3979,16 @@ public partial class ControlPanelWindow : Window
         UpdateCanvasCropBoundary();
     }
 
-    /// <summary>Builds the "before" comparison composite (see
-    /// _lastBeforeComposite): the current placement/rotation, but with none
-    /// of the look adjustments or finishing effects applied to either layer.
-    /// Self-contained (re-derives placement/scale from the current fields
-    /// rather than reusing RenderCompositePreview's locals) since it's also
-    /// called independently from CompareSlider_ValueChanged, not just from
-    /// there. Stays synchronous (unlike RenderCompositePreview's own "after"
-    /// computation) -- it's the secondary, less-frequent half of a render
-    /// (only needed while the compare slider is actually in use), so it
-    /// isn't the thing that was blocking the UI thread on every drag tick.
+    /// <summary>「ビフォー」比較合成を作る(_lastBeforeComposite 参照): 現在の
+    /// 配置/回転だが、どちらのレイヤーにもルック調整も仕上げ効果もかけない。
+    /// CompareSlider_ValueChanged からも独立して呼ばれるので自己完結
+    /// (現在フィールドから配置/スケールを再導出)。RenderCompositePreview の
+    /// 「アフター」計算と違い同期のまま ── 比較スライダー使用中しか要らない副次的な
+    /// 半分なので、ドラッグ毎 tick で UI を止めていた原因ではない。
     ///
-    /// ComputeBeforeComposite's result depends only on the photo,
-    /// the avatar's PRISTINE pixels (never its look-adjusted ones -- "before"
-    /// means before any look adjustment), placement/rotation, and canvas
-    /// crop -- never on any color/finishing-effect slider. But RenderCompositePreview
-    /// calls ComputeBeforeComposite fresh on every single render whenever the
-    /// compare slider is active (see its own call site), which used to mean
-    /// a full second RenderOverlayForComposite + CompositeOverlayOntoPhoto
-    /// pass on every grain/vignette/photo-color/etc tick too, even though
-    /// none of those affect this result at all. Self-invalidating: recomputes
-    /// whenever any field in the key actually differs from last time
-    /// (PixelBuffer records compare their byte[] Pixels by REFERENCE, not
-    /// content, matching the rest of this codebase's "replaced wholesale,
-    /// never mutated in place" convention), so there's no separate
-    /// invalidation call needed anywhere else.</summary>
+    /// 結果は写真・アバターの無調整ピクセル・配置/回転・切り抜きにのみ依存し、
+    /// 色/仕上げ効果スライダーには依存しない。キーのいずれかが前回と実際に
+    /// 違うときだけ再計算する自己無効化(PixelBuffer は byte[] を参照で比較)。</summary>
     private readonly record struct CachedBeforeCompositeKey(
         ImageAdjustment.PixelBuffer? Photo, ImageAdjustment.PixelBuffer? Overlay, bool SkipAvatar,
         double PlaceLeft, double PlaceTop, double PlaceWidth, double PlaceHeight, double Rotation,
@@ -4515,45 +4005,32 @@ public partial class ControlPanelWindow : Window
             photoBuffer, _compositeSkipAvatar ? null : _overlayWindow.OriginalPixelBuffer, _compositeSkipAvatar,
             _compositePlaceX, _compositePlaceY, _compositePlaceWidth, _compositePlaceHeight, _compositeRotation,
             _canvasAspectRatio, _canvasCropOffsetX, _canvasCropOffsetY);
-        // Decals aren't part of the key at all -- a List<DecalRenderEntry>
-        // field couldn't participate in this record struct's own structural
-        // equality anyway (List<T> compares by reference, so a fresh
-        // capture would never equal a previous one, permanently defeating
-        // the cache). Simplest correct fix: skip the cache entirely once
-        // any decal actually exists (_decalLayerOrder always has AT LEAST
-        // the avatar sentinel, hence > 1) -- zero effect on the common case
-        // (no decals in use at all), just always-recompute for the users
-        // actively using this newer feature.
+        // デカールはキーに含めない ── List<T> は参照比較なので、新しいキャプチャは
+        // 前回と決して等しくならずキャッシュが無効化される。単純な正しい対処:
+        // デカールが1つでも存在したらキャッシュを丸ごとスキップする
+        // (_decalLayerOrder はアバターセンチネルを常に含むので > 1)。
         bool hasDecals = _decalLayerOrder.Count > 1;
         if (!hasDecals && _cachedBeforeCompositeKey == key && _cachedBeforeCompositeResult is not null)
         {
             return _cachedBeforeCompositeResult;
         }
 
-        // Blocks briefly (synchronous Wait, not WaitAsync -- this method
-        // isn't async) if RenderCompositePreview's own Task.Run is
-        // currently mid-flight on a background thread -- see
-        // _compositeRenderGate's own doc comment on why the GPU pipeline
-        // can't safely run from two threads at once. A short block here is
-        // an acceptable trade: this path is cached and comparatively rare
-        // (only when the compare slider is actually in use), unlike the
-        // per-tick "after" computation the gate primarily protects against.
+        // RenderCompositePreview の Task.Run がバックグラウンドで走行中なら少し
+        // ブロックする(このメソッドは async でないので WaitAsync でなく同期 Wait)。
+        // このパスはキャッシュ済みで比較的稀なので短いブロックは許容範囲。
         _compositeRenderGate.Wait();
         WriteableBitmap result;
         try
         {
             var behindDecals = CaptureBehindAvatarDecals(1.0, dragging: false);
             var frontDecals = CaptureInFrontOfAvatarDecals(1.0, dragging: false);
-            // "Before" never applies photo blur (see the CompositeOverlayOntoPhoto
-            // calls just below, which omit photoBlurAmount entirely -- it's the
-            // untouched photo for comparison), so there's no background blur to
-            // keep behind-decals out of here.
+            // 「ビフォー」は写真ぼかしをかけない(比較用の未加工写真)ので、
+            // 背景ぼかしから背面デカールを除外する処理は不要。
             var decaledPhotoBuffer = ApplyBehindAvatarDecals(photoBuffer, behindDecals, 1.0, photoBlurAmount: 0, photoBlurScale: 1.0);
 
             if (_compositeSkipAvatar || _overlayWindow.RawPngSource is not { } rawOverlaySource)
             {
-                // No avatar loaded (or explicitly skipped) -- "before" is just
-                // the untouched photo.
+                // アバター未読み込み(または明示スキップ)── 「ビフォー」は未加工写真そのもの。
                 var beforeResult = ImageAdjustment.CompositeOverlayOntoPhoto(decaledPhotoBuffer, default);
                 beforeResult = ApplyInFrontOfAvatarDecals(beforeResult, frontDecals, 1.0);
                 result = ApplyCanvasCrop(beforeResult);
@@ -4586,78 +4063,54 @@ public partial class ControlPanelWindow : Window
         return result;
     }
 
-    // ---- Shift+drag (or, persistently, アバター配置モード) directly on the
-    //      preview moves the avatar (_compositePlaceX/Y -- there's no
-    //      longer a slider UI for these at all, see
-    //      AvatarPlacementModeToggle_Changed's own removal comment), with a
-    //      highlighted rect + resize/rotate handles tracing its current
-    //      placement while either is active -- see
-    //      PreviewImage_MouseLeftButtonDown/Window_PreviewKeyDown below. ----
+    // ---- プレビュー上での Shift+ドラッグ(または常時のアバター配置モード)で
+    //      アバターを移動する(_compositePlaceX/Y。スライダーUIは無い)。どちらかが
+    //      有効な間、現在の配置をなぞるハイライト矩形 + リサイズ/回転ハンドルが出る。
+    //      下の PreviewImage_MouseLeftButtonDown/Window_PreviewKeyDown 参照。 ----
 
-    /// <summary>Persistent alternative to holding Shift: while on, the
-    /// avatar's bounding box + corner handles + rotate gizmo stay up and
-    /// dragging anywhere on the preview moves the avatar without needing
-    /// Shift at all. Mutually exclusive with _isCropModeActive -- see
-    /// AvatarPlacementModeToggle_Changed/CropModeToggle_Changed, both of
-    /// which turn the other off.</summary>
+    /// <summary>Shift 長押しの常時版: オンの間、アバターのバウンディングボックス +
+    /// 隅ハンドル + 回転ギズモが出続け、プレビューのどこでもドラッグでアバターを
+    /// 移動できる。_isCropModeActive と排他。</summary>
     private bool _isAvatarPlacementModeActive;
 
     private bool _isDraggingAvatarPlacement;
     private System.Windows.Point _avatarDragStartMouse;
     private double _avatarDragStartPlaceX, _avatarDragStartPlaceY;
 
-    /// <summary>The current canvas-crop rectangle in ORIGINAL (pre-crop)
-    /// photo pixels -- mirrors ImageAdjustment.CropToAspect's own math
-    /// exactly. Needed because PreviewImage.Source is the POST-crop
-    /// composite bitmap (see SizePreviewToImage, which sizes PreviewBorder
-    /// to THAT bitmap's own pixel size) while _compositePlaceX/Y/Width/
-    /// Height are defined in PRE-crop photo-pixel space -- converting
-    /// between screen position and placement coordinates has to account for
-    /// the crop offset, or the highlight/drag would drift from the actual
-    /// avatar the moment a canvas aspect ratio is active. _canvasAspectRatio
-    /// null means 自由 (free): still an active crop, just with
-    /// _canvasCropWidthPercent/_canvasCropHeightPercent shrinking each axis
-    /// independently against the full photo instead of both deriving from
-    /// one ratio-fit box (see GetMaxCropSize).</summary>
+    /// <summary>現在のキャンバス切り抜き矩形を元の(切り抜き前)写真ピクセルで返す ──
+    /// ImageAdjustment.CropToAspect の計算と完全に一致させる。PreviewImage.Source は
+    /// 切り抜き後の合成ビットマップ、_compositePlaceX/Y/Width/Height は切り抜き前
+    /// 空間なので、スクリーン座標↔配置座標の変換は切り抜きオフセットを考慮しないと
+    /// アス比有効時にハイライト/ドラッグがずれる。_canvasAspectRatio が null は
+    /// 自由モード(各軸を独立に縮小する有効な切り抜き)。</summary>
     private (double Left, double Top, double Width, double Height) GetCanvasCropRect(int photoWidth, int photoHeight)
     {
         if (photoWidth <= 0 || photoHeight <= 0) return (0, 0, photoWidth, photoHeight);
 
-        // Same ratio-fit + zoom + offset math ImageAdjustment.CropToAspect
-        // uses to actually cut the pixels, so the handles/guides we draw here
-        // can never drift from the committed crop. (GetMaxCropSize stays
-        // separate: the interactive corner-drag needs the 100%-zoom box, not
-        // the final rect.)
+        // ImageAdjustment.CropToAspect が実際に切る比フィット + ズーム + オフセット
+        // 計算と同じなので、ここで描くハンドル/ガイドが確定した切り抜きからずれない。
+        // (GetMaxCropSize は別: インタラクティブな隅ドラッグは 100% ズームの箱が要る。)
         var (left, top, cropWidth, cropHeight) = ImageAdjustment.ComputeCropRect(
             photoWidth, photoHeight, _canvasAspectRatio,
             _canvasCropOffsetX, _canvasCropOffsetY, _canvasCropWidthPercent, _canvasCropHeightPercent);
         return (left, top, cropWidth, cropHeight);
     }
 
-    /// <summary>What every avatar/decal-placement screen&lt;-&gt;photo coordinate
-    /// conversion should treat "the area PreviewBorder currently displays"
-    /// as: the FULL uncropped photo while 切り抜きモード or アバター配置モード
-    /// is active (so the avatar can be positioned near/past the not-yet-
-    /// committed crop edge without being clipped out of view), and the real
-    /// canvas crop otherwise -- INCLUDING during デカール配置モード, where the
-    /// user wants to place decals on the already-cropped canvas (e.g. a frame
-    /// aligned to the final output edges), not the raw photo. Must always
-    /// agree with RenderCompositePreview's own `cropAdjusting` local. Unlike
-    /// GetCanvasCropRect's other callers (UpdateCanvasCropBoundary, the
-    /// crop-handle drag handlers), which draw/adjust the crop boundary itself
-    /// and so need the TRUE rect regardless of mode.</summary>
+    /// <summary>アバター/デカール配置のスクリーン↔写真座標変換が「PreviewBorder が
+    /// 今表示している領域」として扱うべきもの: 切り抜きモード / アバター配置モード 中は
+    /// 未切り抜きの写真全体(未確定の切り抜き端の近く/外へも配置できるように)、
+    /// それ以外は実際のキャンバス切り抜き ── デカール配置モードも後者
+    /// (切り抜き済みキャンバス上に置きたい)。RenderCompositePreview の
+    /// `cropAdjusting` と常に一致させる。</summary>
     private (double Left, double Top, double Width, double Height) GetDisplayedCropRect(int photoWidth, int photoHeight) =>
         PreviewShowsUncropped
             ? (0, 0, photoWidth, photoHeight)
             : GetCanvasCropRect(photoWidth, photoHeight);
 
-    /// <summary>The largest box of _canvasAspectRatio's ratio that fits
-    /// inside the photo (100% zoom) -- factored out of GetCanvasCropRect so
-    /// the interactive corner-handle drag (CanvasCropHandle_MouseMove) can
-    /// reuse the exact same ratio-fitting math instead of re-deriving it.
-    /// Returns the full photo size in 自由 (free) mode (_canvasAspectRatio
-    /// null) -- the 100% baseline each axis's own independent zoom knob
-    /// then shrinks from.</summary>
+    /// <summary>写真に収まる _canvasAspectRatio 比の最大ボックス(100% ズーム)。
+    /// インタラクティブな隅ドラッグ(CanvasCropHandle_MouseMove)が同じ比フィット
+    /// 計算を再利用できるよう GetCanvasCropRect から切り出したもの。自由モード
+    /// (_canvasAspectRatio が null)では写真全体サイズを返す。</summary>
     private (double MaxWidth, double MaxHeight) GetMaxCropSize(int photoWidth, int photoHeight)
     {
         if (_canvasAspectRatio is not { } ratio || ratio <= 0 || photoWidth <= 0 || photoHeight <= 0)
@@ -4685,18 +4138,11 @@ public partial class ControlPanelWindow : Window
     private const double AvatarRotateGizmoOffset = 24;
     private const double AvatarRotateGizmoSize = 16;
 
-    /// <summary>Shows/hides and positions AvatarPlacementHighlight (and, only
-    /// while アバター配置モード is on -- a quick Shift-drag is for
-    /// repositioning, not fiddly resize/rotate work -- the corner handles +
-    /// rotate gizmo too) -- visible while Shift is held OR
-    /// _isAvatarPlacementModeActive, Composite mode is actually the open
-    /// panel, and an avatar is loaded (nothing to highlight otherwise).
-    /// Called from Window_PreviewKeyDown/Up (so it reacts the instant Shift
-    /// is pressed/released, not just on the next mouse move),
-    /// AvatarPlacementModeToggle_Changed, RefreshCompositePlacementUI (so it
-    /// stays in sync when placement changes while either is active), and
-    /// PreviewImage_MouseMove/AvatarHandle_MouseMove/AvatarRotateGizmo_MouseMove
-    /// during an active drag.</summary>
+    /// <summary>AvatarPlacementHighlight(と、アバター配置モード中のみ隅ハンドル +
+    /// 回転ギズモ)を表示/非表示・配置する。Shift 押下中または
+    /// _isAvatarPlacementModeActive で、合成モードが開いていてアバターが読み込まれて
+    /// いるときに表示。Window_PreviewKeyDown/Up、AvatarPlacementModeToggle_Changed、
+    /// RefreshCompositePlacementUI、各ドラッグの MouseMove から呼ばれる。</summary>
     private void UpdateAvatarPlacementHighlight()
     {
         bool shiftHeld = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
@@ -4730,14 +4176,10 @@ public partial class ControlPanelWindow : Window
             return;
         }
 
-        // AvatarHandlesLayer's own PARENT is a plain Grid, not a Canvas, so
-        // Canvas.SetLeft/Top on the layer itself would be silently ignored
-        // by layout (that attached property only does anything when the
-        // immediate parent is a Canvas) -- Margin is what actually moves it
-        // within a Grid cell, matching AvatarPlacementHighlight's own
-        // Margin-based positioning above. The handles' OWN positions within
-        // this layer (PlaceAvatarHandle below) are correct as Canvas.Left/
-        // Top, since this layer itself IS a Canvas for its children.
+        // AvatarHandlesLayer の親は Canvas でなく Grid なので、レイヤー自体への
+        // Canvas.SetLeft/Top は無視される。Grid セル内では Margin で動かす
+        // (上の AvatarPlacementHighlight と同じ)。レイヤー内のハンドル位置
+        // (PlaceAvatarHandle)はこのレイヤー自体が Canvas なので Canvas.Left/Top で正しい。
         AvatarHandlesLayer.Margin = new Thickness(marginX, marginY, 0, 0);
         AvatarHandlesLayer.Width = width;
         AvatarHandlesLayer.Height = height;
@@ -4766,14 +4208,10 @@ public partial class ControlPanelWindow : Window
         Canvas.SetTop(handle, y);
     }
 
-    // ---- アバター配置モード: 4 corner resize handles (aspect ratio locked,
-    //      rotation-aware) + a rotate gizmo, mirroring OverlayWindow's own
-    //      Align-mode handle system (Handle_MouseMove/RotateGizmo_MouseMove)
-    //      but working in PreviewBorder-scaled, crop-aware coordinates
-    //      instead of 1:1 screen pixels, since Composite mode's preview is a
-    //      scaled-down view of the photo rather than a true full-screen
-    //      overlay. Reuses CropHandleCorner (TopLeft/TopRight/BottomLeft/
-    //      BottomRight) -- same 4 corners, no need for a second enum. ----
+    // ---- アバター配置モード: 四隅リサイズハンドル(アス比固定、回転対応)+ 回転ギズモ。
+    //      OverlayWindow の位置合わせモードのハンドル系(Handle_MouseMove 等)と同じだが、
+    //      合成モードのプレビューは写真の縮小表示なので 1:1 スクリーンピクセルではなく
+    //      PreviewBorder スケール・切り抜き考慮の座標で動く。CropHandleCorner を再利用。 ----
 
     private bool _isDraggingAvatarHandle;
     private CropHandleCorner _avatarDragHandle;
@@ -4796,13 +4234,10 @@ public partial class ControlPanelWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>Locked-aspect corner resize, rotation-aware: the screen-space
-    /// drag delta is un-rotated into the avatar's own local axes first (same
-    /// technique as OverlayWindow's Handle_MouseMove), then projected onto
-    /// the dragged corner's own diagonal for a single continuous scale
-    /// factor -- avoids the width-vs-height flip-flop a naive per-axis
-    /// comparison has near the diagonal, the natural drag direction for a
-    /// corner.</summary>
+    /// <summary>アス比固定の隅リサイズ、回転対応: スクリーン空間のドラッグ差分を
+    /// まずアバターのローカル軸へ逆回転し(OverlayWindow の Handle_MouseMove と同技法)、
+    /// ドラッグした隅の対角線へ射影して連続スケール係数を1つ得る ── 対角線付近での
+    /// 幅/高さ振動を避ける。</summary>
     private void AvatarHandle_MouseMove(object sender, MouseEventArgs e)
     {
         if (!_isDraggingAvatarHandle || _photoPixelBuffer is not { } photo) return;
@@ -4832,11 +4267,10 @@ public partial class ControlPanelWindow : Window
         double projected = localDx * dirX + localDy * dirY;
 
         double dragScale = (cornerDist0 + projected) / cornerDist0;
-        if (dragScale <= 0) return; // dragged past center; ignore rather than invert
+        if (dragScale <= 0) return; // 中心を越えてドラッグ。反転させず無視
 
-        // Lock to the loaded PNG's own native aspect ratio when available --
-        // more robust than the box's current W/H, which could have drifted
-        // from the image's true ratio (rounding, or an earlier manual edit).
+        // 可能なら読み込んだ PNG のネイティブ縦横比に固定する(現 W/H は真の比率から
+        // ずれている可能性がある)。
         double aspect = _overlayWindow.ImageNativeSize is { Width: > 0, Height: > 0 } native
             ? native.Width / native.Height
             : _avatarHandleStartWidth / _avatarHandleStartHeight;
@@ -4908,15 +4342,11 @@ public partial class ControlPanelWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>Shows/hides and positions the crop-boundary dim+outline+
-    /// corner-handle overlay -- visible while <see cref="_isCropModeActive"/>
-    /// (the 切り抜きモード toggle) is on. PreviewImage.Source itself
-    /// switches to the UNCROPPED composite for the same duration
-    /// (RenderCompositePreview skips ApplyCanvasCrop while it's true), so
-    /// PreviewBorder.Width maps to the FULL photo's width here, not
-    /// crop-space -- the opposite of GetCanvasCropRect's other callers
-    /// (UpdateAvatarPlacementHighlight, the Shift-drag handler), which is
-    /// why the scale below reads photo.Width, not crop.Width.</summary>
+    /// <summary>切り抜き境界の暗転 + 枠線 + 隅ハンドルオーバーレイを表示/非表示・
+    /// 配置する。<see cref="_isCropModeActive"/> の間表示。その間 PreviewImage.Source は
+    /// 未切り抜きの合成に切り替わるので、ここでは PreviewBorder.Width が写真全体の幅に
+    /// 対応する ── GetCanvasCropRect の他の呼び出し元とは逆なので、下のスケールは
+    /// crop.Width ではなく photo.Width を読む。</summary>
     private void UpdateCanvasCropBoundary()
     {
         if (!_isCropModeActive || _photoPixelBuffer is not { } photo
@@ -4947,11 +4377,8 @@ public partial class ControlPanelWindow : Window
         CanvasCropBoundaryOutline.Margin = new Thickness(left, top, 0, 0);
         CanvasCropBoundaryOutline.Visibility = Visibility.Visible;
 
-        // Corner handles only make sense (and only need to be draggable) in
-        // the persistent 切り抜きモード, not while just dragging a slider --
-        // but leaving them collapsed there is a visibility-only difference,
-        // so it's simplest to gate all four on the same flag here rather
-        // than threading a second condition through every call site.
+        // 隅ハンドルは常時の切り抜きモードでのみ意味を持つ。表示だけの違いなので、
+        // 4つとも同じフラグでここでまとめてゲートする。
         double handleSize = CanvasCropHandleTopLeft.Width;
         var handleVisibility = _isCropModeActive ? Visibility.Visible : Visibility.Collapsed;
         CanvasCropHandleTopLeft.Margin = new Thickness(left - handleSize / 2, top - handleSize / 2, 0, 0);
@@ -4966,23 +4393,17 @@ public partial class ControlPanelWindow : Window
         UpdateSplitGuides(); // 切り抜き枠の変更に分割線を追従させる
     }
 
-    /// <summary>Window-wide, not scoped to the preview: Shift's own state
-    /// needs to be known instantly on press/release regardless of where the
-    /// cursor happens to be (moving the mouse onto the preview is often
-    /// what happens AFTER pressing Shift, not before). PreviewKeyDown/Up
-    /// (not KeyDown/Up) so this still fires even if a TextBox or other
-    /// child control currently has focus.</summary>
+    /// <summary>プレビュー限定ではなくウィンドウ全体: Shift の状態は、カーソル位置に
+    /// 関わらず押下/解放の瞬間に分かる必要がある。TextBox 等にフォーカスがあっても
+    /// 発火するよう KeyDown/Up ではなく PreviewKeyDown/Up。</summary>
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e) => UpdateAvatarPlacementHighlight();
 
     private void Window_PreviewKeyUp(object sender, KeyEventArgs e) => UpdateAvatarPlacementHighlight();
 
-    // ---- Preview-only viewport zoom/pan: wheel zooms in/out, drag pans --
-    //      purely for inspecting detail. Implemented as a RenderTransform on
-    //      PreviewImage itself, so it never touches _compositePlace*/the
-    //      actual composite bitmap/what gets saved -- it's exactly like
-    //      zooming into a photo viewer, not a way to move or resize the
-    //      avatar (see the CompositeX/Y/Width sliders in the "配置" card for
-    //      that instead). ----
+    // ---- プレビュー限定のビューポートズーム/パン: ホイールで拡大縮小、ドラッグでパン。
+    //      ディテール確認用。PreviewImage 自体の RenderTransform で実装しており、
+    //      _compositePlace* や合成ビットマップ・保存内容には一切触れない。
+    //      写真ビューアのズームと同じで、アバターの移動/リサイズ手段ではない。 ----
 
     private double _previewZoom = 1.0;
     private double _previewPanX, _previewPanY;
@@ -5013,19 +4434,11 @@ public partial class ControlPanelWindow : Window
         }
         else if (zoomingIn)
         {
-            // Keep the pixel under the cursor fixed on screen instead of
-            // always zooming around the image's center: with
-            // RenderTransformOrigin(0.5,0.5), a local point P maps to screen
-            // position O + zoom*(P-O) + Pan (O = the image's own center, in
-            // the same untransformed local frame GetPosition(PreviewBorder)
-            // reports -- see the comment on PreviewImage_MouseLeftButtonDown
-            // for why PreviewBorder, not PreviewImage, is measured against).
-            // Solving "mouse's screen position stays the same before and
-            // after the zoom changes" for the new Pan gives this update.
-            // Zooming OUT deliberately skips this and leaves Pan untouched
-            // instead (shrinking around the image's own center via
-            // RenderTransformOrigin, the pre-cursor-anchoring behavior), per
-            // explicit request to revert only the zoom-out direction.
+            // 常に画像中心でズームするのではなく、カーソル下のピクセルを画面上で
+            // 固定する。RenderTransformOrigin(0.5,0.5) では局所点 P が画面位置
+            // O + zoom*(P-O) + Pan に写る。「ズーム前後でマウスの画面位置が
+            // 変わらない」を新しい Pan について解くとこの更新式になる。
+            // ズームアウト時はあえてこれをスキップし Pan を触らない(要望による)。
             var mouse = e.GetPosition(PreviewBorder);
             double originX = PreviewImage.ActualWidth / 2.0;
             double originY = PreviewImage.ActualHeight / 2.0;
@@ -5034,12 +4447,8 @@ public partial class ControlPanelWindow : Window
         }
         else
         {
-            // Zooming out while still above 1x: shrink Pan by the same
-            // ratio as the zoom itself, so a view that had drifted out of
-            // the visible bounds while zoomed in eases back toward center
-            // continuously as you keep scrolling out, rather than staying
-            // put (possibly still off-screen) until the hard snap-to-center
-            // above finally fires right at 1x.
+            // 1x より上でのズームアウト: Pan をズームと同じ比率で縮める。ズーム中に
+            // 表示範囲外へずれた視点が、スクロールアウトするにつれ連続的に中央へ戻る。
             _previewPanX *= _previewZoom / oldZoom;
             _previewPanY *= _previewZoom / oldZoom;
         }
@@ -5071,16 +4480,11 @@ public partial class ControlPanelWindow : Window
         if (TryStartDecalBodyDrag(e)) return;
 
         _isPanningPreview = true;
-        // Measured relative to PreviewBorder (which has no RenderTransform of
-        // its own), not PreviewImage itself -- GetPosition on the SAME
-        // element that owns the zoom's RenderTransform divides the result by
-        // the current zoom (it reports the point in the element's own pre-
-        // scale local space), while the translate below is applied in
-        // already-scaled/screen space (Scale before Translate in the
-        // TransformGroup). Measuring against PreviewImage made the pan lag
-        // further behind the cursor the more zoomed in it was; measuring
-        // against an untransformed ancestor keeps it 1:1 with the mouse at
-        // any zoom level.
+        // PreviewImage 自体ではなく PreviewBorder(RenderTransform を持たない)を
+        // 基準に測る ── ズームの RenderTransform を持つ要素上の GetPosition は
+        // 結果を現在のズームで割る(スケール前のローカル空間で報告する)一方、
+        // 下の translate はスケール済み/画面空間で適用される。未変換の祖先を
+        // 基準にすると、どのズームレベルでもマウスと 1:1 を保てる。
         _panDragStartMouse = e.GetPosition(PreviewBorder);
         _panDragStartPanX = _previewPanX;
         _panDragStartPanY = _previewPanY;
@@ -5099,15 +4503,10 @@ public partial class ControlPanelWindow : Window
         {
             if (_photoPixelBuffer is not { } photo) return;
             var crop = GetDisplayedCropRect(photo.Width, photo.Height);
-            // *_previewZoom (not /): a raw screen-DIP mouse delta measured
-            // against PreviewBorder is already 1:1 with real on-screen
-            // movement regardless of zoom (see the MouseDown comment on the
-            // pan branch below for why), but at zoom z, that many screen
-            // pixels correspond to fewer PLACEMENT pixels the more zoomed in
-            // the view is -- z belongs in the denominator alongside the
-            // unzoomed display scale so the avatar keeps tracking the
-            // cursor's actual on-screen position at any zoom level, not just
-            // at 1x.
+            // *_previewZoom(/ ではない): PreviewBorder 基準の生の画面 DIP マウス
+            // 差分はズームに関わらず実際の画面移動と 1:1 だが、ズーム z ではその
+            // 画面ピクセル数はより少ない配置ピクセルに対応する ── z を未ズームの
+            // 表示スケールと一緒に分母に入れると、どのズームでもカーソル位置を追える。
             double scale = PreviewBorder.Width / crop.Width * _previewZoom;
             var current = e.GetPosition(PreviewBorder);
             _compositePlaceX = _avatarDragStartPlaceX + (current.X - _avatarDragStartMouse.X) / scale;
@@ -5151,12 +4550,9 @@ public partial class ControlPanelWindow : Window
 
     private void PreviewHost_SizeChanged(object sender, SizeChangedEventArgs e) => SizePreviewToImage();
 
-    /// <summary>Shrinks the preview box itself to match whatever's currently
-    /// loaded in it, aspect-locked, instead of a fixed box that letterboxes a
-    /// differently-shaped image inside it. Falls back to filling the whole
-    /// preview area (for the placeholder status text) when nothing's loaded
-    /// yet, or does nothing yet if the host hasn't been laid out (no size to
-    /// fit within) -- SizeChanged retries once it has.</summary>
+    /// <summary>プレビューボックスを読み込み中の画像にアス比固定で合わせて縮める
+    /// (レターボックスにしない)。未読み込みならプレビュー領域全体を埋める
+    /// フォールバック、ホスト未レイアウトなら何もしない(SizeChanged が再試行する)。</summary>
     private void SizePreviewToImage()
     {
         if (PreviewImage.Source is not BitmapSource bmp || bmp.PixelWidth <= 0 || bmp.PixelHeight <= 0)
@@ -5175,25 +4571,17 @@ public partial class ControlPanelWindow : Window
         double maxHeight = PreviewHost.ActualHeight;
         if (maxWidth <= 0 || maxHeight <= 0) return;
 
-        // *0.96 rather than an exact edge-to-edge fit: a small deliberate
-        // margin around the image at max zoom-out so it doesn't touch
-        // PreviewHost's own bounds exactly.
+        // ぴったりではなく *0.96: 最大ズームアウト時に画像の周りへ少し余白を残し、
+        // PreviewHost の端に接しないようにする。
         double scale = Math.Min(maxWidth / bmp.PixelWidth, maxHeight / bmp.PixelHeight) * 0.96;
         PreviewBorder.HorizontalAlignment = HorizontalAlignment.Center;
         PreviewBorder.VerticalAlignment = VerticalAlignment.Center;
         PreviewBorder.Width = bmp.PixelWidth * scale;
         PreviewBorder.Height = bmp.PixelHeight * scale;
-        // CompareSlider is made WIDER than the image, not equal to it: WPF's
-        // Track always insets the round 16px Thumb by half its own width at
-        // each end, so a Slider exactly as wide as the image would leave the
-        // thumb's center 8px short of the image's actual edges. Padding the
-        // slider's own width by that same 16px (it's centered on the same
-        // point as the image, see the XAML comment on CompareSlider) means
-        // Track's internal inset lands the thumb's center EXACTLY on the
-        // image's true left/right edges at Value 0/100, matching the plain
-        // Value/100 fraction UpdateCompareSplitLine and the actual merge
-        // split both already use, everywhere along the range, not just the
-        // middle.
+        // CompareSlider は画像と同幅ではなく広くする: WPF の Track は 16px の Thumb を
+        // 両端で半幅ぶんインセットするので、同幅だと Thumb 中心が画像端の 8px 手前で
+        // 止まる。スライダー幅をその 16px ぶん広げると、Track の内部インセットで
+        // Value 0/100 のとき Thumb 中心が画像の左右端にちょうど乗る。
         CompareSlider.Width = PreviewBorder.Width + CompareThumbDiameter;
         UpdateCompareSplitLine();
         UpdateSplitGuides();
@@ -5201,10 +4589,9 @@ public partial class ControlPanelWindow : Window
 
     private const double CompareThumbDiameter = 16.0;
 
-    // ---- Throttle composite re-rendering while a photo-look slider is being
-    //      dragged, same reasoning/pattern as OverlayWindow's PNG-adjustment
-    //      throttle: a full photo-sized recomposite (a VRChat screenshot can be
-    //      several megapixels) on every single tick would visibly lag. ----
+    // ---- 写真ルックスライダーのドラッグ中は合成再レンダーをスロットルする
+    //      (OverlayWindow の PNG 調整スロットルと同じ)。数メガピクセルの写真の
+    //      フル再合成を毎 tick やると目に見えてカクつく。 ----
 
     private static readonly TimeSpan CompositeRenderThrottle = TimeSpan.FromMilliseconds(80);
     private DateTime _lastCompositeRender = DateTime.MinValue;
@@ -5628,11 +5015,9 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- Finishing effects: film grain + vignette, applied once to the
-    //      final composite result only (see CompositeOverlayOntoPhoto's
-    //      grainAmount/vignetteAmount params) -- not shared with the avatar
-    //      or photo look, and not undo-tracked, same treatment as the photo
-    //      look above. ----
+    // ---- 仕上げ効果: フィルムグレイン + ビネット。最終合成結果にだけ1回かける
+    //      (CompositeOverlayOntoPhoto の grainAmount/vignetteAmount)。アバター/写真
+    //      ルックとは共有せず、上の写真ルックと同じ扱い。 ----
 
     private void RefreshFinishUI()
     {
@@ -5969,11 +5354,8 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- ライトリーク direction: plain slider, like every other row (the
-    //      direction dial was removed app-wide in favor of sliders). This
-    //      also drops the dial's old distance affordance -- _lightLeakDistance
-    //      just stays fixed at 1.0 now (see its own doc comment), same as
-    //      グラデーション/ドロップシャドウ's own direction always was. ----
+    // ---- ライトリークの方向: 他行と同じ普通のスライダー(方向ダイヤルはアプリ全体で
+    //      廃止)。ダイヤルの距離操作も無くなり、_lightLeakDistance は 1.0 固定。 ----
 
     private void LightLeakDirectionBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -5998,10 +5380,9 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- ライトリーク color: same custom wheel+RGB popup as ドロップシャドウ
-    //      (see GetColorWheelBitmap/RgbToHsv/HsvToRgb/PositionColorWheelCursor
-    //      above, all shared), just its own presets (暖色/寒色/白) and its
-    //      own popup/wheel/slider elements. ----
+    // ---- ライトリークの色: ドロップシャドウと同じホイール+RGB ポップアップ
+    //      (GetColorWheelBitmap 等は共有)。プリセット(暖色/寒色/白)と
+    //      ポップアップ/ホイール/スライダー要素だけ専用。 ----
 
     private void LightLeakColorButton_Click(object sender, RoutedEventArgs e)
     {
@@ -6158,8 +5539,7 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- グラデーション direction: plain slider, like every other row (the
-    //      direction dial was removed app-wide in favor of sliders). ----
+    // ---- グラデーションの方向: 他行と同じ普通のスライダー(方向ダイヤルはアプリ全体で廃止)。 ----
 
     private void ToneGradientDirectionBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -6184,12 +5564,10 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- Drop shadow: duplicates the avatar's own silhouette, offset in a
-    //      direction and blurred/tinted (multiply blend) -- see
-    //      ImageAdjustment.ApplyDropShadow. Direction is a plain slider,
-    //      like every other row (the direction dial was removed app-wide in
-    //      favor of sliders); 幅(distance) stays its own separate
-    //      DropShadowDistanceSlider/Box. ----
+    // ---- ドロップシャドウ: アバターのシルエットを複製し、方向にオフセットして
+    //      ぼかし/着色(乗算ブレンド)する ── ImageAdjustment.ApplyDropShadow 参照。
+    //      方向は他行と同じ普通のスライダー、幅(距離)は別の
+    //      DropShadowDistanceSlider/Box。 ----
 
     private void DropShadowBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -6297,10 +5675,8 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    /// <summary>Opens DropShadowColorPopup (a custom in-app picker styled
-    /// like the rest of AvaSnap -- Card, rounded swatches, the same slider
-    /// row look) instead of the native OS color dialog, seeding the wheel/
-    /// 明度/R-G-B controls from the current color.</summary>
+    /// <summary>OS 標準の色ダイアログではなく AvaSnap 風の自前ピッカー
+    /// DropShadowColorPopup を開き、ホイール/明度/R-G-B を現在の色で初期化する。</summary>
     private void DropShadowColorButton_Click(object sender, RoutedEventArgs e)
     {
         DropShadowColorWheel.Source = GetColorWheelBitmap();
@@ -6310,22 +5686,16 @@ public partial class ControlPanelWindow : Window
         DropShadowColorPopup.IsOpen = true;
     }
 
-    // ---- Color wheel: angle = hue, distance from center = saturation, a
-    //      140x140 bitmap built once (value fixed at 1 -- see
-    //      GetColorWheelBitmap) since 明度 (value/brightness) is handled by
-    //      a separate slider that just rescales the picked hue/saturation's
-    //      RGB, rather than needing the wheel bitmap itself regenerated
-    //      every time it changes. ----
+    // ---- カラーホイール: 角度 = 色相、中心からの距離 = 彩度。140x140 ビットマップを
+    //      一度だけ生成(明度 = 1 固定)。明度は別スライダーが色相/彩度の RGB を
+    //      再スケールするだけなので、ホイール自体の再生成は不要。 ----
 
     private const int ColorWheelSize = 140;
     private WriteableBitmap? _colorWheelBitmap;
     private bool _isDraggingColorWheel;
 
-    /// <summary>Last meaningfully-picked hue/saturation (0..360 / 0..1),
-    /// cached separately from the RGB fields: RGB alone can't represent
-    /// hue when saturation is 0 (gray/black), so without this cache,
-    /// dragging 明度 up from black would lose whatever hue the wheel was
-    /// last set to instead of returning to it.</summary>
+    /// <summary>最後に選んだ色相/彩度(0..360 / 0..1)。彩度0(グレー/黒)では
+    /// RGB だけで色相を表せないので、RGB とは別にキャッシュする。</summary>
     private double _dropShadowHue, _dropShadowSat;
 
     private WriteableBitmap GetColorWheelBitmap()
@@ -6339,7 +5709,7 @@ public partial class ControlPanelWindow : Window
             {
                 double dx = x - center, dy = y - center;
                 double dist = Math.Sqrt(dx * dx + dy * dy) / center;
-                if (dist > 1.0) continue; // leave transparent outside the circle
+                if (dist > 1.0) continue; // 円の外は透明のまま
                 double hue = (Math.Atan2(dy, dx) * 180.0 / Math.PI + 360) % 360;
                 double sat = Math.Min(dist, 1.0);
                 var (r, g, b) = HsvToRgb(hue, sat, 1.0);
@@ -6396,10 +5766,8 @@ public partial class ControlPanelWindow : Window
     private static string ToHexColor(byte r, byte g, byte b) =>
         "#" + r.ToString("X2", CultureInfo.InvariantCulture) + g.ToString("X2", CultureInfo.InvariantCulture) + b.ToString("X2", CultureInfo.InvariantCulture);
 
-    /// <summary>Accepts "#RRGGBB" or "RRGGBB" (leading "#" optional, matching
-    /// what a user might paste from elsewhere); anything else (including a
-    /// still-in-progress partial edit) just fails silently so typing a hex
-    /// code character by character doesn't fight the field.</summary>
+    /// <summary>"#RRGGBB" または "RRGGBB"(先頭 "#" は任意)を受け付ける。それ以外
+    /// (入力途中を含む)は無言で失敗するので、1文字ずつの入力を邪魔しない。</summary>
     private static bool TryParseHexColor(string text, out byte r, out byte g, out byte b)
     {
         r = g = b = 0;
@@ -6503,19 +5871,16 @@ public partial class ControlPanelWindow : Window
         SetDropShadowColor(r, g, b);
     }
 
-    /// <summary>Pure UI sync (wheel cursor, 明度/R/G/B sliders+boxes,
-    /// preview swatch) from an RGB triple -- no field writes, no render.
-    /// Shared by SetDropShadowColor (the real "apply" path) and
-    /// DropShadowColorButton_Click (just seeding the popup on open, where
-    /// re-triggering a render would be pure waste since the color hasn't
-    /// actually changed).</summary>
+    /// <summary>RGB 三値から UI を同期するだけ(ホイールカーソル、明度/R/G/B、
+    /// プレビュースウォッチ)── フィールド書き込みもレンダーもしない。
+    /// SetDropShadowColor(実適用)と DropShadowColorButton_Click(オープン時の
+    /// 初期化)で共有する。</summary>
     private void SyncColorPickerUI(byte r, byte g, byte b)
     {
         var (h, s, v) = RgbToHsv(r, g, b);
         _dropShadowSat = s;
-        // Hue is undefined at s=0 (gray/black) -- keep whatever hue was
-        // last meaningful instead of snapping to 0 (red), so the wheel
-        // cursor doesn't jump around while dragging 明度 down through gray.
+        // 彩度0(グレー/黒)では色相が未定義 ── 0(赤)にスナップせず最後の
+        // 有効な色相を保ち、明度をグレーへ下げてもホイールカーソルが飛ばないようにする。
         if (s > 0.001) _dropShadowHue = h;
 
         DropShadowColorRSlider.Value = r;
@@ -6530,12 +5895,9 @@ public partial class ControlPanelWindow : Window
         DropShadowColorHexBox.Text = ToHexColor(r, g, b);
     }
 
-    /// <summary>Single choke point for every way the shadow color can
-    /// change (preset click, wheel drag, 明度, or any of the 3 R/G/B
-    /// sliders/boxes) -- keeps the popup's controls AND the main button's
-    /// own small swatch all in sync with each other and with the
-    /// underlying _dropShadowColor* fields, regardless of which control
-    /// triggered it.</summary>
+    /// <summary>影の色が変わる全経路(プリセット、ホイール、明度、R/G/B)の
+    /// 唯一の集約点 ── どのコントロール発でも、ポップアップとメインボタンの
+    /// スウォッチと _dropShadowColor* フィールドを互いに同期させる。</summary>
     private void SetDropShadowColor(byte r, byte g, byte b)
     {
         _dropShadowColorR = r;
@@ -6550,10 +5912,8 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- グラデーション 明色/暗色: same custom wheel+RGB popup as
-    //      ドロップシャドウ's own, just manual now instead of always
-    //      auto-computed -- see ToneGradientAutoDetectButton_Click for the
-    //      one-shot re-detect path. ----
+    // ---- グラデーション 明色/暗色: ドロップシャドウと同じホイール+RGB ポップアップ。
+    //      今は常時自動計算ではなく手動(自動再判定は ToneGradientAutoDetectButton_Click)。 ----
 
     private void ToneGradientLightColorButton_Click(object sender, RoutedEventArgs e)
     {
@@ -6807,11 +6167,9 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    /// <summary>Re-runs the same weighted whole-image extraction that used
-    /// to happen automatically on every render (see GpuToneGradient's own
-    /// doc comment) as a one-shot action instead, overwriting whatever
-    /// manual 明色/暗色 are currently set. Runs on the CURRENT photo buffer
-    /// -- if none is loaded, does nothing (there's nothing to sample).</summary>
+    /// <summary>以前は毎レンダー自動で行っていた重み付き全画像抽出
+    /// (GpuToneGradient 参照)を、現在の手動 明色/暗色 を上書きする一発アクションとして
+    /// 実行する。現在の写真バッファに対して走る ── 未読み込みなら何もしない。</summary>
     private void ToneGradientAutoDetectButton_Click(object sender, RoutedEventArgs e)
     {
         if (_photoPixelBuffer is not { } photo) return;
@@ -6826,19 +6184,16 @@ public partial class ControlPanelWindow : Window
         _undo.CommitChange();
     }
 
-    // ---- Eyedropper: click one of the 4 color rows' pipette buttons, then
-    //      click anywhere on the preview to sample that pixel and apply it
-    //      to whichever row's button was clicked. Only samples from the
-    //      in-app preview image (not the whole screen) -- simplest to build
-    //      and needs no OS-level screen-capture permissions. ----
+    // ---- スポイト: 色行のピペットボタンを押してからプレビュー上をクリックすると
+    //      そのピクセルをサンプルして押した行に適用する。サンプル元はアプリ内の
+    //      プレビュー画像のみ(画面全体ではない)── OS の画面キャプチャ権限が不要。 ----
 
     private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2, ShapeDecal }
 
     private ColorPickTarget _colorPickTarget = ColorPickTarget.None;
 
-    /// <summary>Clicking the same row's eyedropper again cancels instead of
-    /// re-arming it -- otherwise there'd be no way to back out short of
-    /// clicking the preview and picking an unwanted color.</summary>
+    /// <summary>同じ行のスポイトを再度クリックすると再アームせずキャンセルする ──
+    /// そうでないと不要な色を拾わずに抜ける手段が無い。</summary>
     private void BeginColorPick(ColorPickTarget target)
     {
         _colorPickTarget = _colorPickTarget == target ? ColorPickTarget.None : target;
@@ -6853,15 +6208,11 @@ public partial class ControlPanelWindow : Window
     private void ToneGradientLightEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.ToneGradientLight);
     private void ToneGradientDarkEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.ToneGradientDark);
 
-    /// <summary>Converts a screen position (relative to PreviewBorder) into a
-    /// pixel coordinate on the actual source bitmap, inverting the same
-    /// zoom/pan RenderTransform PreviewImage_MouseWheel's own comment derives
-    /// ("a local point P maps to screen position O + zoom*(P-O) + Pan"):
-    /// P = O + (screen - O - Pan) / zoom, then P (still in the unzoomed
-    /// display-scaled space PreviewBorder.Width/Height live in) is divided by
-    /// the display scale to land on a raw image pixel. Shared by the actual
-    /// pick (TryPickColorAtClick) and the magnifier preview that tracks the
-    /// cursor before the click happens.</summary>
+    /// <summary>スクリーン座標(PreviewBorder 基準)をソースビットマップのピクセル
+    /// 座標に変換する。PreviewImage_MouseWheel のズーム/パン変換を逆算し
+    /// (P = O + (screen - O - Pan) / zoom)、その P を表示スケールで割って生の画像
+    /// ピクセルに落とす。実ピック(TryPickColorAtClick)と、クリック前にカーソルを
+    /// 追う拡大鏡プレビューで共有する。</summary>
     private bool TryImagePixelFromScreen(Point screen, out BitmapSource bmp, out int px, out int py)
     {
         px = py = 0;
@@ -6923,19 +6274,15 @@ public partial class ControlPanelWindow : Window
         return true;
     }
 
-    // ---- Magnifier: a small zoomed-in loupe that follows the cursor while a
-    //      color pick is armed, so the user can see exactly which pixel
-    //      they're about to sample before clicking. An Adorner (not a Popup),
-    //      same reasoning as ConnectorAdorner above -- stays confined to this
-    //      window and isn't affected by any card's DropShadowEffect z-order
-    //      quirk. Attached to PreviewBorder specifically (not PreviewImage):
-    //      PreviewBorder has no RenderTransform of its own, so its adorner
-    //      coordinate space matches e.GetPosition(PreviewBorder) directly,
-    //      the same untransformed frame every other preview mouse handler
-    //      already measures against. ----
+    // ---- 拡大鏡: 色ピックがアーム中にカーソルを追う小さなルーペ。クリック前に
+    //      どのピクセルをサンプルするか正確に見える。Popup ではなく Adorner
+    //      (ConnectorAdorner と同じ理由でこの窓に閉じ、カードの DropShadowEffect の
+    //      z 順クセの影響を受けない)。PreviewImage ではなく PreviewBorder に付ける:
+    //      PreviewBorder は RenderTransform を持たないので、そのアドーナー座標系が
+    //      e.GetPosition(PreviewBorder) と直接一致する。 ----
 
-    private const int MagnifierSourcePixels = 9; // odd: gives a true center pixel
-    private const double MagnifierCellSize = 12; // each sampled pixel rendered this many DIPs wide
+    private const int MagnifierSourcePixels = 9; // 奇数: 真ん中のピクセルが取れる
+    private const double MagnifierCellSize = 12; // サンプル1ピクセルをこの DIP 幅で描く
     private const double MagnifierDisplaySize = MagnifierSourcePixels * MagnifierCellSize;
 
     private Adorner? _colorPickMagnifierAdorner;
@@ -6957,9 +6304,7 @@ public partial class ControlPanelWindow : Window
         };
         RenderOptions.SetBitmapScalingMode(_colorPickMagnifierImage, BitmapScalingMode.NearestNeighbor);
 
-        // Outlines the exact center cell (the pixel that'll actually be
-        // sampled) so "zoomed in enough to see individual pixels" doesn't
-        // leave the user guessing which one of them is the real target.
+        // 実際にサンプルされる中央セルを枠取りし、どれが対象か迷わないようにする。
         var centerHighlight = new Border
         {
             Width = MagnifierCellSize,
@@ -7007,15 +6352,12 @@ public partial class ControlPanelWindow : Window
         layer.Add(_colorPickMagnifierAdorner);
     }
 
-    /// <summary>A generous fallback for the loupe's own height before its
-    /// first layout pass has run (ActualHeight still 0) -- padding(12) +
-    /// image(108) + hex text row(~22) rounded up with headroom.</summary>
+    /// <summary>初回レイアウト前(ActualHeight がまだ 0)のルーペ高さのフォールバック。</summary>
     private const double MagnifierEstimatedHeight = 150;
 
-    /// <summary>screen is e.GetPosition(PreviewBorder) -- same frame the
-    /// adorner renders in, so it can be used directly for Canvas.Left/Top.
-    /// Anchored above-right of the cursor (not below-right) so the loupe
-    /// itself never sits under the cursor it's magnifying.</summary>
+    /// <summary>screen は e.GetPosition(PreviewBorder) ── アドーナーが描く座標系と
+    /// 同じなので Canvas.Left/Top にそのまま使える。ルーペが拡大対象のカーソルの
+    /// 下に来ないよう、カーソルの右上にアンカーする。</summary>
     private void UpdateColorPickMagnifier(Point screen)
     {
         EnsureColorPickMagnifier();
@@ -7049,14 +6391,11 @@ public partial class ControlPanelWindow : Window
         if (_colorPickMagnifierRoot is not null) _colorPickMagnifierRoot.Visibility = Visibility.Collapsed;
     }
 
-    // ---- ティント (color wash): two independent color pickers, one for the
-    //      avatar-image look card and one for the photo look card -- same
-    //      wheel/明度/RGB pattern as DropShadowColor above. The avatar side
-    //      writes straight into _state.ColorTint* (OverlayState), so
-    //      OverlayWindow's own live preview picks it up automatically the
-    //      same way Brightness etc. already do; the photo side writes into
-    //      local _photoColorTint* fields feeding PhotoAdjustments, same as
-    //      every other photo-look slider. ----
+    // ---- ティント(色被せ): アバタールックカード用と写真ルックカード用の独立した
+    //      2つの色ピッカー。上の DropShadowColor と同じホイール/明度/RGB。アバター側は
+    //      _state.ColorTint*(OverlayState)へ直接書くので OverlayWindow のライブ
+    //      プレビューが自動で拾う。写真側は PhotoAdjustments に渡すローカルの
+    //      _photoColorTint* へ書く。 ----
 
     private bool _isDraggingAvatarColorTintWheel;
 
@@ -7170,23 +6509,14 @@ public partial class ControlPanelWindow : Window
         SetCompositeColorTint(r, g, b);
     }
 
-    /// <summary>Guards SetCompositeColorTint/SetPhotoColorTint's mutual
-    /// 一括調整 propagation below against infinite recursion (each one calls
-    /// the other while linked) -- set for the duration of whichever call got
-    /// there first, so the reciprocal call's own "propagate while linked"
-    /// step is a no-op instead of calling back.</summary>
+    /// <summary>SetCompositeColorTint/SetPhotoColorTint の一括調整 相互伝播が
+    /// 無限再帰しないためのガード(リンク中は互いを呼ぶ)。先に来た方の呼び出しの間
+    /// セットされ、相手側の伝播ステップを no-op にする。</summary>
     private bool _suppressColorTintLinkSync;
 
-    /// <summary>Single choke point for every way the avatar's tint color can
-    /// change. Writes straight into _state (not a plain field like
-    /// SetDropShadowColor's _dropShadowColor*), so no explicit
-    /// ScheduleCompositeRender() call is needed here -- the blanket
-    /// _state.PropertyChanged subscription already does that (and re-syncs
-    /// this swatch/slider/box via RefreshFromState) for every other
-    /// _state.* look field. While 一括調整 is on, the COLOR itself (not just
-    /// the strength, which already shifts via ShiftPhotoIfLinked) mirrors to
-    /// the photo side too, matching what "linked" means for every other
-    /// look control.</summary>
+    /// <summary>アバターのティント色が変わる全経路の唯一の集約点。_state へ直接
+    /// 書くので、明示的な ScheduleCompositeRender() は不要(_state.PropertyChanged
+    /// 購読がやる)。一括調整 オン中は強度だけでなく色自体も写真側へミラーする。</summary>
     private void SetCompositeColorTint(byte r, byte g, byte b)
     {
         _state.ColorTintR = r;
@@ -7338,12 +6668,9 @@ public partial class ControlPanelWindow : Window
         SetPhotoColorTint(r, g, b);
     }
 
-    /// <summary>Single choke point for every way the photo's tint color can
-    /// change -- a plain field (not OverlayState), so unlike
-    /// SetCompositeColorTint this explicitly renders and does its own UI
-    /// sync rather than relying on a PropertyChanged subscription. While
-    /// 一括調整 is on, mirrors the color to the avatar side too (see
-    /// SetCompositeColorTint's own comment on this same behavior).</summary>
+    /// <summary>写真のティント色が変わる全経路の唯一の集約点 ── ただのフィールド
+    /// (OverlayState ではない)なので、SetCompositeColorTint と違い明示的に
+    /// レンダーと UI 同期を行う。一括調整 オン中は色をアバター側へもミラーする。</summary>
     private void SetPhotoColorTint(byte r, byte g, byte b)
     {
         _photoColorTintR = r;
@@ -7393,8 +6720,7 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- Screenshot-watcher folder: defaults to VRChat's own default save
-    //      location, but can be overridden manually. ----
+    // ---- スクショ監視フォルダ: 既定は VRChat の標準保存先。手動で上書き可能。 ----
 
     private void RefreshWatchFolderText()
     {
