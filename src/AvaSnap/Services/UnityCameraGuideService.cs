@@ -5,23 +5,15 @@ using System.Windows.Threading;
 
 namespace AvaSnap.Services;
 
-/// <summary>FOV/pitch/roll of whatever camera Unity's own
-/// CameraCompositionGuideExporter editor script is currently exporting --
-/// enough for AvaSnap to draw an equivalent one-point-perspective guide
-/// over the live VRChat window without the user re-typing FOV by hand.
-/// World position is deliberately not part of this: AvaSnap has no 3D
-/// scene to place it in, so the guide is centered on the frame the same
-/// way the Unity-side version was.</summary>
+/// <summary>Unity の CameraCompositionGuideExporter が今エクスポートしている
+/// カメラの FOV/pitch/roll。AvaSnap が FOV を手入力せずに同等の一点透視ガイドを
+/// 描くのに足りる。ワールド座標は含めない(AvaSnap に 3D シーンは無く、ガイドは
+/// フレーム中央に置く)。</summary>
 public sealed record UnityCameraGuideData(double Fov, double Pitch, double Roll);
 
-/// <summary>Raw JSON shape Unity writes -- MUST be public: System.Text.Json's
-/// default reflection-based (de)serializer silently fails to construct a
-/// private/nested type from another assembly (this used to be private,
-/// nested inside UnityCameraGuideService below, and every single
-/// Deserialize call was throwing -- caught by TryRead's broad catch, so it
-/// never crashed, it just never produced any data either, which is exactly
-/// why the connection badge sat on 未接続 forever despite the file
-/// genuinely updating).</summary>
+/// <summary>Unity が書く生 JSON の形。public 必須: System.Text.Json は別アセンブリの
+/// private/nested 型を構築できず、Deserialize が静かに失敗する(以前は nested private で、
+/// 接続バッジがずっと 未接続 のままだった原因)。</summary>
 public sealed class UnityCameraGuideExport
 {
     public double fov { get; set; }
@@ -30,64 +22,46 @@ public sealed class UnityCameraGuideExport
     public string timestampUtc { get; set; } = "";
 }
 
-/// <summary>Watches (via FileSystemWatcher when that works, and always via
-/// a 500ms poll-fallback regardless -- see _pollTimer) the JSON file
-/// Unity's CameraCompositionGuideExporter editor script writes (see that
-/// script's own doc comment for the writer side) and raises
-/// <see cref="DataUpdated"/> whenever a read turns up a genuinely NEW
-/// export (see _lastSeenTimestampUtc) -- not on every successful read,
-/// which would otherwise fire every poll tick forever off the same
-/// leftover file.
+/// <summary>Unity の CameraCompositionGuideExporter が書く JSON を監視
+/// (FileSystemWatcher が効けばそれ + 常に 500ms ポーリングのフォールバック)し、
+/// 読み取りが本当に新しいエクスポート(<see cref="_lastSeenTimestampUtc"/> で判定)
+/// だったときだけ <see cref="DataUpdated"/> を発火する。
 ///
-/// REQUEST-DRIVEN, not continuous: Unity no longer polls its own camera on
-/// a timer -- it sits idle until <see cref="RequestUpdate"/> touches
-/// RequestPath, which Unity's own FileSystemWatcher reacts to by writing
-/// FilePath exactly once. There's deliberately no more staleness concept
-/// here (the old BecameStale/StaleAfter pair, removed): a one-shot
-/// snapshot doesn't go "stale" the way a continuous feed did, it's just
-/// whatever the last successful RequestUpdate returned.</summary>
+/// リクエスト駆動: Unity は自分のカメラを定期ポーリングせず、
+/// <see cref="RequestUpdate"/> が RequestPath を touch したら Unity 側の
+/// FileSystemWatcher が反応して FilePath を1回書く。一回きりのスナップショットなので
+/// 「古くなる」概念は無い(旧 BecameStale/StaleAfter は削除)。</summary>
 public sealed class UnityCameraGuideService : IDisposable
 {
     public event Action<UnityCameraGuideData>? DataUpdated;
 
-    /// <summary>Same path Unity's CameraCompositionGuideExporter editor script
-    /// writes to -- exposed publicly so the control panel's own "エクスプ
-    /// ローラーで開く" button can point at it without duplicating the path
-    /// logic.</summary>
+    /// <summary>Unity の CameraCompositionGuideExporter が書くパス。コントロール
+    /// パネルの「エクスプローラーで開く」ボタンがパス組み立てを重複させずに
+    /// 指せるよう public。</summary>
     public static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AvaSnap", "unity_camera_guide.json");
 
-    /// <summary>Touched (any content -- Unity's watcher reacts to the file
-    /// Changed/Created event itself, not what's inside) by
-    /// <see cref="RequestUpdate"/> to ask Unity's CameraCompositionGuideExporter
-    /// for a fresh snapshot. Same AppData folder as FilePath, matching that
-    /// script's own RequestPath.</summary>
+    /// <summary><see cref="RequestUpdate"/> が touch して Unity に新しい
+    /// スナップショットを要求するファイル(中身は問わない。Unity の watcher は
+    /// Changed/Created イベント自体に反応する)。FilePath と同じ AppData フォルダ。</summary>
     private static readonly string RequestPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AvaSnap", "unity_camera_guide_request.txt");
 
     private readonly Dispatcher _dispatcher;
 
-    /// <summary>The poll-fallback (see its Tick handler in Start()) --
-    /// FileSystemWatcher's cross-process, cross-filesystem reliability is
-    /// inconsistent enough in practice (observed: it simply never fired for
-    /// this exact file/folder in testing, likely environment-specific --
-    /// antivirus, indexing, or just an OS quirk) that watcher events are now
-    /// only the FAST path when they happen to work; this timer is what
-    /// actually guarantees correctness regardless.</summary>
+    /// <summary>ポーリングのフォールバック。FileSystemWatcher はプロセス跨ぎ・
+    /// ファイルシステム跨ぎで信頼性がまちまち(この構成で一度も発火しなかった実例あり)
+    /// なので、watcher イベントは効けば速い経路、正しさを保証するのはこのタイマー。</summary>
     private readonly DispatcherTimer _pollTimer;
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
     private FileSystemWatcher? _watcher;
 
-    /// <summary>Unity's own export timestamp from the last file we actually
-    /// fired DataUpdated for -- lets TryRead tell "a genuinely new fetch
-    /// landed" apart from "the 500ms poll timer re-read the exact same
-    /// leftover file Unity wrote once, possibly in a previous session, and
-    /// hasn't touched since". Without this, DataUpdated (and the
-    /// 最終取得 badge it drives) kept firing every single poll tick forever
-    /// off a stale file, making it look like Unity was continuously
-    /// responding even while closed.</summary>
+    /// <summary>最後に DataUpdated を発火したファイルの Unity 側エクスポート
+    /// タイムスタンプ。「本当に新しい取得」と「ポーリングが同じ古いファイルを
+    /// 読み直しただけ」を区別する。これが無いと古いファイルで毎 tick 発火し続けて
+    /// Unity が閉じていても応答しているように見えていた。</summary>
     private string? _lastSeenTimestampUtc;
 
     public UnityCameraGuideService(Dispatcher dispatcher)
@@ -100,18 +74,12 @@ public sealed class UnityCameraGuideService : IDisposable
     public void Start()
     {
         var dir = Path.GetDirectoryName(FilePath)!;
-        // Created even if Unity has never written anything yet, purely so
-        // the watcher has a real directory to attach to -- FileSystemWatcher
-        // throws if the path doesn't exist.
+        // watcher が張り付く実ディレクトリが要る(存在しないと FileSystemWatcher が投げる)。
         Directory.CreateDirectory(dir);
 
-        // Whatever's already sitting at FilePath (e.g. left over from a
-        // previous AvaSnap/Unity session, or from Unity's own "今すぐ送信
-        // (テスト用)" button) is NOT a fetch THIS session ever asked for --
-        // silently record its timestamp as the baseline so TryRead treats
-        // it as "already seen" instead of firing DataUpdated for it the
-        // moment polling starts. Without this, the connection badge showed
-        // 取得済み immediately on launch even though 取得 was never pressed.
+        // 既に FilePath にあるもの(前セッションの残り等)はこのセッションの取得ではない。
+        // タイムスタンプを基準として記録し、TryRead が「既読」扱いにする。これが無いと
+        // 起動直後に「取得」を押していないのに接続バッジが取得済みになっていた。
         SeedLastSeenTimestamp();
 
         try
@@ -127,9 +95,7 @@ public sealed class UnityCameraGuideService : IDisposable
         }
         catch (IOException)
         {
-            // No watcher, no problem -- the poll timer below covers
-            // everything the watcher would have, just with up to
-            // PollInterval of extra latency instead of near-instant.
+            // watcher なしでも下のポーリングが代替する(ほぼ即時が最大 PollInterval 遅延になるだけ)。
             _watcher = null;
         }
 
@@ -146,18 +112,14 @@ public sealed class UnityCameraGuideService : IDisposable
         }
         catch
         {
-            // Leave it null -- worst case, a genuinely fresh write right
-            // after Start() still gets picked up correctly by TryRead.
+            // null のままでよい。最悪でも Start() 直後の新規書き込みは TryRead が拾う。
         }
     }
 
-    /// <summary>Unity writes via a plain File.WriteAllText (not an atomic
-    /// rename), so a Changed event can fire while the file is only
-    /// partially written -- both the read and the parse are wrapped so a
-    /// torn read just gets silently skipped. Since Unity is now request-
-    /// driven (see RequestUpdate), a torn read here just means this
-    /// particular 取得 request effectively went unanswered; the user
-    /// pressing it again is what picks it up, not a background retry.</summary>
+    /// <summary>Unity は File.WriteAllText(アトミックな rename ではない)で書くので、
+    /// 書きかけで Changed が飛び得る。読みとパースを try で包んで、途中読みは黙って
+    /// スキップする。リクエスト駆動なので、途中読みはその「取得」が空振りしただけ
+    /// (再度押せば拾える。バックグラウンドリトライは無い)。</summary>
     private void TryRead()
     {
         if (!File.Exists(FilePath)) return;
@@ -179,34 +141,23 @@ public sealed class UnityCameraGuideService : IDisposable
         }
         catch (Exception ex)
         {
-            // Content from a separate process (Unity), potentially a
-            // different/older version of the exporter script -- any parse
-            // failure here should be silently skipped, never crash AvaSnap.
-            // Traced (not swallowed silently) so a future mismatch shows up
-            // in a debugger/DebugView instead of just quietly never
-            // producing data the way the private-type bug this replaced did.
+            // 別プロセス(Unity、古い exporter かもしれない)の内容。パース失敗は
+            // 黙ってスキップしクラッシュさせない。ただし Trace には出す。
             Debug.WriteLine($"UnityCameraGuideService: failed to parse {FilePath}: {ex}");
             return;
         }
         if (export is null) return;
-        // Dirty-check: skip firing if this is the same export Unity wrote
-        // last time (see _lastSeenTimestampUtc's own doc comment) --
-        // otherwise the poll-fallback alone would re-fire DataUpdated every
-        // PollInterval forever off whatever file happens to already be on
-        // disk, Unity running or not.
+        // 前回と同じエクスポートなら発火しない(でないとポーリングが古いファイルで
+        // 毎 PollInterval 発火し続ける)。
         if (export.timestampUtc == _lastSeenTimestampUtc) return;
         _lastSeenTimestampUtc = export.timestampUtc;
         DataUpdated?.Invoke(new UnityCameraGuideData(export.fov, export.pitch, export.roll));
     }
 
-    /// <summary>Asks Unity's CameraCompositionGuideExporter (if the Editor
-    /// is running -- no setup or toggle needed on that side at all) for a
-    /// fresh snapshot -- touches RequestPath, which its FileSystemWatcher/
-    /// poll-fallback reacts to by writing FilePath once; TryRead (via this
-    /// service's own watcher/poll-fallback) picks that up the same way it
-    /// always has. Fire-and-forget: if Unity isn't running, this silently
-    /// does nothing -- there's no request/response handshake, just "if a
-    /// fresh file shows up, DataUpdated fires".</summary>
+    /// <summary>Unity の CameraCompositionGuideExporter(Editor 起動中なら。Unity 側の
+    /// 設定は不要)に新スナップショットを要求する ── RequestPath を touch すると Unity 側が
+    /// FilePath を1回書き、それを TryRead が拾う。撃ちっぱなし: Unity 未起動なら黙って何も
+    /// しない(ハンドシェイクは無く「新ファイルが来たら DataUpdated」だけ)。</summary>
     public void RequestUpdate()
     {
         try
@@ -218,16 +169,12 @@ public sealed class UnityCameraGuideService : IDisposable
         }
         catch (IOException ex)
         {
-            // Unity might have this file open at the exact wrong instant --
-            // harmless, the user can just press 取得 again.
+            // Unity がこのファイルを開いている瞬間かもしれない。無害(再度「取得」でよい)。
             Debug.WriteLine($"UnityCameraGuideService: RequestUpdate IOException: {ex}");
         }
         catch (Exception ex)
         {
-            // Anything else (permissions, path issues, ...) used to fail
-            // completely silently here -- traced now instead, so a request
-            // that never reaches disk at all shows up somewhere instead of
-            // just looking like Unity never answered.
+            // 権限・パス等。Trace に出す。
             Debug.WriteLine($"UnityCameraGuideService: RequestUpdate failed: {ex}");
         }
     }

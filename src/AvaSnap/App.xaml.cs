@@ -17,13 +17,10 @@ public partial class App : Application
     private ScreenshotNotificationManager? _screenshotNotifications;
     private UnityCameraGuideService? _unityCameraGuide;
 
-    // Per-Monitor V2 DPI awareness, requested at runtime instead of via an
-    // embedded app.manifest -- a custom ApplicationManifest broke this
-    // project's self-contained/single-file apphost launch ("side-by-side
-    // configuration is incorrect"), so this is the safer alternative. Must
-    // run before any window/HwndSource is created, hence first line of
-    // OnStartup. Non-fatal if it fails (e.g. older Windows) -- the window
-    // just falls back to whatever DPI awareness the process already has.
+    // Per-Monitor V2 DPI awareness を app.manifest ではなく実行時に要求する
+    // (自前 manifest は self-contained/single-file の apphost 起動を壊した)。
+    // ウィンドウ/HwndSource 生成前に走る必要があるので OnStartup の先頭。失敗しても
+    // 致命的ではない(古い Windows 等。プロセス既定の DPI awareness に落ちるだけ)。
     private static readonly IntPtr DpiAwarenessContextPerMonitorAwareV2 = new(-4);
 
     [DllImport("user32.dll")]
@@ -31,24 +28,16 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // Handling Velopack's own special first-run/update/uninstall
-        // invocations now happens in Program.cs's VelopackApp.Build().Run()
-        // call, which runs before this Application even exists -- see its
-        // own doc comment.
+        // Velopack の初回起動/更新/アンインストール処理は Program.cs の
+        // VelopackApp.Build().Run() 側(この Application より前に走る)。
         try { SetProcessDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2); } catch (EntryPointNotFoundException) { }
 
         base.OnStartup(e);
 
-        // All of AvaSnap's image processing (color adjustments, blur, drop
-        // shadow, finishing effects, ...) runs on ComputeSharp/DX12 compute
-        // shaders now -- there's no CPU fallback anymore (removed
-        // deliberately: AvaSnap only makes sense running alongside VRChat,
-        // which itself requires a DX11/12-capable GPU, so the CPU path was
-        // dead code that no real user's machine would ever actually take,
-        // while still doubling the maintenance/verification surface for
-        // every effect). Failing loudly here, before any window opens, is
-        // far better than launching into a UI where every single effect
-        // silently does nothing with no indication why.
+        // AvaSnap の画像処理は全て ComputeSharp/DX12 コンピュートシェーダで、CPU
+        // フォールバックは無い(VRChat と併用する前提で、VRChat 自体が DX11/12 GPU を
+        // 要求するので CPU 経路は実質デッドコードだった)。全エフェクトが無言で無効な
+        // UI へ入るより、ウィンドウを開く前にここで明示的に落とす方がよい。
         if (GpuAvailability.Device is null)
         {
             MessageBox.Show(
@@ -64,35 +53,19 @@ public partial class App : Application
         _oscListener = new VrChatOscListener();
         _oscListener.Start();
 
-        // Watches for the JSON file Unity's own CameraCompositionGuideWindow
-        // editor script exports (FOV/pitch/roll of whichever camera is being
-        // tested there), so the overlay can draw a composition guide driven
-        // by real numbers instead of manual FOV input -- see
-        // UnityCameraGuideService's own doc comment. Start() is called
-        // further below, AFTER OverlayWindow/ControlPanelWindow (both
-        // constructed later) have subscribed to its events: Start() does an
-        // immediate synchronous read of whatever's already on disk, and if
-        // that fires DataUpdated before anyone's listening yet, that first
-        // update is silently lost -- the guide would then sit blank until
-        // the next file change, which (once Unity's exporter only writes
-        // while focused) might not happen again for a while.
+        // Unity のエクスポート JSON(FOV/pitch/roll)を監視する。Start() は下の方、
+        // OverlayWindow/ControlPanelWindow がイベント購読した「後」に呼ぶ ── Start() は
+        // ディスク上の既存内容を同期読みするので、誰も聴いていないうちに DataUpdated が
+        // 飛ぶと最初の1回を取りこぼす。
         _unityCameraGuide = new UnityCameraGuideService(Dispatcher);
 
         var saved = SettingsService.Load();
 
-        // Applied before any window is constructed so DynamicResource
-        // lookups inside ControlPanelWindow.xaml resolve to the right
-        // palette from the very first frame instead of flashing light-
-        // then-dark. Defaults to dark (not light) on a genuinely first-ever
-        // launch (saved is null, no settings file yet) -- photo/video
-        // editing tools (Lightroom, Photoshop, DaVinci Resolve, ...)
-        // default to a dark chrome so it doesn't bias color/exposure
-        // judgment against the photo being edited, and AvaSnap is squarely
-        // in that category. Only the FIRST-EVER launch is affected: once a
-        // settings file exists, saved.IsDarkMode (even if it deserializes
-        // to its own false default from before this app had a theme
-        // toggle) is used as-is, so no returning user's theme silently
-        // flips out from under them.
+        // ウィンドウ生成前に適用して、DynamicResource が初フレームから正しい配色に
+        // なるようにする(ライト→ダークのちらつき回避)。初回起動(設定ファイル無し)は
+        // ダーク既定 ── 写真/動画編集ツールは編集対象の色/露出判断を偏らせないよう
+        // ダーク基調が定番で、AvaSnap もその範疇。設定ファイルがあれば saved.IsDarkMode を
+        // そのまま使うので、既存ユーザーのテーマが勝手に変わることはない。
         ThemeService.Apply(saved?.IsDarkMode ?? true);
 
         if (saved is not null)
@@ -107,23 +80,17 @@ public partial class App : Application
             _state.Opacity = saved.Opacity > 0 ? saved.Opacity : _state.Opacity;
         }
 
-        // Watches VRChat's screenshot folder (or a manual override) and pops a
-        // non-intrusive toast when a new one appears, so photo compositing can
-        // start right from the notification instead of needing a file picker.
+        // VRChat のスクショフォルダ(または手動指定)を監視し、新規時に控えめなトースト。
+        // ファイルピッカー無しで通知から合成を始められる。
         _screenshotWatcher = new ScreenshotWatcherService(Dispatcher);
         _screenshotWatcher.ManualFolder = saved?.ScreenshotFolderPath;
         _screenshotWatcher.Start();
         _screenshotNotifications = new ScreenshotNotificationManager(_screenshotWatcher);
 
-        // Position/size are never persisted -- a screen coordinate (and a
-        // camera-frame-fitted width/height) from a previous session are both
-        // meaningless once VRChat's window has moved or its camera resolution
-        // has changed. PerformReset() (called below, once ControlPanelWindow
-        // and the avatar image both exist) re-fits both from scratch, the
-        // same as clicking "位置をリセット" would -- an earlier version of
-        // this only re-centered using the STALE persisted Width/Height,
-        // which is why the image wasn't sized to the camera's width right
-        // after opening the app.
+        // 位置/サイズは保存しない ── 前セッションの画面座標もカメラ枠フィットの
+        // 幅/高さも、VRChat 窓の移動やカメラ解像度変更で無意味になる。下の
+        // PerformReset()(ControlPanelWindow とアバター画像が揃ったあと)が
+        // 「位置をリセット」と同じく両方を組み直す。
         var existingVrchat = VRChatWindowService.FindVRChatWindow();
 
         _overlayWindow = new OverlayWindow(_state, _undoManager, _oscListener);
@@ -134,8 +101,8 @@ public partial class App : Application
             _overlayWindow.LoadImage(_state.ImagePath);
         }
 
-        // If VRChat is already running, attach right away so the overlay rides
-        // with it in Z-order from the start (also re-attached on every Reset).
+        // VRChat が既に起動していれば即アタッチして、最初から Z 順で追従させる
+        // (Reset ごとにも再アタッチ)。
         if (existingVrchat is not null)
         {
             _overlayWindow.AttachToOwner(existingVrchat.Value);
@@ -147,11 +114,8 @@ public partial class App : Application
         _controlPanelWindow.Show();
         _screenshotNotifications.PhotoSelected += path => _controlPanelWindow.LoadPhotoForComposite(path);
 
-        // Now that ControlPanelWindow has subscribed to DataUpdated (the
-        // only remaining subscriber -- OverlayWindow reads GuideManualFov/
-        // Pitch/Roll off _state directly instead, see its own doc comment),
-        // it's safe to start reading/watching the export file (see the
-        // comment where _unityCameraGuide was constructed above).
+        // ControlPanelWindow が DataUpdated を購読したので、エクスポートファイルの
+        // 読み取り/監視を始めて安全(上の _unityCameraGuide 生成箇所のコメント参照)。
         _unityCameraGuide.Start();
 
         if (saved?.RecentAvatarPaths is { } recentAvatars)
@@ -164,24 +128,16 @@ public partial class App : Application
             _controlPanelWindow.RestorePhotoSilently(saved.PhotoPath);
         }
 
-        // Same owned-window Z-order trick as the overlay: bringing VRChat
-        // forward should bring the control panel forward too, not leave it
-        // buried behind the game window.
+        // オーバーレイと同じ owned-window の Z 順トリック: VRChat を前面にしたら
+        // コントロールパネルも一緒に前面へ。
         if (existingVrchat is not null)
         {
             _controlPanelWindow.AttachToOwner(existingVrchat.Value);
-            // Fits the overlay to the camera frame right away, same as
-            // clicking "位置をリセット" -- see the comment above where
-            // existingVrchat is found.
-            _controlPanelWindow.PerformReset();
+            _controlPanelWindow.PerformReset(); // オーバーレイをカメラ枠にフィット(位置をリセットと同じ)
         }
 
-        // Fire-and-forget, after both windows are already up, so a slow or
-        // unreachable GitHub never delays startup. Only checks and (if the
-        // user picks a version in AboutPanel's update section) downloads --
-        // nothing is applied silently, per the "通知表示 -> ユーザーが選んで
-        // 適用" UX this was asked for, unlike the old hand-rolled
-        // UpdateService this replaced.
+        // 撃ちっぱなし。両ウィンドウが立った後なので、GitHub が遅くても起動を遅らせない。
+        // 確認とダウンロードのみで、無言適用はしない(通知表示 → ユーザーが選んで適用)。
         _ = CheckForUpdateNotificationAsync();
     }
 

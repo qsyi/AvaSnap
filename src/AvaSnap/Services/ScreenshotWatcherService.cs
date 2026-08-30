@@ -3,18 +3,16 @@ using System.Windows.Threading;
 
 namespace AvaSnap.Services;
 
-/// <summary>Watches VRChat's screenshot folder for newly-created PNGs and
-/// raises <see cref="ScreenshotDetected"/> once each file is fully written.
-/// Defaults to VRChat's own default save location (Pictures\VRChat, which
-/// VRChat further splits into year-month subfolders), but a manual folder can
-/// override that. Only reacts to files created AFTER watching starts -- it
-/// never scans existing folder contents, so relaunching AvaSnap won't
-/// re-notify about old screenshots.</summary>
+/// <summary>VRChat のスクリーンショットフォルダを監視し、新規 PNG が書き込み完了
+/// したら <see cref="ScreenshotDetected"/> を発火する。既定は VRChat の保存先
+/// (Pictures\VRChat。VRChat がさらに年月サブフォルダに分ける)だが、手動フォルダで
+/// 上書きできる。監視開始「後」に作られたファイルにしか反応しない(既存内容は
+/// スキャンしないので、再起動で古いスクショを再通知しない)。</summary>
 public sealed class ScreenshotWatcherService : IDisposable
 {
     public event Action<string>? ScreenshotDetected;
 
-    private const int MaxReadyAttempts = 30; // ~9s at the 300ms poll interval below
+    private const int MaxReadyAttempts = 30; // 下の 300ms ポーリングで約9秒
 
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _readyPollTimer;
@@ -32,8 +30,8 @@ public sealed class ScreenshotWatcherService : IDisposable
     public static string DefaultFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "VRChat");
 
-    /// <summary>A user-chosen folder that overrides the default, or null/empty
-    /// to auto-detect. Setting this restarts the watcher on the new folder.</summary>
+    /// <summary>既定を上書きするユーザー選択フォルダ。null/空で自動検出。
+    /// 設定すると新フォルダで監視を再起動する。</summary>
     public string? ManualFolder
     {
         get => _manualFolder;
@@ -76,13 +74,10 @@ public sealed class ScreenshotWatcherService : IDisposable
         _pendingReadyChecks.TryAdd(path, 0);
     }
 
-    /// <summary>VRChat's screenshot write isn't instantaneous -- the Created
-    /// event fires as soon as the (still-empty/partial) file appears, so a
-    /// notification fired immediately would try to thumbnail a half-written
-    /// PNG. Poll until the file can be opened exclusively (nothing else still
-    /// has it open for writing), giving up after <see cref="MaxReadyAttempts"/>
-    /// so a file that gets renamed/deleted before finishing doesn't loop
-    /// forever.</summary>
+    /// <summary>VRChat の書き込みは一瞬で終わらない(Created は空/途中のファイルが
+    /// 現れた時点で発火する)ので、即通知すると書きかけ PNG のサムネイルを作ろうとする。
+    /// 排他で開けるようになるまでポーリングし、<see cref="MaxReadyAttempts"/> で諦める
+    /// (完了前にリネーム/削除されても無限ループしないように)。</summary>
     private void ReadyPollTimer_Tick(object? sender, EventArgs e)
     {
         if (_pendingReadyChecks.Count == 0) return;

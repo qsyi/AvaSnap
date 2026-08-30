@@ -4,8 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace AvaSnap.Services;
 
-/// <summary>Finds the running VRChat.exe window and reads its client-area
-/// rectangle on screen.</summary>
+/// <summary>実行中の VRChat.exe ウィンドウを探し、その画面上のクライアント領域矩形を読む。</summary>
 public static class VRChatWindowService
 {
     private const string ProcessName = "vrchat";
@@ -52,12 +51,12 @@ public static class VRChatWindowService
                 if (string.Equals(proc.ProcessName, ProcessName, StringComparison.OrdinalIgnoreCase))
                 {
                     found = hWnd;
-                    return false; // stop enumeration
+                    return false; // 列挙終了
                 }
             }
             catch (ArgumentException)
             {
-                // process exited between enumeration and lookup; ignore
+                // 列挙〜lookup の間にプロセス終了。無視
             }
             return true;
         }, IntPtr.Zero);
@@ -78,34 +77,22 @@ public static class VRChatWindowService
         return new Rectangle(topLeft.X, topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y);
     }
 
-    // ---- Camera frame estimate: derived from the "記録" sample log (12
-    //      samples across 5 resolutions, including near-square and taller-
-    //      than-wide windows): the camera frame is always dead-centered in
-    //      the client area, with a fixed 16:9 (landscape) / 9:16 (portrait)
-    //      aspect ratio, and its height is a near-constant fraction of the
-    //      window's client HEIGHT regardless of the window's own aspect
-    //      ratio (landscape height-fraction stdev 0.00022; portrait stdev
-    //      0.00195, looser but still tight). Treated as a starting estimate,
-    //      not an authoritative lookup -- untested at very small
-    //      resolutions, under non-100% Windows DPI scaling, or against a
-    //      future VRChat UI layout change, so the user can and should still
-    //      nudge it manually afterward. Shared here (not private to
-    //      ControlPanelWindow, which originally owned this) so
-    //      OverlayWindow's own FOVガイド clipping can use the exact same
-    //      estimate the avatar itself gets fitted to. ----
+    // ---- カメラフレームの推定値: サンプルログ(5解像度・12サンプル)から。フレームは
+    //      常にクライアント領域の中央、アス比は 16:9(横)/ 9:16(縦)固定、高さは
+    //      ウィンドウ自身のアス比に依らずクライアント高の ほぼ一定比。あくまで初期推定で
+    //      あり(極小解像度・非100% DPI・将来の VRChat UI 変更では未検証)、ユーザーが
+    //      後から手で微調整できる前提。OverlayWindow の FOVガイドが、アバターを合わせる
+    //      のと同じ推定値を使えるようここに置く。 ----
 
     public const double LandscapeHeightFraction = 0.4678;
     public const double PortraitHeightFraction = 0.8296;
     public const double LandscapeAspect = 16.0 / 9.0;
     public const double PortraitAspect = 9.0 / 16.0;
 
-    /// <summary>The frame's height (in screen pixels) is always the recorded-
-    /// sample estimate, but its WIDTH can optionally be derived from a known
-    /// aspect ratio instead of the hardcoded 16:9/9:16 assumption --
-    /// compositing has an actual photo on hand (ground truth for what VRChat's
-    /// camera actually output), and assuming that photo is exactly 16:9/9:16
-    /// when the user's camera resolution is anything else stretches the
-    /// overlay non-uniformly onto it. See <paramref name="aspectOverride"/>.</summary>
+    /// <summary>フレーム高(画面ピクセル)は常に推定値だが、幅は
+    /// <paramref name="aspectOverride"/> で 16:9/9:16 固定の代わりに既知のアス比から
+    /// 出せる。合成モードは実写真を持っている(VRChat カメラの実出力の正解)ので、
+    /// 別解像度の写真を 16:9/9:16 と決めつけるとオーバーレイが不均一に伸びる。</summary>
     public static (double Left, double Top, double Width, double Height) ComputeCameraFrameRect(
         Rectangle region, bool landscape, double? aspectOverride = null)
     {

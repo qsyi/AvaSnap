@@ -4,12 +4,10 @@ using System.Windows.Data;
 
 namespace AvaSnap.Converters;
 
-/// <summary>Computes the Margin for a slider's colored fill bar so it grows
-/// from the slider's zero point toward the thumb, rather than from Minimum
-/// toward the thumb. For a slider whose Minimum is already 0 (edge blur,
-/// opacity) the zero point IS the left edge, so this naturally degrades to a
-/// normal "fill from the left" bar -- one converter covers both cases.
-/// Inputs: Value, Minimum, Maximum, and the track's rendered width.</summary>
+/// <summary>スライダーの色付きフィルバーの Margin を計算する。Minimum からではなく
+/// 「0 の位置」から thumb へ向かって伸びるようにする。Minimum が既に 0 のスライダー
+/// (境界ぼかし・不透明度)では 0 の位置が左端なので、普通の「左から伸びる」バーに
+/// 自然に退化する。入力: Value / Minimum / Maximum / トラックの描画幅。</summary>
 public sealed class SliderZeroFillConverter : IMultiValueConverter
 {
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)

@@ -3,15 +3,12 @@ using AvaSnap.Views;
 
 namespace AvaSnap.Services;
 
-/// <summary>Turns <see cref="ScreenshotWatcherService.ScreenshotDetected"/>
-/// events into a stack of non-intrusive toast windows in the bottom-right
-/// corner of the primary screen's work area, newest on top. Multiple
-/// screenshots taken in quick succession queue up as separate stacked toasts
-/// instead of replacing each other.</summary>
+/// <summary><see cref="ScreenshotWatcherService.ScreenshotDetected"/> を、
+/// プライマリ画面の作業領域右下に積み上がる控えめなトーストにする(新しいものが上)。
+/// 連続して撮ると置き換えず別々のトーストとして積む。</summary>
 public sealed class ScreenshotNotificationManager
 {
-    /// <summary>Raised when the user clicks "合成する" on a toast, with the
-    /// screenshot's full path.</summary>
+    /// <summary>トーストの「合成する」が押されたときに、スクショのフルパスとともに発火。</summary>
     public event Action<string>? PhotoSelected;
 
     private const double Gap = 8;
@@ -47,8 +44,7 @@ public sealed class ScreenshotNotificationManager
         Reflow();
     }
 
-    /// <summary>Stacks every currently-open toast upward from the bottom-right
-    /// corner of the work area, most-recently-added at the bottom.</summary>
+    /// <summary>開いている全トーストを作業領域右下から上へ積む(最新が一番下)。</summary>
     private void Reflow()
     {
         double right = SystemParameters.WorkArea.Right;

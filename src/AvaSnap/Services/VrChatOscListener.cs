@@ -3,21 +3,14 @@ using System.Text;
 
 namespace AvaSnap.Services;
 
-/// <summary>
-/// Minimal OSC-over-UDP receiver for the two VRChat user-camera parameters that
-/// replace image-based detection of "is the camera UI open" and "orientation":
-/// <c>/usercamera/Mode</c> (0 = closed, non-zero = some camera mode active) and
-/// <c>/usercamera/OrientationIsLandscape</c>. VRChat sends these out whenever the
-/// state changes, so this only needs to listen -- no query/handshake required.
-/// Hand-rolled parser instead of a NuGet dependency: OSC-over-UDP messages are a
-/// simple binary format (null-padded address string, type-tag string, then
-/// 4-byte-aligned args), and VRChat only ever sends simple messages or bundles of
-/// them, so a full OSC library would be a lot of unused surface.
-/// </summary>
+/// <summary>VRChat のユーザーカメラ2パラメータを受ける最小の OSC-over-UDP 受信機:
+/// <c>/usercamera/Mode</c>(0 = 閉、非0 = 何らかのカメラモード)と
+/// <c>/usercamera/OrientationIsLandscape</c>。VRChat は状態変化時に送ってくるので
+/// 受信するだけでよい。OSC メッセージは単純なバイナリ形式で VRChat は単純な
+/// メッセージ/バンドルしか送らないので、NuGet 依存を足さず自前パーサにしている。</summary>
 public sealed class VrChatOscListener : IDisposable
 {
-    /// <summary>VRChat's default outgoing OSC port (configurable in-game, but this
-    /// covers the vast majority of installs).</summary>
+    /// <summary>VRChat の既定の OSC 送信ポート(ゲーム内で変更可だが大半はこれ)。</summary>
     public const int DefaultPort = 9001;
 
     public event Action<bool>? CameraModeChanged;
@@ -25,7 +18,7 @@ public sealed class VrChatOscListener : IDisposable
 
     public bool? IsCameraOpen { get; private set; }
 
-    /// <summary>Last known orientation from VRChat's own OSC output.</summary>
+    /// <summary>VRChat の OSC 出力から得た最後の向き。</summary>
     public bool? IsLandscape { get; private set; }
 
     private UdpClient? _client;
@@ -40,9 +33,8 @@ public sealed class VrChatOscListener : IDisposable
         }
         catch (SocketException)
         {
-            // Port already in use (e.g. another OSC listener running) -- give up
-            // quietly. Callers just keep whatever behavior they use when OSC
-            // state stays unknown.
+            // ポート使用中(別の OSC リスナー等)。静かに諦める。呼び出し側は
+            // OSC 状態不明時の挙動を続ける。
             _client = null;
             return;
         }
@@ -78,7 +70,7 @@ public sealed class VrChatOscListener : IDisposable
             }
             catch
             {
-                continue; // transient recv error; keep listening
+                continue; // 一時的な受信エラー。受信継続
             }
 
             try
@@ -87,7 +79,7 @@ public sealed class VrChatOscListener : IDisposable
             }
             catch
             {
-                // malformed/unexpected packet; ignore and keep listening
+                // 不正/想定外パケット。無視して受信継続
             }
         }
     }
@@ -96,7 +88,7 @@ public sealed class VrChatOscListener : IDisposable
     {
         if (data.Length >= 16 && data.Length >= 7 && Encoding.ASCII.GetString(data, 0, 7) == "#bundle")
         {
-            int offset = 16; // "#bundle\0" (8 bytes) + 8-byte timetag
+            int offset = 16; // "#bundle\0"(8バイト)+ 8バイトの timetag
             while (offset + 4 <= data.Length)
             {
                 int size = ReadInt32(data, offset);
@@ -164,8 +156,8 @@ public sealed class VrChatOscListener : IDisposable
         int end = offset;
         while (end < data.Length && data[end] != 0) end++;
         string s = Encoding.ASCII.GetString(data, offset, end - offset);
-        int len = end - offset + 1; // include null terminator
-        int padded = (len + 3) / 4 * 4; // pad to 4-byte boundary
+        int len = end - offset + 1; // null 終端を含む
+        int padded = (len + 3) / 4 * 4; // 4バイト境界へパディング
         return (s, offset + padded);
     }
 

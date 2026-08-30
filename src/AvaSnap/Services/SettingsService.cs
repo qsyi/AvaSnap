@@ -17,12 +17,10 @@ public sealed class PersistedSettings
     public DateTime? LastUpdateCheckUtc { get; set; }
 }
 
-/// <summary>Persists the overlay's last size/rotation/opacity/image path across
-/// launches. Position (X/Y) is intentionally NOT persisted -- it's re-centered
-/// on the VRChat window at every startup instead, since a screen coordinate
-/// from a previous session is meaningless once the window has moved. Click-
-/// through state is also not persisted -- it's a hold-to-toggle hotkey state
-/// (Shift), not a mode the overlay should remember between launches.</summary>
+/// <summary>オーバーレイの前回のサイズ/回転/不透明度/画像パスを起動間で保存する。
+/// 位置(X/Y)は保存しない ── 起動ごとに VRChat ウィンドウへ再センタリングする
+/// (前回セッションの画面座標は意味を持たないため)。クリックスルー状態も保存しない
+/// (Shift 押しっぱなしのホットキー状態であってモードではない)。</summary>
 public static class SettingsService
 {
     private static readonly string SettingsDir =
@@ -66,15 +64,13 @@ public static class SettingsService
         }
         catch
         {
-            // best-effort; losing the last saved layout is not fatal
+            // ベストエフォート。前回レイアウトを失っても致命的ではない
         }
     }
 
-    /// <summary>Narrow read-modify-write of just LastUpdateCheckUtc --
-    /// called from UpdateService's background check, independently of the
-    /// full Save() above (which needs an OverlayState and only happens at
-    /// exit). No concurrent-write race in practice: the two never run at
-    /// the same time.</summary>
+    /// <summary>LastUpdateCheckUtc だけの read-modify-write。UpdateService の
+    /// バックグラウンドチェックから、終了時にしか走らない full Save() とは独立に呼ぶ。
+    /// 両者は同時に走らないので書き込み競合は無い。</summary>
     public static void SaveLastUpdateCheck(DateTime utc)
     {
         try
@@ -87,7 +83,7 @@ public static class SettingsService
         }
         catch
         {
-            // best-effort
+            // ベストエフォート
         }
     }
 }

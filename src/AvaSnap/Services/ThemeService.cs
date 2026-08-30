@@ -2,12 +2,9 @@ using System.Windows;
 
 namespace AvaSnap.Services;
 
-/// <summary>Swaps the app's color palette (Themes/LightTheme.xaml or
-/// Themes/DarkTheme.xaml) into Application.Resources at runtime. Every
-/// brush these dictionaries define is consumed via DynamicResource (not
-/// StaticResource) in ControlPanelWindow.xaml, so a swap here is picked up
-/// immediately by whatever's already on screen -- no window reload
-/// needed.</summary>
+/// <summary>アプリの配色(Themes/LightTheme.xaml か DarkTheme.xaml)を実行時に
+/// Application.Resources へ差し替える。これらのブラシは全て DynamicResource で
+/// 参照されているので、差し替えは表示中の画面に即反映される(再読み込み不要)。</summary>
 public static class ThemeService
 {
     public static bool IsDarkMode { get; private set; }

@@ -4,19 +4,16 @@ using System.Windows.Interop;
 
 namespace AvaSnap.Services;
 
-/// <summary>Sets a WPF window as an owned window of a native HWND (e.g.
-/// VRChat's). Windows automatically keeps an owned window immediately above
-/// its owner in Z-order whenever the owner is brought to the foreground,
-/// instead of floating above literally everything (WPF Topmost) or getting
-/// hidden behind the owner (the default for two unrelated top-level windows).
-/// Shared by both AvaSnap windows -- the overlay and the control panel -- so
-/// bringing VRChat forward brings both of them along with it.</summary>
+/// <summary>WPF ウィンドウをネイティブ HWND(例: VRChat)の owned window にする。
+/// owner が前面に来ると Windows が owned window を Z 順で owner の直上に保つので、
+/// 全てより手前(WPF Topmost)でも owner の裏(無関係な2窓の既定)でもなくなる。
+/// オーバーレイとコントロールパネル両方で使い、VRChat を前面にすると両方付いてくる。</summary>
 public static class WindowOwnership
 {
     private const int GWLP_HWNDPARENT = -8;
 
-    // Real exported name is SetWindowLongPtrW (win-x64 only build, so no need to
-    // fall back to the 32-bit-only SetWindowLong for pointer-sized values).
+    // 実際のエクスポート名は SetWindowLongPtrW(win-x64 専用ビルドなので 32bit 用の
+    // SetWindowLong にフォールバックする必要は無い)。
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     private static extern IntPtr SetWindowLongPtrNative(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 

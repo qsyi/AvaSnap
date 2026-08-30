@@ -1,14 +1,10 @@
 namespace AvaSnap;
 
-/// <summary>Snapshot of the overlay properties that are worth undoing (position,
-/// size, rotation, opacity, PNG look adjustments). Click-through is
-/// intentionally excluded -- it's a mode toggle, not an edit. The loaded
-/// image's path is ALSO excluded: OverlayWindow only ever reloads the actual
-/// pixel buffer in response to an explicit LoadImage() call, not to
-/// _state.ImagePath changing, so having Undo/Redo silently rewrite that path
-/// (without the displayed image actually reloading to match) desynced it from
-/// whatever was really on screen -- and that wrong path is what got persisted
-/// to settings.json at exit, restoring the wrong PNG on the next launch.</summary>
+/// <summary>Undo に値するオーバーレイのプロパティのスナップショット(位置・サイズ・
+/// 回転・不透明度・PNG のルック調整)。クリックスルーは除外(編集ではなくモード
+/// トグル)。読み込み画像のパスも除外: OverlayWindow は明示的な LoadImage() でしか
+/// ピクセルを読み直さないので、Undo/Redo でパスだけ書き換わると表示画像とずれ、
+/// それが settings.json に保存されて次回起動で別 PNG が復元されていた。</summary>
 public sealed record OverlaySnapshot(
     double X, double Y, double Width, double Height, double RotationDegrees, double Opacity,
     double EdgeBlurRadius, double Brightness, double Contrast, double Saturation,
@@ -16,32 +12,19 @@ public sealed record OverlaySnapshot(
     double Highlights, double Shadows, double Whites, double Blacks,
     double ColorTintStrength, byte ColorTintR, byte ColorTintG, byte ColorTintB);
 
-/// <summary>
-/// Undo/redo for <see cref="OverlayState"/>, plus (via <see cref="CaptureExtra"/>/
-/// <see cref="ApplyExtra"/>) any composite-mode-only state that lives outside
-/// OverlayState (ControlPanelWindow's photo look, grain/vignette, and
-/// placement fields) -- both ride the same single undo timeline instead of
-/// needing a separate stack, since a Ctrl+Z should undo "whatever the user
-/// just changed" regardless of which bucket of state it happened to land in.
+/// <summary><see cref="OverlayState"/> の Undo/Redo と、<see cref="CaptureExtra"/>/
+/// <see cref="ApplyExtra"/> 経由で OverlayState 外の合成モード専用状態
+/// (ControlPanelWindow の写真ルック・グレイン/ビネット・配置)。Ctrl+Z は
+/// 「直前に変えたもの」を戻すべきなので、両者を別スタックにせず1つのタイムラインに乗せる。
 ///
-/// Usage: call <see cref="BeginChange"/> right before a user-driven edit
-/// starts (mouse-down on a drag/resize/rotate handle, before a Snap, before a
-/// text box/slider edit begins via GotFocus), then <see cref="CommitChange"/>
-/// once it's done (mouse-up, after Snap completes, on LostFocus) -- this
-/// groups a whole drag gesture into a single undo step instead of one step
-/// per intermediate mouse-move.
+/// 使い方: 編集開始直前に <see cref="BeginChange"/>(ハンドルの mouse-down、Snap の前、
+/// テキスト/スライダーの GotFocus)、完了時に <see cref="CommitChange"/>(mouse-up、
+/// Snap 完了後、LostFocus)。ドラッグ全体を1 Undo ステップにまとめる。
 ///
-/// Begin/Commit calls can legitimately overlap: e.g. the user can be mid-drag
-/// on a slider (focus gained, BeginChange already called) when VRChat's window
-/// resizes and triggers an unrelated auto-reposition, which makes its own
-/// Begin/Commit call before the slider's own LostFocus ever fires. A naive
-/// single-pending-snapshot implementation would have the inner call's Commit
-/// silently clear the outer call's pending snapshot, so the slider edit that
-/// was in progress would never make it onto the undo stack at all. Tracking a
-/// nesting depth instead -- only the outermost Begin captures, only the
-/// outermost Commit finalizes -- fixes that: overlapping calls just merge into
-/// one undo step spanning from whichever started first to whichever ended last.
-/// </summary>
+/// Begin/Commit は正当に入れ子になり得る(スライダードラッグ中に VRChat リサイズが
+/// 別の自動再配置を起こす等)。単一 pending スナップショットだと内側の Commit が外側の
+/// pending を消してしまうので、深さカウンタで最外の Begin だけ捕捉・最外の Commit だけ
+/// 確定する。重なった呼び出しは1ステップにマージされる。</summary>
 public sealed class UndoManager
 {
     private sealed record Snapshot(OverlaySnapshot Overlay, object? Extra);
@@ -52,19 +35,15 @@ public sealed class UndoManager
     private Snapshot? _pendingBefore;
     private int _depth;
 
-    /// <summary>Set once by whichever window owns the extra (non-OverlayState)
-    /// undoable fields, so Capture/Apply below can fold them into the same
-    /// snapshot without UndoManager needing to know their concrete type.</summary>
+    /// <summary>OverlayState 外の undo 対象フィールドを持つウィンドウが一度だけ設定する。
+    /// UndoManager が具体型を知らずに同じスナップショットへ畳み込めるようにするため。</summary>
     public Func<object?>? CaptureExtra { get; set; }
     public Action<object?>? ApplyExtra { get; set; }
 
-    /// <summary>Fired right after Undo/Redo actually applies a change (not
-    /// on a no-op call with an empty stack) -- lets a UI layer react (flash
-    /// whichever rows changed, show a small icon) without UndoManager itself
-    /// needing to know anything about WPF controls. The leading bool is true
-    /// for a Redo, false for an Undo; the two snapshots are the one from
-    /// just before the jump and the one just applied, so a listener can
-    /// diff them field-by-field to find out what actually changed.</summary>
+    /// <summary>Undo/Redo が実際に変更を適用した直後に発火(空スタックの no-op では
+    /// 発火しない)。UI が反応(変わった行をフラッシュ、アイコン表示)できるように。
+    /// 先頭の bool は Redo=true / Undo=false。2つのスナップショットはジャンプ直前と
+    /// 適用後で、リスナーがフィールド単位で差分を取れる。</summary>
     public event Action<bool, OverlaySnapshot, OverlaySnapshot, object?, object?>? Applied;
 
     public UndoManager(OverlayState state)
@@ -83,12 +62,9 @@ public sealed class UndoManager
 
     private void Apply(Snapshot s)
     {
-        // One undo/redo step is one logical operation even though it touches
-        // 20+ OverlayState fields -- batching collapses those into a single
-        // PropertyChanged, so subscribers that rebuild real UI on every
-        // notification (OverlayWindow's guide redraw, ControlPanelWindow's
-        // RefreshFromState) do that once per Undo/Redo instead of once per
-        // field. See OverlayState.BeginBatch's own doc comment.
+        // 1 Undo/Redo ステップは 20+ フィールドに触れても1つの論理操作。バッチで
+        // PropertyChanged を1回にまとめ、通知ごとに UI を作り直す購読者(ガイド再描画、
+        // RefreshFromState)がフィールド単位ではなくステップ単位で走るようにする。
         _state.BeginBatch();
         try
         {
@@ -127,12 +103,10 @@ public sealed class UndoManager
         ApplyExtra?.Invoke(s.Extra);
     }
 
-    /// <summary>Wipes both stacks (and any half-open pending change). Called
-    /// when the composite's photo source itself changes -- a newly loaded
-    /// screenshot or a fresh "背景なしで作成" canvas -- because every snapshot's
-    /// placement / look / decal / blank-canvas state is meaningful only against
-    /// the photo it was captured over; letting Ctrl+Z carry back across that
-    /// boundary would restore nonsense for the wrong image.</summary>
+    /// <summary>両スタック(と開きかけの pending)を消す。合成の写真ソースが変わった時
+    /// (新しいスクショ、新規「背景なしで作成」)に呼ぶ。各スナップショットの配置/ルック/
+    /// デカール/背景色はその写真に対してのみ意味を持ち、境界を跨いで Ctrl+Z すると
+    /// 別画像に対して無意味な状態を復元してしまうため。</summary>
     public void Clear()
     {
         _undoStack.Clear();
@@ -161,11 +135,9 @@ public sealed class UndoManager
         _redoStack.Clear();
     }
 
-    // Both OverlayWindow and ControlPanelWindow are separate top-level windows
-    // that can each independently receive a Ctrl+Z keypress; as a defensive
-    // safety net against any double-delivery of what the user perceives as one
-    // physical key press (whichever window-focus quirk might cause that), two
-    // Undo/Redo calls arriving within this short a window collapse into one.
+    // OverlayWindow と ControlPanelWindow は別々のトップレベルウィンドウで、それぞれ
+    // 独立に Ctrl+Z を受け得る。1回の物理キー押下が二重配送されるケースへの保険として、
+    // この短時間内に届いた2つの Undo/Redo は1つにまとめる。
     private static readonly TimeSpan CallDebounce = TimeSpan.FromMilliseconds(60);
     private DateTime _lastUndoCall = DateTime.MinValue;
     private DateTime _lastRedoCall = DateTime.MinValue;
