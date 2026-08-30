@@ -1,8 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Same brand hues as LightTheme (indigo primary, dusty-rose accent),
-         lightened so they still pop against a dark surface instead of
-         sinking into it. -->
+    <!-- LightTheme と同じブランド色相(インディゴ = primary、ダスティローズ = accent)を、
+         暗い面でも沈まず映えるよう明るくしたもの。 -->
     <SolidColorBrush x:Key="PrimaryBrush" Color="#7B87E0" />
     <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#5C68C2" />
     <SolidColorBrush x:Key="AccentBrush" Color="#E29CB2" />
@@ -10,9 +9,9 @@
     <SolidColorBrush x:Key="SuccessBrush" Color="#4FAE53" />
     <SolidColorBrush x:Key="AppBackgroundBrush" Color="#1C1C26" />
     <SolidColorBrush x:Key="CardBackgroundBrush" Color="#26262F" />
-    <!-- Darker than CardBackgroundBrush (recessed into the card) so text/
-         number fields read as distinct input wells, not just another card
-         surface. See LightTheme's own comment on this key. -->
+    <!-- CardBackgroundBrush より暗く(カードにくぼんで見える)、テキスト/数値
+         フィールドを別カード面ではなく独立した入力欄として読ませる。
+         このキーは LightTheme のコメントも参照。 -->
     <SolidColorBrush x:Key="InputBackgroundBrush" Color="#1C1C26" />
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#EDEDF5" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A8A8C0" />
@@ -21,6 +20,6 @@
     <SolidColorBrush x:Key="PrimaryTintHoverBrush" Color="#3F4270" />
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#4A4A5E" />
     <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#63637E" />
-    <!-- Kept identical to LightTheme, see LightTheme's own comment. -->
+    <!-- LightTheme と同一。LightTheme のコメント参照。 -->
     <SolidColorBrush x:Key="PreviewMatBrush" Color="#48484F" />
 </ResourceDictionary>

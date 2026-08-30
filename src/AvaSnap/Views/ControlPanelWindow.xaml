@@ -53,38 +53,26 @@
             </Canvas>
         </Viewbox>
 
-        <!-- Continuous rotation for CompositeLoadingPanel's spinner arc,
-             started/stopped explicitly from code-behind (see
-             ShowCompositeLoading/HideCompositeLoading), not tied to any
-             trigger, since Visibility alone doesn't start/stop a Forever-
-             repeating animation on its own. -->
+        <!-- CompositeLoadingPanel のスピナー弧の連続回転。コードビハインドから
+             明示的に開始/停止する(ShowCompositeLoading/HideCompositeLoading)。
+             Visibility だけでは Forever リピートアニメーションは開始/停止しない。 -->
         <Storyboard x:Key="CompositeLoadingSpinStoryboard">
             <DoubleAnimation Storyboard.TargetName="CompositeLoadingSpinnerRotate" Storyboard.TargetProperty="Angle"
                               From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever" />
         </Storyboard>
-        <!-- The actual color values for Primary/Accent/Success/Background/
-             Text/Hairline/Tint/ScrollThumb/PreviewMat brushes now live in
-             Themes/LightTheme.xaml and Themes/DarkTheme.xaml, one of which
-             ThemeService merges into Application.Resources at startup (and
-             swaps at runtime when the header's dark-mode toggle is
-             clicked), see ThemeService. Every reference to those brush
-             keys below is a DynamicResource (not StaticResource), since a
-             StaticResource lookup is resolved once at load time and would
-             not pick up a later theme swap. -->
+        <!-- Primary/Accent/Success/Background/Text/Hairline/Tint/ScrollThumb/
+             PreviewMat ブラシの実際の色値は Themes/LightTheme.xaml と
+             Themes/DarkTheme.xaml にあり、ThemeService が起動時にどちらかを
+             Application.Resources へマージする(ダークモードトグルで実行時に切替)。
+             以下のブラシキー参照はすべて DynamicResource ── StaticResource は
+             読み込み時に1回解決され、後のテーマ切替を拾わないため。 -->
 
-        <!-- Speech-bubble look for every ToolTip in the window (untargeted
-             TargetType style, same approach as SliderThumbStyle): a solid
-             PrimaryBrush-filled bubble with white text, not a thin-
-             bordered white box, so it reads as a clearly distinct
-             "floating label" against the app's light background instead of
-             blending in like just another card. The tail is a same-color,
-             unstroked 45-degree-rotated square tucked mostly behind the
-             bubble's own Border (drawn after it, so it's on top and covers
-             the tail's upper half), leaving only its lower corner poking up
-             as a point (no separate Stroke needed since there's no border
-             line to keep seamless). VerticalOffset is small (2, down from an
-             earlier 8) so the bubble sits close under whatever's hovered
-             instead of leaving a noticeable gap. -->
+        <!-- 窓内の全 ToolTip の吹き出し風スタイル(TargetType 指定なし、
+             SliderThumbStyle と同じ手法): 細枠の白箱ではなく PrimaryBrush で塗った
+             白文字の吹き出しにして、明るい背景に対して「浮くラベル」として読ませる。
+             しっぽは同色・無ストロークの 45 度回転した四角を Border の背面に大半を
+             隠して置き、下の角だけを尖りとして覗かせる。VerticalOffset は小さく(2)
+             して吹き出しがホバー対象のすぐ下に来るようにする。 -->
         <Style TargetType="ToolTip">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -102,14 +90,11 @@
                                 </Rectangle.RenderTransform>
                             </Rectangle>
                             <Border Background="{DynamicResource PrimaryBrush}" CornerRadius="10" Padding="11,8" MaxWidth="240" Margin="0,6,0,0">
-                                <!-- A plain TextBlock bound to Content, not a
-                                     ContentPresenter: every ToolTip here is
-                                     set as a plain string (ToolTip="..."),
-                                     so this always has text to bind to, and
-                                     TextWrapping isn't one of TextElement's
-                                     attached properties (unlike Foreground/
-                                     FontSize), so it can't be set on a
-                                     ContentPresenter the same way. -->
+                                <!-- ContentPresenter ではなく Content にバインドした
+                                     素の TextBlock: ここの ToolTip はすべて文字列
+                                     (ToolTip="...")なので常にテキストがあり、
+                                     TextWrapping は TextElement の添付プロパティでは
+                                     ないので ContentPresenter には同じように設定できない。 -->
                                 <TextBlock Text="{TemplateBinding Content}" Foreground="White"
                                            FontSize="13.5" TextWrapping="Wrap" />
                             </Border>
@@ -160,10 +145,8 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Toggles whether the avatar-image look and the photo look move
-             together: off by default (independent, the existing behavior),
-             content/color flip when checked so the linked state is obvious
-             at a glance without needing a separate label. -->
+        <!-- アバタールックと写真ルックを連動させるかのトグル: 既定はオフ(独立)。
+             チェック時に内容/色が反転し、別ラベル無しでも連動状態が一目で分かる。 -->
         <Style x:Key="LinkToggleButton" TargetType="ToggleButton">
             <Setter Property="Background" Value="{DynamicResource HairlineBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
@@ -179,13 +162,10 @@
                         <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="18">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"
                                         Margin="{TemplateBinding Padding}">
-                                <!-- Lucide "link" icon (ISC license). Stroke
-                                     follows the ToggleButton's own Foreground
-                                     (TextSecondaryBrush/White per the
-                                     IsChecked trigger below), the same way
-                                     TitleBarCloseButton's icon does, since a
-                                     Path's Stroke doesn't inherit from
-                                     Foreground the way a TextBlock would. -->
+                                <!-- Lucide "link" アイコン(ISC ライセンス)。Stroke は
+                                     ToggleButton の Foreground に追従する(下の IsChecked
+                                     トリガーで TextSecondaryBrush/White)── Path の Stroke は
+                                     TextBlock と違い Foreground を継承しないため。 -->
                                 <Viewbox Width="13" Height="13" Margin="0,0,6,0">
                                     <Canvas Width="24" Height="24">
                                         <Path Data="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
@@ -290,9 +270,8 @@
             <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="16" />
-            <!-- No drop shadow: cards are told apart from AppBackgroundBrush
-                 by flat color contrast instead (see AppBackgroundBrush's own
-                 comment), not elevation shading. -->
+            <!-- ドロップシャドウ無し: カードは影ではなく AppBackgroundBrush との
+                 フラットな色コントラストで見分ける。 -->
         </Style>
 
         <!-- CardのIsEnabled=False版。プレーンなBorderはIsEnabled=Falseでも
@@ -388,11 +367,9 @@
                     <ControlTemplate TargetType="Button">
                         <Grid>
                             <ContentPresenter />
-                            <!-- Hover feedback can't be a background-tint
-                                 swap like RotateIconButton's (the button's
-                                 own "background" IS the picked color, so
-                                 tinting it would misrepresent the color);
-                                 a translucent white overlay on top instead. -->
+                            <!-- ホバー表現に背景ティントは使えない(ボタンの
+                                 「背景」が選択色そのものなので色が誤って見える)。
+                                 代わりに半透明の白を上に重ねる。 -->
                             <Border x:Name="HoverOverlay" CornerRadius="5" Background="White" Opacity="0" />
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -405,12 +382,10 @@
             </Setter>
         </Style>
 
-        <!-- Draggable divider between the composite-mode preview and the
-             cards column (see the 6px splitter ColumnDefinition in
-             CompositePanel): a thin centered hairline at rest so it doesn't
-             read as a heavy hard border, widening to the full 6px hit-area
-             and switching to PrimaryBrush on hover so it's discoverable as
-             draggable without being visually loud all the time. -->
+        <!-- 合成モードのプレビューとカード列の間のドラッグ可能な仕切り
+             (CompositePanel の 6px スプリッタ列)。通常は中央の細いヘアラインで
+             重い境界に見えないようにし、ホバーで 6px のヒット領域全体に広がって
+             PrimaryBrush になり、常時うるさくせずドラッグ可能だと分かる。 -->
         <Style x:Key="PreviewCardsSplitter" TargetType="GridSplitter">
             <Setter Property="Width" Value="6" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -464,13 +439,10 @@
             </Setter>
         </Style>
 
-        <!-- Dark-mode switch: a slightly wider variant of SwitchToggleButton
-             (40x20 instead of 34x18) so it reads clearly as a toggle at a
-             glance from the title bar, not just a small icon button. The
-             sun/moon icon rides inside the sliding Thumb itself (always
-             drawn on a white circle) rather than sitting fixed on the
-             Track, so it stays legible regardless of which color the Track
-             is currently showing. -->
+        <!-- ダークモードスイッチ: SwitchToggleButton をやや広くした版(34x18 →
+             40x20)で、タイトルバーから一目でトグルと分かるようにする。太陽/月
+             アイコンは Track 固定ではなくスライドする Thumb 内(常に白丸の上)に
+             乗るので、Track がどの色でも読める。 -->
         <Style x:Key="ThemeSwitchToggleButton" TargetType="ToggleButton">
             <Setter Property="Width" Value="40" />
             <Setter Property="Height" Value="20" />
@@ -482,7 +454,7 @@
                             <Border x:Name="Thumb" Width="16" Height="16" CornerRadius="8" Background="White"
                                     HorizontalAlignment="Left" Margin="2,0,0,0">
                                 <Grid>
-                                    <!-- Lucide "sun" icon (ISC license). -->
+                                    <!-- Lucide "sun" アイコン(ISC ライセンス)。 -->
                                     <Viewbox x:Name="SunIcon" Width="10" Height="10">
                                         <Canvas Width="24" Height="24">
                                             <Ellipse Canvas.Left="8" Canvas.Top="8" Width="8" Height="8"
@@ -491,7 +463,7 @@
                                                   Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                                         </Canvas>
                                     </Viewbox>
-                                    <!-- Lucide "moon" icon (ISC license). -->
+                                    <!-- Lucide "moon" アイコン(ISC ライセンス)。 -->
                                     <Viewbox x:Name="MoonIcon" Width="10" Height="10" Visibility="Collapsed">
                                         <Canvas Width="24" Height="24">
                                             <Path Data="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"
@@ -518,9 +490,8 @@
             </Setter>
         </Style>
 
-        <!-- Small square preset swatch (DropShadowColorPopup's quick-pick
-             row): a plain solid-color square, no icon/content, rounded to
-             match the app's other small square buttons (RotateIconButton). -->
+        <!-- 小さな四角のプリセットスウォッチ(DropShadowColorPopup のクイックピック行):
+             アイコン無しのべた塗り四角。他の小四角ボタン(RotateIconButton)に合わせて角丸。 -->
         <Style x:Key="ColorPresetButton" TargetType="Button">
             <Setter Property="Width" Value="28" />
             <Setter Property="Height" Value="28" />
@@ -633,31 +604,22 @@
             <Setter Property="Margin" Value="0,0,0,4" />
         </Style>
 
-        <!-- One-row slider field: label | slider | numeric box, instead of
-             three stacked rows (label, box, slider). Both the label and the
-             box get a fixed width so every field in a card lines up. -->
+        <!-- 1行のスライダーフィールド: ラベル | スライダー | 数値ボックス
+             (縦3段ではなく)。ラベルとボックスは固定幅で、カード内の各行がそろう。 -->
         <Style x:Key="SliderRowLabel" TargetType="TextBlock" BasedOn="{StaticResource FieldLabel}">
-            <!-- 116 (up from 90): matches 仕上げエフェクト's own longtime
-                 convention (needed there to fit "ドロップシャドウ"/
-                 "ライトリーク" without clipping), so every slider on the
-                 composite screen, from avatar look through photo look to
-                 finishing effects, lines up to the same track length
-                 instead of the two sections visibly disagreeing. -->
+            <!-- 116(90 から拡大): 仕上げエフェクトの慣例に合わせる
+                 (「ドロップシャドウ」「ライトリーク」が切れないため)。合成画面の
+                 全スライダーが同じトラック長でそろう。 -->
             <Setter Property="Width" Value="116" />
             <Setter Property="Margin" Value="0,0,8,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <!-- Default hover delay before a ToolTip shows (~400-500ms,
-                 tied to the system's double-click/hover setting) felt slow
-                 for something meant to be glanced at while adjusting a
-                 slider. -->
+            <!-- ToolTip 表示の既定ホバー遅延(約400-500ms)は、スライダー調整中に
+                 ちらっと見る用途には遅い。 -->
             <Setter Property="ToolTipService.InitialShowDelay" Value="150" />
         </Style>
         <Style x:Key="SliderRowBox" TargetType="TextBox" BasedOn="{StaticResource ModernTextBox}">
-            <!-- 60 (up from 52): at FontSize 13 (bumped from 12), 3-digit
-                 values like "100"/"360" were clipping inside the old 52px
-                 width. Kept as small a bump as covers that, rather than
-                 widening further and visibly changing each row's overall
-                 footprint. -->
+            <!-- 60(52 から拡大): FontSize 13 だと「100」「360」など3桁が旧 52px
+                 幅で切れていた。行の見た目を大きく変えない最小限の拡大にとどめる。 -->
             <Setter Property="Width" Value="60" />
             <Setter Property="Margin" Value="8,0,0,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -689,11 +651,8 @@
             </Setter>
         </Style>
 
-        <!-- The top bar's Home/minimize/mode-switch buttons sit right next
-             to each other as one group. A shared soft tinted pill
-             background (same color for all three, unlike an earlier version
-             of this that gave each its own hue) reads as "these go together"
-             instead of BackButton's plain transparent/no-background look. -->
+        <!-- 上部バーのホーム/最小化/モード切替ボタンは1グループとして隣接する。
+             共通の淡いティントのピル背景(3つとも同色)で「まとまり」に見せる。 -->
         <Style x:Key="NavPillButton" TargetType="Button" BasedOn="{StaticResource BackButton}">
             <Setter Property="Background" Value="{DynamicResource PrimaryTintBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}" />
@@ -714,16 +673,11 @@
             </Setter>
         </Style>
 
-        <!-- Home/Minimize/mode-switch as one segmented control instead of 3
-             separate floating pills: a single tinted, rounded container
-             (see NavSegmentGroup below) clips these to flat rectangles so
-             only the outer corners round off, with a hairline divider
-             between segments standing in for the gap NavPillButton used to
-             have. Three variants (not one shared style) because the hover
-             highlight is its own Border per button. The FIRST/LAST ones
-             need to round off on their outer edge to match the group's own
-             corners, or hovering them looks like the rounding "un-rounds"
-             for as long as the mouse is over it. -->
+        <!-- ホーム/最小化/モード切替を、3つの浮いたピルではなく1つのセグメント
+             コントロールにする: ティントの角丸コンテナ(下の NavSegmentGroup)が
+             これらをフラットな矩形にクリップし、外側の角だけ丸める。セグメント間は
+             ヘアライン区切り。ホバーハイライトがボタンごとの Border なので3バリアント。
+             先頭/末尾は外側の角をグループの角に合わせて丸める必要がある。 -->
         <Style x:Key="NavSegmentButton" TargetType="Button" BasedOn="{StaticResource BackButton}">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Padding" Value="14,8" />
@@ -786,8 +740,7 @@
         </Style>
 
 
-        <!-- Custom title bar's close button: the standard "turns red on
-             hover" look from a normal Windows title bar. -->
+        <!-- カスタムタイトルバーの閉じるボタン: Windows 標準の「ホバーで赤」見た目。 -->
         <Style x:Key="TitleBarCloseButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
@@ -811,13 +764,9 @@
             </Setter>
         </Style>
 
-        <!-- Custom title bar's minimize button: same shape as
-             TitleBarCloseButton but a neutral hairline hover instead of red
-             (minimizing isn't a destructive action). Shared across Align/
-             Composite mode (see TitleBarMinimizeButton's Visibility, toggled
-             alongside HomePanel/AlignPanel/CompositePanel/CompactPanel in
-             ShowHome/ShowAlign/ShowComposite/EnterCompact) rather than each
-             mode having its own copy in its own NavSegmentGroup. -->
+        <!-- カスタムタイトルバーの最小化ボタン: 形は TitleBarCloseButton と同じだが
+             ホバーは赤ではなく中立のヘアライン(最小化は破壊的操作ではない)。
+             位置合わせ/合成モードで共有する。 -->
         <Style x:Key="TitleBarMinimizeButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -838,28 +787,20 @@
             </Setter>
         </Style>
 
-        <!-- Slider: colored fill from the slider's ZERO point to the thumb (not
-             from Minimum): for a -100..100-style slider, sitting at 0 should
-             look empty, not half-filled. SliderZeroFillConverter computes this;
-             for a slider whose Minimum is already 0 (edge blur, opacity) the
-             zero point IS the left edge, so it degrades to an ordinary
-             fill-from-the-left bar automatically, no separate style needed.
-             Round thumb, no shadow. Applied to every Slider in the window
-             automatically (untargeted TargetType style) instead of tagging
-             each of the 8 sliders individually. -->
+        <!-- スライダー: Minimum ではなくゼロ点から thumb まで色を塗る。-100..100
+             系のスライダーは 0 で半分ではなく空に見えるべき。SliderZeroFillConverter が
+             計算する。Minimum が既に 0 のスライダー(境界ぼかし、不透明度)ではゼロ点が
+             左端なので、自動的に通常の左詰めバーに退化する。丸 thumb、影なし。
+             窓内の全 Slider に自動適用(TargetType 指定なし)。 -->
         <Style x:Key="SliderThumbStyle" TargetType="Thumb">
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
                         <Ellipse x:Name="Dot" Width="16" Height="16" Fill="{DynamicResource PrimaryBrush}" Stroke="White" StrokeThickness="2" />
-                        <!-- IsEnabled cascades down from the Slider to this
-                             Thumb automatically (standard WPF property
-                             inheritance), so this trigger alone is enough:
-                             no code-behind needed to propagate it. Grays the
-                             handle out and swaps the cursor so a disabled
-                             slider doesn't look draggable even though its
-                             own PrimaryBrush-filled dot would otherwise look
-                             identical whether enabled or not. -->
+                        <!-- IsEnabled は Slider からこの Thumb へ自動継承されるので
+                             このトリガーだけで十分(コードビハインド不要)。無効時は
+                             ハンドルをグレーにしカーソルを変えて、ドラッグ不可だと分かる
+                             ようにする。 -->
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Dot" Property="Fill" Value="{DynamicResource TextSecondaryBrush}" />
@@ -883,15 +824,10 @@
         </Style>
         <Style TargetType="Slider">
             <Setter Property="Height" Value="24" />
-            <!-- Click-to-jump and drag-to-follow on PART_Track are both
-                 handled explicitly in code-behind (SliderTrack_Preview*),
-                 NOT via IsMoveToPointEnabled. That built-in mechanism was
-                 tried first, but its own internal simulated-Thumb-press
-                 seemed to fight with the explicit mouse capture the
-                 continue-following-past-the-track-bounds fix needs (losing
-                 the drag the moment the pointer strayed vertically off the
-                 track), so it's left off entirely now that the explicit
-                 version covers the same behavior end to end. -->
+            <!-- PART_Track のクリックジャンプとドラッグ追従はどちらも
+                 コードビハインド(SliderTrack_Preview*)で明示的に処理する。
+                 IsMoveToPointEnabled は使わない ── 組込機構の内部の擬似 Thumb 押下が、
+                 トラック外へ出ても追従し続けるための明示的マウスキャプチャと競合した。 -->
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
@@ -907,17 +843,12 @@
                                     </MultiBinding>
                                 </Border.Margin>
                             </Border>
-                            <!-- IsMoveToPointEnabled jumps the thumb to
-                                 wherever the track is first clicked, but
-                                 pressing there and dragging without
-                                 releasing doesn't reliably keep following
-                                 the mouse with this app's custom
-                                 (transparent) RepeatButton style, so
-                                 PART_Track handles that continuation itself
-                                 below (see SliderTrack_PreviewMouseMove).
-                                 Clicks that land on the Thumb itself are
-                                 left alone, since the Thumb already drags
-                                 correctly on its own. -->
+                            <!-- IsMoveToPointEnabled はクリック位置へ thumb を
+                                 飛ばすが、そのまま押しっぱなしでドラッグしても
+                                 このアプリの透明 RepeatButton スタイルでは追従が
+                                 安定しないので、下の PART_Track が継続処理する
+                                 (SliderTrack_PreviewMouseMove 参照)。Thumb 自体への
+                                 クリックは触らない。 -->
                             <Track x:Name="PART_Track" VerticalAlignment="Center"
                                    PreviewMouseLeftButtonDown="SliderTrack_PreviewMouseLeftButtonDown"
                                    PreviewMouseMove="SliderTrack_PreviewMouseMove"
@@ -933,21 +864,16 @@
                                 </Track.Thumb>
                             </Track>
                         </Grid>
-                        <!-- CompareSlider sets Tag="NoFill" (see its
-                             declaration) since a blue progress bar reads as
-                             "how much has completed", which is the wrong
-                             message for a before/after split position: it's
-                             not a slider working towards a target. -->
+                        <!-- CompareSlider は Tag="NoFill" を設定する ── 青い進捗バーは
+                             「どれだけ完了したか」に見え、ビフォー/アフターの分割位置には
+                             合わない。 -->
                         <ControlTemplate.Triggers>
                             <Trigger Property="Tag" Value="NoFill">
                                 <Setter TargetName="Fill" Property="Visibility" Value="Collapsed" />
                             </Trigger>
-                            <!-- The Thumb's own IsEnabled=False trigger
-                                 (SliderThumbStyle) grays the handle itself;
-                                 this dims the filled portion of the track
-                                 the same way, so a disabled slider reads as
-                                 "not interactive" at a glance across its
-                                 whole length, not just at the handle. -->
+                            <!-- Thumb の IsEnabled=False トリガー(SliderThumbStyle)は
+                                 ハンドルをグレーにする。これはトラックの塗り部分も
+                                 同様に薄くし、無効スライダーが全長で「操作不可」に見えるようにする。 -->
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Fill" Property="Opacity" Value="0.4" />
                                 <Setter Property="Cursor" Value="Arrow" />
@@ -1009,16 +935,12 @@
             </Setter>
         </Style>
 
-        <!-- ScrollBar: a thin floating pill (HairlineBrush at rest, darkening
-             on hover/drag), no arrow buttons, matching the same rounded/flat
-             visual language as SliderThumbStyle above instead of Windows'
-             default chunky gray scrollbar. The line-up/down RepeatButtons
-             are collapsed to zero size rather than removed outright (removing
-             them outright isn't safe here):
-             ScrollBar's default template still expects PART_LineUpButton/
-             PART_LineDownButton to exist for the wheel/keyboard scroll
-             commands to route to, even though this look has no visible
-             arrows for them. -->
+        <!-- ScrollBar: 細い浮きピル(通常 HairlineBrush、ホバー/ドラッグで濃く)、
+             矢印ボタン無し。Windows 標準の太いグレーバーではなく上の SliderThumbStyle と
+             同じ角丸/フラットな見た目。line-up/down の RepeatButton は削除せずゼロ
+             サイズにする ── ScrollBar の既定テンプレートはホイール/キーボード
+             スクロールのルーティング先として PART_LineUpButton/PART_LineDownButton の
+             存在を前提にするため。 -->
         <Style x:Key="ScrollBarLineButton" TargetType="RepeatButton">
             <Setter Property="OverridesDefaultStyle" Value="True" />
             <Setter Property="Focusable" Value="False" />
@@ -1088,10 +1010,9 @@
         </Style>
     </Window.Resources>
 
-    <!-- Explicit AdornerLayer host: WindowStyle="None" plus a from-scratch
-         content tree means the default Window template's usual
-         AdornerDecorator can't be relied on to exist. LookLinkConnector's
-         adorner (see ControlPanelWindow.xaml.cs) needs one to attach to. -->
+    <!-- 明示的な AdornerLayer ホスト: WindowStyle="None" + 自作のコンテンツツリー
+         では、既定 Window テンプレートの AdornerDecorator の存在を当てにできない。
+         LookLinkConnector のアドーナー(ControlPanelWindow.xaml.cs)が付ける先が要る。 -->
     <AdornerDecorator>
     <Grid Background="{DynamicResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
@@ -1099,14 +1020,10 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Custom title bar: WindowStyle="None" drops the native one (the
-             user found it just wasteful chrome), so dragging and closing the
-             window need to be hand-rolled here instead. Kept opaque (no
-             AllowsTransparency) so the window stays hardware-accelerated,
-             which only matters for Composite mode's live image preview but
-             there's no reason to pay for it everywhere. Height=32 and the
-             Minimize/Maximize/Close cluster's 46px-wide buttons match the
-             standard Windows 10/11 caption bar. -->
+        <!-- カスタムタイトルバー: WindowStyle="None" でネイティブのを外したので
+             ドラッグと閉じるは自前。不透明のまま(AllowsTransparency なし)にして
+             ハードウェアアクセラレーションを保つ。Height=32 と最小化/最大化/閉じる
+             ボタン(幅 46px)は Windows 10/11 標準のキャプションバーに合わせる。 -->
         <Grid Grid.Row="0" Height="32" Background="{DynamicResource CardBackgroundBrush}"
               MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
@@ -1116,20 +1033,18 @@
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
-                <!-- Collapsed until App.xaml.cs's background CheckForUpdatesAsync
-                     finds something newer than the running build (see
-                     ShowUpdateAvailableNotification): this button IS the
-                     notification (no separate badge/dot elsewhere), and stays
-                     visible across every mode since it lives in the shared
-                     title bar. Clicking it opens バージョン情報's update
-                     section and hides itself again. -->
+                <!-- App.xaml.cs のバックグラウンド CheckForUpdatesAsync が新しい
+                     ビルドを見つけるまで Collapsed(ShowUpdateAvailableNotification)。
+                     このボタン自体が通知(他にバッジは無い)で、共有タイトルバーに
+                     あるので全モードで見える。押すとバージョン情報の更新セクションを
+                     開き、自身は再び隠れる。 -->
                 <Button x:Name="TitleBarUpdateButton" Style="{StaticResource TitleBarMinimizeButton}"
                         Padding="10,0" Margin="0,4,4,4" Visibility="Collapsed"
                         Click="TitleBarUpdateButton_Click" ToolTip="新しいバージョンがあります">
                     <StackPanel Orientation="Horizontal">
                         <Viewbox Width="13" Height="13" Margin="0,0,5,0">
                             <Canvas Width="24" Height="24">
-                                <!-- Lucide "download" icon (ISC license). -->
+                                <!-- Lucide "download" アイコン(ISC ライセンス)。 -->
                                 <Path Data="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" Stroke="{DynamicResource PrimaryBrush}"
                                       StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
                                 <Path Data="M7 10l5 5 5-5" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
@@ -1143,31 +1058,23 @@
                     </StackPanel>
                 </Button>
 
-                <!-- Dark-mode toggle: always reachable from the top-right,
-                     regardless of which mode/settings screen is open (the
-                     title bar is shared by every screen). A wide switch (not
-                     a plain icon button) so it visually reads as a toggle at
-                     a glance; the sun/moon icon riding the sliding thumb
-                     shows which mode is CURRENTLY active. -->
+                <!-- ダークモードトグル: どの画面が開いていても右上から常に届く
+                     (タイトルバーは全画面共通)。一目でトグルと分かる幅広スイッチ。
+                     スライド thumb 上の太陽/月アイコンが現在のモードを示す。 -->
                 <ToggleButton x:Name="ThemeToggleButton" Style="{StaticResource ThemeSwitchToggleButton}"
                               VerticalAlignment="Center" Margin="0,0,10,0"
                               Checked="ThemeToggleButton_Changed" Unchecked="ThemeToggleButton_Changed"
                               ToolTip="ダークモードの切り替え" />
 
-                <!-- Only meaningful (and visible) while Align or Composite mode
-                     is actually open. See ShowHome/ShowAlign/ShowComposite/
-                     EnterCompact, each of which sets this alongside the panel
-                     Visibility toggles above. Not a real OS minimize: it
-                     shrinks the window to CompactPanel's small corner widget
-                     (see EnterCompact/TitleBarMinimizeButton_Click), which is
-                     why it keeps its own dedicated icon rather than a plain
-                     "_" glyph. -->
+                <!-- 位置合わせ/合成モードが開いているときだけ意味を持ち表示される。
+                     OS の最小化ではなく、窓を CompactPanel の隅の小ウィジェットに
+                     縮める(EnterCompact/TitleBarMinimizeButton_Click)。だから
+                     ただの「_」ではなく専用アイコン。 -->
                 <Button x:Name="TitleBarMinimizeButton" Style="{StaticResource TitleBarMinimizeButton}" Width="46" Height="32"
                         Visibility="Collapsed" Click="TitleBarMinimizeButton_Click" ToolTip="最小化">
                     <Viewbox Width="14" Height="14">
                         <Canvas Width="24" Height="24">
-                            <!-- Lucide "minimize-2" icon (ISC license): diagonal
-                                 arrows pointing inward. -->
+                            <!-- Lucide "minimize-2" アイコン(ISC ライセンス): 内向きの斜め矢印。 -->
                             <Path Data="m14 10 7-7" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
                             <Path Data="M20 10h-6V4" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
@@ -1180,17 +1087,10 @@
                     </Viewbox>
                 </Button>
 
-                <!-- Real maximize/restore, toggling _isMaximized (see
-                     TitleBarMaximizeButton_Click): fills/restores via
-                     manual Width/Height/Left/Top rather than WPF's own
-                     WindowState.Maximized, consistent with how every mode
-                     already manages its own size/position by hand (see
-                     WithRedrawSuspended/PinToRightEdge) instead of relying
-                     on native window chrome, and sidesteps the classic WPF
-                     WindowStyle=None + WindowState=Maximized bug where the
-                     window overlaps the taskbar. Hidden in Compact mode
-                     (ExpandButton already covers "make it bigger again"
-                     there); see EnterCompact. -->
+                <!-- 本物の最大化/復元(TitleBarMaximizeButton_Click)。
+                     WindowState.Maximized を使い、WM_GETMINMAXINFO フックで
+                     WindowStyle=None + Maximized のタスクバー重なりバグを回避する。
+                     コンパクトモードでは非表示(ExpandButton が拡大を担うため)。 -->
                 <Button x:Name="TitleBarMaximizeButton" Style="{StaticResource TitleBarMinimizeButton}" Width="46" Height="32"
                         Click="TitleBarMaximizeButton_Click" ToolTip="最大化">
                     <Grid>
@@ -1222,15 +1122,13 @@
             </StackPanel>
         </Grid>
 
-        <!-- Home: mode picker. The settings icon sits in its own corner of
-             this row (not inside HomePanel's centered StackPanel), so it
-             stays put in a fixed corner regardless of how tall the mode
-             cards/settings panel are. -->
+        <!-- ホーム: モード選択。設定アイコンはこの行の隅に置く(HomePanel の中央
+             StackPanel の中ではない)ので、モードカード/設定パネルの高さに
+             関わらず固定の隅に留まる。 -->
         <Button x:Name="HomeSettingsToggle" Grid.Row="1" Style="{StaticResource NavPillButton}"
                 HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,16,16,0"
                 Padding="9,9" Click="HomeSettingsToggle_Click">
-            <!-- Lucide "settings" gear icon (ISC license), traced from its
-                 24x24 SVG path data, replacing the old ⚙️ emoji. -->
+            <!-- Lucide "settings" 歯車アイコン(ISC ライセンス)。旧絵文字の置き換え。 -->
             <Viewbox Width="15" Height="15">
                 <Canvas Width="24" Height="24">
                     <Path Data="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"
@@ -1255,14 +1153,10 @@
                                Foreground="{DynamicResource TextPrimaryBrush}" />
                     <TextBlock Text="VRChatのカメラ枠にアバター画像を合わせて配置します" FontSize="12"
                                Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,14" />
-                    <!-- FontSize explicitly overridden back to PillButton's
-                         pre-bump size: this button (and the others overridden
-                         the same way below) sits on the Home screen, which
-                         was asked to keep its original text sizes even after
-                         the rest of the app's fonts were bumped up. PillButton/
-                         SecondaryPillButton/BackButton/SectionHeader are shared
-                         styles still used (at the bumped size) elsewhere, so
-                         the style itself couldn't just be reverted. -->
+                    <!-- FontSize を PillButton の拡大前サイズに明示的に戻す:
+                         このボタン(と下の同様のもの)はホーム画面にあり、他のフォントを
+                         大きくした後も元のサイズを保つよう指定された。共有スタイルは
+                         他所で拡大サイズのまま使われるので、スタイル自体は戻せない。 -->
                     <Button Content="開く" Style="{StaticResource PillButton}" FontSize="13" HorizontalAlignment="Left"
                             Click="AlignModeButton_Click" />
                 </StackPanel>
@@ -1280,11 +1174,9 @@
             </Border>
         </StackPanel>
 
-        <!-- Screenshot watch-folder settings: its own card, anchored right
-             below the ⚙️ button in the same corner (not mixed into the
-             centered mode-picker StackPanel), so opening it visually reads
-             as "a panel dropped from that button" rather than appearing at
-             the bottom of an unrelated list. -->
+        <!-- スクショ監視フォルダ設定: 専用カード。歯車ボタンの真下・同じ隅に
+             アンカーする(中央のモード選択 StackPanel に混ぜない)ので、
+             「そのボタンから降りてきたパネル」に見える。 -->
         <Border x:Name="HomeSettingsPanel" Grid.Row="1" Style="{StaticResource Card}"
                 HorizontalAlignment="Right" VerticalAlignment="Top" Width="230"
                 Margin="0,64,16,0" Visibility="Collapsed">
@@ -1303,7 +1195,7 @@
                 <Button Style="{StaticResource SecondaryPillButton}" FontSize="13"
                         HorizontalAlignment="Left" Padding="14,6" Margin="0,0,0,8" Click="AboutButton_Click">
                     <StackPanel Orientation="Horizontal">
-                        <!-- Lucide "info" icon (ISC license). -->
+                        <!-- Lucide "info" アイコン(ISC ライセンス)。 -->
                         <Viewbox Width="13" Height="13" Margin="0,0,6,0">
                             <Canvas Width="24" Height="24">
                                 <Ellipse Canvas.Left="2" Canvas.Top="2" Width="20" Height="20"
@@ -1325,7 +1217,7 @@
                 <Button Style="{StaticResource SecondaryPillButton}" FontSize="13"
                         HorizontalAlignment="Left" Padding="14,6" Click="FeedbackButton_Click">
                     <StackPanel Orientation="Horizontal">
-                        <!-- Lucide "message-square" icon (ISC license). -->
+                        <!-- Lucide "message-square" アイコン(ISC ライセンス)。 -->
                         <Viewbox Width="13" Height="13" Margin="0,0,6,0">
                             <Canvas Width="24" Height="24">
                                 <Path Data="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
@@ -1338,7 +1230,7 @@
             </StackPanel>
         </Border>
 
-        <!-- Align mode -->
+        <!-- 位置合わせモード -->
         <Grid x:Name="AlignPanel" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -1350,11 +1242,8 @@
                 <StackPanel Orientation="Horizontal">
                     <Button Style="{StaticResource NavSegmentButtonFirst}" Click="BackToHome_Click">
                         <StackPanel Orientation="Horizontal">
-                            <!-- Lucide "house" icon (ISC license), traced
-                                 from its 24x24 SVG path data, replacing the
-                                 old 🏠 emoji for a crisper, resolution-
-                                 independent line icon matching the rest of
-                                 this app's vector-only look. -->
+                            <!-- Lucide "house" アイコン(ISC ライセンス)。旧絵文字の
+                                 置き換えで、解像度非依存のラインアイコン。 -->
                             <Viewbox Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
                                     <Path Data="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
@@ -1390,12 +1279,9 @@
                 </Button>
                 <TextBlock x:Name="ImagePathText" Text="(アバター画像未読み込み)" TextWrapping="Wrap"
                            Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" Margin="0,0,0,6" />
-                <!-- Populated in code (see PopulateThumbnailRow) with as many
-                     recently-used avatar images as this row's own width
-                     allows (most-recent-first; see SizeChanged above and
-                     CalculateRecentThumbnailFitCount). Clicking one loads it
-                     directly, skipping a fresh Explorer round-trip for an
-                     avatar used a moment ago. -->
+                <!-- コードで生成(PopulateThumbnailRow)。行幅に収まるぶんだけ
+                     最近使ったアバター画像を新しい順に並べる。クリックで直接読み込み、
+                     エクスプローラーを開き直さずに済む。 -->
                 <StackPanel x:Name="AlignRecentAvatarsPanel" Orientation="Horizontal" Margin="0,0,0,10"
                             SizeChanged="AlignRecentAvatarsPanel_SizeChanged" />
 
@@ -1409,22 +1295,15 @@
                 <TextBlock x:Name="ResetStatusText" Text="" Foreground="{DynamicResource AccentDarkBrush}" FontSize="13"
                            TextWrapping="Wrap" Margin="0,0,0,10" />
 
-                <!-- Static, not state-dependent like the old "クリックスルー:
-                     ON/OFF" text this replaced. Describes what the user can
-                     actually DO (move/resize while Shift is held) rather than
-                     the underlying click-through mechanism behind it. -->
+                <!-- 旧「クリックスルー: ON/OFF」表示の置き換え。裏側の仕組みではなく
+                     ユーザーができること(Shift 押下中に移動/リサイズ)を説明する。 -->
                 <TextBlock Text="Shiftキーを押しながらだと、この画像を移動・拡大縮小できます"
                            FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
-                <!-- Single card: position/size/rotation/opacity/edge blur.
-                     Color/tone look (brightness, contrast, etc.) used to
-                     have its own card here too, but it's purely a Composite-
-                     mode-relevant concern (how the avatar looks composited
-                     onto a photo) rather than an alignment-relevant one, and
-                     duplicated the same sliders already in Composite mode's
-                     own avatar-look card (same shared OverlayState); removed
-                     to keep this screen focused on positioning against the
-                     live VRChat camera view. -->
+                <!-- 1カード: 位置/サイズ/回転/不透明度/境界ぼかし。色調ルック
+                     (明るさ、コントラスト等)は以前ここにも専用カードがあったが、
+                     位置合わせではなく合成モード固有の関心事で、合成モードの
+                     アバタールックカード(同じ OverlayState)と重複していたので削除。 -->
                         <Border Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
                         <StackPanel>
                             <Grid Margin="0,0,0,6">
@@ -1446,22 +1325,14 @@
                                                   ToolTip="アバター画像を表示/非表示" />
                                 </StackPanel>
                             </Grid>
-                            <!-- X/Y/幅/高さ/回転(度) sliders removed: this window
-                                 (OverlayWindow, the live overlay positioned over
-                                 VRChat) already has its own full drag/corner-
-                                 resize/rotate-gizmo handle system (Handle_*/
-                                 RotateGizmo_* in OverlayWindow.xaml.cs) that's
-                                 the actual primary way this ever got positioned,
-                                 same direct-manipulation-only approach Composite
-                                 mode's own placement now uses too (see
-                                 AvatarPlacementModeToggle's own removal comment
-                                 in this same file); these were a redundant
-                                 second UI for the same _state.X/Y/Width/Height/
-                                 RotationDegrees fields. 不透明度 below is the one
-                                 field with no on-preview drag equivalent (it's
-                                 purely an Align-mode-only visibility aid, never
-                                 baked into the actual composite), so it alone
-                                 keeps its slider. -->
+                            <!-- X/Y/幅/高さ/回転(度) スライダーは削除: この窓
+                                 (OverlayWindow)には既にドラッグ/隅リサイズ/回転ギズモの
+                                 ハンドル系(Handle_*/RotateGizmo_*)があり、これが実際の
+                                 主な配置手段。これらは同じ _state.X/Y/Width/Height/
+                                 RotationDegrees の冗長な2つ目のUIだった。下の不透明度は
+                                 プレビュー上のドラッグ相当が無い唯一のフィールド
+                                 (位置合わせ専用の視認補助で合成には焼き込まれない)
+                                 なので、これだけスライダーを残す。 -->
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -1530,7 +1401,7 @@
                                                 ToolTip="エクスポートファイルの場所をエクスプローラーで開く">
                                             <Viewbox Width="13" Height="13">
                                                 <Canvas Width="24" Height="24">
-                                                    <!-- Lucide "folder" icon (ISC license). -->
+                                                    <!-- Lucide "folder" アイコン(ISC ライセンス)。 -->
                                                     <Path Data="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
                                                           Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
                                                           StrokeLineJoin="Round" />
@@ -1559,7 +1430,7 @@
                                                 ToolTip="Unityからfovを取得">
                                             <Viewbox Width="13" Height="13">
                                                 <Canvas Width="24" Height="24">
-                                                    <!-- Lucide "refresh-cw" icon (ISC license). -->
+                                                    <!-- Lucide "refresh-cw" アイコン(ISC ライセンス)。 -->
                                                     <Path Data="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
                                                           Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
                                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
@@ -1594,7 +1465,7 @@
                                     <StackPanel Orientation="Horizontal">
                                         <Viewbox Width="14" Height="14" Margin="0,0,6,0">
                                             <Canvas Width="24" Height="24">
-                                                <!-- Lucide "book-open" icon (ISC license). -->
+                                                <!-- Lucide "book-open" アイコン(ISC ライセンス)。 -->
                                                 <Path Data="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
                                                       Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
                                             </Canvas>
@@ -1654,22 +1525,18 @@
             </ScrollViewer>
         </Grid>
 
-        <!-- Composite mode -->
+        <!-- 合成モード -->
         <Grid x:Name="CompositePanel" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <!-- Matches the preview/cards split below (see the ScrollViewer's
-                 Grid.RowSpan="2") so the nav bar's own column is bounded to
-                 the preview's width, and the cards column can start at the
-                 very top instead of below the nav row. The splitter column
-                 between them (see PreviewCardsSplitter below) lets the user
-                 drag-resize the preview/cards ratio; both sides keep their
-                 own MinWidth so dragging can't squeeze either one away. -->
-            <!-- 3*/2* (roughly 60/40, preview-heavy) instead of an even
-                 1*/1* split: matches where the splitter was last dragged to
-                 and kept as the new default. -->
+            <!-- 下のプレビュー/カード分割(ScrollViewer の Grid.RowSpan="2")に合わせ、
+                 ナビバーの列をプレビュー幅に収め、カード列を最上部から始められるように
+                 する。間のスプリッタ列(PreviewCardsSplitter)でプレビュー/カード比を
+                 ドラッグ変更できる。両側とも MinWidth を持つのでどちらも潰せない。 -->
+            <!-- 均等な 1*/1* ではなく 3*/2*(約 60/40、プレビュー寄り): スプリッタを
+                 最後にドラッグした位置を新しい既定にしたもの。 -->
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" MinWidth="300" />
                 <ColumnDefinition Width="6" />
@@ -1680,11 +1547,8 @@
                 <StackPanel Orientation="Horizontal">
                     <Button Style="{StaticResource NavSegmentButtonFirst}" Click="BackToHome_Click">
                         <StackPanel Orientation="Horizontal">
-                            <!-- Lucide "house" icon (ISC license), traced
-                                 from its 24x24 SVG path data, replacing the
-                                 old 🏠 emoji for a crisper, resolution-
-                                 independent line icon matching the rest of
-                                 this app's vector-only look. -->
+                            <!-- Lucide "house" アイコン(ISC ライセンス)。旧絵文字の
+                                 置き換えで、解像度非依存のラインアイコン。 -->
                             <Viewbox Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
                                     <Path Data="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
@@ -1703,50 +1567,34 @@
                 </StackPanel>
             </Border>
 
-                <!-- Preview -->
+                <!-- プレビュー -->
                 <Grid Grid.Row="1" Grid.Column="0" Margin="16,2,14,14">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <!-- No card framing (rounded corners/background/border)
-                         around the loaded image anymore, and no separate
-                         clip on PreviewBorder either. Just this one flat
-                         mat color filling the whole pane, clipped once
-                         here, so the preview (including a zoomed-in view)
-                         can always use however much of this pane is
-                         actually available instead of being boxed in by
-                         wherever the un-zoomed image happened to be sized. -->
-                    <!-- MouseWheel also wired here (not just on PreviewImage
-                         itself): scrolling over the mat-colored margin
-                         around a letterboxed image previously did nothing,
-                         since that margin is outside PreviewImage's own
-                         rendered content. PreviewImage_MouseWheel doesn't
-                         use `sender`, so it works unchanged wired to either
-                         element; MouseWheel bubbles, and the handler sets
-                         e.Handled = true, so scrolling directly on the image
-                         still only fires it once (no double-handling). -->
+                    <!-- 読み込んだ画像の周りにカード枠(角丸/背景/境界)は無く、
+                         PreviewBorder の個別クリップも無い。ペイン全体をこの1色の
+                         フラットな台紙で埋めてここで1回クリップするだけ。プレビュー
+                         (ズーム表示含む)がペインの空きを常に使える。 -->
+                    <!-- MouseWheel はここにも配線する(PreviewImage だけでなく):
+                         レターボックスの余白上のスクロールは PreviewImage の描画外なので
+                         以前は何も起きなかった。ハンドラは sender を使わず e.Handled=true を
+                         立てるので、画像上の直接スクロールも1回だけ発火する。 -->
                     <Grid Grid.Row="0" x:Name="PreviewHost" Background="{DynamicResource PreviewMatBrush}"
                           ClipToBounds="True" SizeChanged="PreviewHost_SizeChanged" MouseWheel="PreviewImage_MouseWheel">
-                    <!-- Purely a layout/positioning box now (no Style, no
-                         background/border of its own, no clip): its Width/
-                         Height are still computed in SizePreviewToImage to
-                         match the loaded image's own aspect ratio exactly,
-                         which CompareSlider/CompareSplitLine below still
-                         rely on for their own sizing and positioning math. -->
+                    <!-- 今は純粋なレイアウト箱(Style/背景/境界/クリップ無し):
+                         Width/Height は SizePreviewToImage で画像の縦横比に合わせて
+                         計算され、下の CompareSlider/CompareSplitLine のサイズ/位置
+                         計算がそれに依存する。 -->
                     <Border x:Name="PreviewBorder">
                         <Grid>
-                            <!-- PreviewImage and CompareSplitLine share this
-                                 wrapping Grid's RenderTransform (rather than
-                                 the Image having its own) so the split line
-                                 zooms/pans in lockstep with the image instead
-                                 of staying fixed in the pane while the image
-                                 underneath moves out from under it.
-                                 CompositeLoadingPanel/UndoRedoReactionBadge
-                                 below are deliberately OUTSIDE this wrapper:
-                                 they're pane-centered UI chrome, not image
-                                 content, and shouldn't zoom/pan at all. -->
+                            <!-- PreviewImage と CompareSplitLine はこのラッパー Grid の
+                                 RenderTransform を共有するので、分割線が画像と一緒に
+                                 ズーム/パンする。下の CompositeLoadingPanel/
+                                 UndoRedoReactionBadge はあえてこのラッパーの外:
+                                 画像コンテンツではなくペイン中央の UI なのでズーム/パンしない。 -->
                             <Grid RenderTransformOrigin="0.5,0.5">
                                 <Grid.RenderTransform>
                                     <TransformGroup>
@@ -1789,31 +1637,20 @@
                                     <Ellipse x:Name="MaskBrushInnerCursor" Stroke="White" StrokeThickness="1"
                                              StrokeDashArray="2 2" Opacity="0.7" Visibility="Collapsed" />
                                 </Canvas>
-                                <!-- Marks exactly where CompareSlider's before/
-                                     after split falls on the image itself, not
-                                     just on the slider below it. Position (see
-                                     UpdateCompareSplitLine) is a Margin.Left in
-                                     the same coordinate space as PreviewImage,
-                                     since PreviewBorder is sized to match the
-                                     image exactly (see SizePreviewToImage), so
-                                     no separate scale conversion is needed. -->
+                                <!-- CompareSlider のビフォー/アフター分割が画像上の
+                                     どこに来るかを示す(スライダーだけでなく画像自体に)。
+                                     位置(UpdateCompareSplitLine)は PreviewImage と同じ
+                                     座標系の Margin.Left。PreviewBorder が画像に一致する
+                                     サイズなのでスケール変換は不要。 -->
                                 <Border x:Name="CompareSplitLine" Width="2" Background="White" Opacity="0.85"
                                         HorizontalAlignment="Left" IsHitTestVisible="False" Visibility="Collapsed" />
-                                <!-- Traces the avatar's current placement rect while
-                                     Shift is held OR アバター配置モード is on (see
-                                     UpdateAvatarPlacementHighlight), so it's clear what
-                                     dragging the preview is about to move. See
-                                     PreviewImage_MouseLeftButtonDown's own Shift/mode
-                                     check. Position/size are in the same coordinate space
-                                     as CompareSplitLine above (scaled to PreviewBorder,
-                                     crop-aware); the RotateTransform matches the avatar's
-                                     own rotation so the box actually traces the rotated
-                                     placement, not just its unrotated bounding box.
-                                     IsHitTestVisible="False": this is a purely visual
-                                     trace, not itself a drag handle; PreviewImage
-                                     underneath owns the body-drag (both the legacy
-                                     Shift-anywhere shortcut and アバター配置モード's own
-                                     click-anywhere-to-move use the same handler). -->
+                                <!-- Shift 押下中またはアバター配置モード中、アバターの
+                                     現在の配置矩形をなぞる(UpdateAvatarPlacementHighlight)。
+                                     位置/サイズは上の CompareSplitLine と同じ座標系
+                                     (PreviewBorder スケール、切り抜き考慮)。RotateTransform が
+                                     アバターの回転に一致するので回転した配置をなぞる。
+                                     IsHitTestVisible="False": 純粋な視覚的なぞりで、
+                                     本体ドラッグは下の PreviewImage が担う。 -->
                                 <Border x:Name="AvatarPlacementHighlight" BorderBrush="{DynamicResource PrimaryBrush}"
                                         BorderThickness="2" Background="#334A58C4"
                                         HorizontalAlignment="Left" VerticalAlignment="Top"
@@ -1822,17 +1659,12 @@
                                         <RotateTransform x:Name="AvatarPlacementHighlightRotate" />
                                     </Border.RenderTransform>
                                 </Border>
-                                <!-- 4 corner resize handles (aspect ratio locked, rotation-
-                                     aware) + a rotate gizmo, only meaningful/shown while
-                                     アバター配置モード is on (not just Shift; a quick Shift
-                                     drag is for repositioning, not fiddly resize/rotate work).
-                                     Positioned as a WHOLE (Canvas.Left/Top + Width/Height +
-                                     RotateTransform on the layer itself) to match
-                                     AvatarPlacementHighlight's own box exactly, then each
-                                     child is placed at a fixed LOCAL (unrotated) offset within
-                                     that layer; same technique OverlayWindow's own
-                                     HandlesLayer/PlaceHandle use for the equivalent Align-mode
-                                     gizmo, see UpdateAvatarPlacementHighlight. -->
+                                <!-- 四隅リサイズハンドル(アス比固定、回転対応)+ 回転ギズモ。
+                                     アバター配置モード中のみ表示。レイヤー全体を
+                                     (Canvas.Left/Top + Width/Height + RotateTransform で)
+                                     AvatarPlacementHighlight の箱に一致させ、各子はレイヤー内の
+                                     固定ローカル(未回転)オフセットで置く。OverlayWindow の
+                                     HandlesLayer/PlaceHandle と同じ手法。 -->
                                 <Canvas x:Name="AvatarHandlesLayer" RenderTransformOrigin="0.5,0.5" Visibility="Collapsed"
                                         HorizontalAlignment="Left" VerticalAlignment="Top">
                                     <Canvas.RenderTransform>
@@ -1850,10 +1682,9 @@
                                     <Rectangle x:Name="AvatarHandleBR" Width="10" Height="10" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
                                                Cursor="SizeNWSE" Tag="BottomRight"
                                                MouseLeftButtonDown="AvatarHandle_MouseLeftButtonDown" MouseMove="AvatarHandle_MouseMove" MouseLeftButtonUp="AvatarHandle_MouseLeftButtonUp" />
-                                    <!-- Leader line + handle offset above the box's top-center
-                                         (not placed exactly on it): an exactly-centered handle
-                                         has no meaningful direction to measure an angle from the
-                                         instant it's grabbed. -->
+                                    <!-- 引き出し線 + ハンドルを箱の上端中央の上にオフセット
+                                         (中心ちょうどには置かない): 中心ちょうどのハンドルは
+                                         掴んだ瞬間に角度を測る方向が定義できない。 -->
                                     <Line x:Name="AvatarRotateGizmoLine" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" IsHitTestVisible="False" />
                                     <Ellipse x:Name="AvatarRotateGizmoHandle" Width="16" Height="16" Fill="White" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
                                              Cursor="Hand"
@@ -1920,14 +1751,10 @@
                                 <Path x:Name="CanvasCropDimOverlay" Fill="#99000000"
                                       HorizontalAlignment="Left" VerticalAlignment="Top"
                                       IsHitTestVisible="False" Visibility="Collapsed" />
-                                <!-- Background="Transparent" (not null) so the WHOLE
-                                     rect area is hit-testable for the body-drag/move,
-                                     not just the 2px stroke itself. IsHitTestVisible
-                                     stays True unconditionally; harmless while
-                                     Collapsed (Collapsed elements never hit-test
-                                     regardless), and avoids needing a second flag
-                                     just to gate hit-testing separately from
-                                     visibility. -->
+                                <!-- Background="Transparent"(null ではない)にして、
+                                     2px の枠線だけでなく矩形全体が本体ドラッグの
+                                     ヒットテスト対象になるようにする。IsHitTestVisible は
+                                     常に True(Collapsed 中は無害)。 -->
                                 <Border x:Name="CanvasCropBoundaryOutline" BorderBrush="{DynamicResource PrimaryBrush}"
                                         BorderThickness="2" Background="Transparent" Cursor="SizeAll"
                                         HorizontalAlignment="Left" VerticalAlignment="Top"
@@ -1935,15 +1762,11 @@
                                         MouseLeftButtonDown="CanvasCropBoundary_MouseLeftButtonDown"
                                         MouseMove="CanvasCropBoundary_MouseMove"
                                         MouseLeftButtonUp="CanvasCropBoundary_MouseLeftButtonUp" />
-                                <!-- Corner resize handles: only shown/positioned
-                                     alongside CanvasCropBoundaryOutline (see
-                                     UpdateCanvasCropBoundary), one per corner, each
-                                     carrying which corner it is in Tag for the shared
-                                     CanvasCropHandle_MouseLeftButtonDown handler.
-                                     Dragging one resizes the crop box (aspect ratio
-                                     stays locked; see GetCanvasCropRect) anchored on
-                                     the OPPOSITE corner, same convention as any photo
-                                     editor's crop tool. -->
+                                <!-- 隅リサイズハンドル: CanvasCropBoundaryOutline と一緒に
+                                     表示/配置される(UpdateCanvasCropBoundary)。各隅が
+                                     どの隅かを Tag に持ち、共通ハンドラで使う。ドラッグすると
+                                     対角の隅をアンカーに切り抜き箱をリサイズする
+                                     (アス比固定、GetCanvasCropRect)。 -->
                                 <Border x:Name="CanvasCropHandleTopLeft" Tag="TopLeft" Width="14" Height="14" CornerRadius="7"
                                         Background="{DynamicResource PrimaryBrush}" BorderBrush="White" BorderThickness="2"
                                         HorizontalAlignment="Left" VerticalAlignment="Top" Cursor="SizeNWSE" Visibility="Collapsed"
@@ -1970,16 +1793,11 @@
                                         MouseLeftButtonUp="CanvasCropHandle_MouseLeftButtonUp" />
                             </Grid>
 
-                            <!-- Shown only while ShowComposite or a Match
-                                 button defers a slow, full-resolution
-                                 computation. See ShowComposite's own comment
-                                 on why the deferral matters. The spinner's
-                                 rotation is CompositeLoadingSpinStoryboard
-                                 (Window.Resources), started/stopped
-                                 alongside this panel's own Visibility: see
-                                 ShowCompositeLoading/HideCompositeLoading in
-                                 the code-behind rather than setting
-                                 Visibility directly. -->
+                            <!-- ShowComposite または Match ボタンが遅いフル解像度
+                                 計算を遅延している間だけ表示。スピナー回転は
+                                 CompositeLoadingSpinStoryboard(Window.Resources)で、
+                                 Visibility を直接いじらず ShowCompositeLoading/
+                                 HideCompositeLoading から開始/停止する。 -->
                             <StackPanel x:Name="CompositeLoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center"
                                         Visibility="Collapsed">
                                 <Viewbox Width="28" Height="28" Margin="0,0,0,10">
@@ -1987,10 +1805,8 @@
                                         <Canvas.RenderTransform>
                                             <RotateTransform x:Name="CompositeLoadingSpinnerRotate" />
                                         </Canvas.RenderTransform>
-                                        <!-- 270-degree arc (a full circle would
-                                             just look like a static ring), same
-                                             thin-stroke vector look as the rest
-                                             of the app's icons. -->
+                                        <!-- 270 度の弧(全円だと静的なリングに見える)。
+                                             他アイコンと同じ細ストロークのベクター見た目。 -->
                                         <Path Data="M 12,3 A 9,9 0 1 1 3,12" Stroke="{DynamicResource PrimaryBrush}"
                                               StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                                     </Canvas>
@@ -1999,26 +1815,24 @@
                                            Foreground="White" HorizontalAlignment="Center" />
                             </StackPanel>
 
-                            <!-- Brief Undo/Redo reaction: a small icon that
-                                 fades in then out, centered over the preview
-                                 image itself (see ShowUndoRedoReaction/
-                                 UndoManager.Applied in the code-behind).
-                                 IsHitTestVisible="False" so it never blocks
-                                 clicks/drags on the preview underneath. -->
+                            <!-- Undo/Redo の一瞬の反応: フェードイン→アウトする小さな
+                                 アイコンをプレビュー画像の中央に重ねる
+                                 (ShowUndoRedoReaction/UndoManager.Applied)。
+                                 IsHitTestVisible="False" で下のプレビュー操作を妨げない。 -->
                             <Border x:Name="UndoRedoReactionBadge" Width="34" Height="34"
                                     Background="{DynamicResource PrimaryBrush}" CornerRadius="17"
                                     HorizontalAlignment="Center" VerticalAlignment="Center"
                                     IsHitTestVisible="False" Opacity="0" Visibility="Collapsed">
                                 <Viewbox Width="16" Height="16">
                                     <Grid>
-                                        <!-- Lucide "undo-2" icon (ISC license). -->
+                                        <!-- Lucide "undo-2" アイコン(ISC ライセンス)。 -->
                                         <Canvas x:Name="UndoReactionIcon" Width="24" Height="24">
                                             <Path Data="M9 14 4 9l5-5" Stroke="White" StrokeThickness="2.2"
                                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
                                             <Path Data="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" Stroke="White" StrokeThickness="2.2"
                                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
                                         </Canvas>
-                                        <!-- Lucide "redo-2" icon (ISC license). -->
+                                        <!-- Lucide "redo-2" アイコン(ISC ライセンス)。 -->
                                         <Canvas x:Name="RedoReactionIcon" Width="24" Height="24" Visibility="Collapsed">
                                             <Path Data="m15 14 5-5-5-5" Stroke="White" StrokeThickness="2.2"
                                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
@@ -2096,10 +1910,9 @@
                                            Margin="0" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" x:Name="PlacementCollapseButton" Style="{StaticResource BackButton}"
                                         Padding="6,2" Click="PlacementCollapseButton_Click">
-                                    <!-- Lucide "chevron-down"/"chevron-up" icon (ISC license):
-                                         Data is toggled between the two in code-behind
-                                         (see PlacementCollapseButton_Click), replacing the
-                                         old "⌄"/"⌃" text glyphs. -->
+                                    <!-- Lucide "chevron-down"/"chevron-up" アイコン(ISC ライセンス):
+                                         Data はコードビハインドで両者を切り替える
+                                         (PlacementCollapseButton_Click)。 -->
                                     <Viewbox Width="11" Height="11">
                                         <Canvas Width="24" Height="24">
                                             <Path x:Name="PlacementCollapseIcon" Data="m6 9 6 6 6-6"
@@ -2258,48 +2071,27 @@
                     </Border>
                     </Grid>
 
-                    <!-- Before/after comparison: as wide as the preview above
-                         it (same Grid.Column, HorizontalAlignment="Stretch"),
-                         not a plain on/off toggle. At 0 (its default/left
-                         end) the preview shows the normal fully-adjusted
-                         composite, same as if this didn't exist; dragging it
-                         right sweeps a vertical split across the image,
-                         revealing (from the left edge inward) what the same
-                         placement looks like with NONE of the look
-                         adjustments or finishing effects applied. See
-                         RenderCompositePreview/UpdateComparisonPreview. -->
+                    <!-- ビフォー/アフター比較: 上のプレビューと同じ幅。0(既定/左端)では
+                         通常のフル調整済み合成を表示し、右へドラッグすると縦の分割線が
+                         画像を横切り、左から「ルック調整も仕上げ効果も無し」の同じ配置が
+                         現れる。RenderCompositePreview/UpdateComparisonPreview 参照。 -->
                     <StackPanel Grid.Row="1" Margin="0,8,0,0" Panel.ZIndex="10">
-                        <!-- ZIndex=10: CompareSlider is deliberately made
-                             WIDER than the preview column it sits in (see
-                             SizePreviewToImage's own comment on why), so its
-                             round thumb pokes a few px past that column's own
-                             edge at Value 0/100; without a raised ZIndex
-                             those overflow pixels render BEHIND the
-                             PreviewCardsSplitter/cards column to its right
-                             (later XAML siblings paint on top by default),
-                             making the thumb look cut off there. -->
-                        <!-- Its own centered StackPanel (not sharing one
-                             with the label below) so nothing about the
-                             label's width can shift the slider off-center
-                             from the image above it. Width is set in code
-                             (see SizePreviewToImage) to the image's own
-                             displayed width PLUS the thumb's diameter, not
-                             just the image's width or this column's, see
-                             the comment there for why. For a portrait
-                             photo, Stretch="Uniform" letterboxes the image
-                             narrower than the column, and the slider should
-                             track the image, not the empty space beside it. -->
+                        <!-- ZIndex=10: CompareSlider は置かれた列よりわざと広いので、
+                             Value 0/100 で丸 thumb が列の端を数 px はみ出す。ZIndex を
+                             上げないと、そのはみ出しが右のスプリッタ/カード列の背面に
+                             描かれて thumb が切れて見える。 -->
+                        <!-- ラベルとは別の中央寄せ StackPanel にして、ラベル幅で
+                             スライダーが上の画像から中心ズレしないようにする。幅は
+                             コード(SizePreviewToImage)で画像の表示幅 + thumb 直径に
+                             設定する。縦長写真では Stretch="Uniform" が画像を列より
+                             細くレターボックスするので、スライダーは横の余白ではなく
+                             画像に追従すべき。 -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <Slider x:Name="CompareSlider" Minimum="0" Maximum="100" Value="0" Tag="NoFill"
                                     VerticalAlignment="Center" ValueChanged="CompareSlider_ValueChanged" />
                         </StackPanel>
-                        <!-- Named for what it IS (a slider that reveals a
-                             before/after comparison by dragging), not for
-                             the two states it moves between. At Value=0
-                             (left) the preview is the fully-adjusted
-                             composite; dragging right sweeps in more of the
-                             unadjusted version from the left edge inward.
-                             See MergeBeforeAfter. -->
+                        <!-- Value=0(左)ではフル調整済み合成、右へドラッグすると
+                             未調整版が左から現れる。MergeBeforeAfter 参照。 -->
                         <TextBlock Text="比較用スライダー" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0" />
                     </StackPanel>
@@ -2350,7 +2142,7 @@
                                     <TextBlock Text="この合成結果を保存" />
                                 </StackPanel>
                             </Button>
-                            <!-- Lucide "check" icon (ISC license)。保存成功時にフェードイン。 -->
+                            <!-- Lucide "check" アイコン(ISC ライセンス)。保存成功時にフェードイン。 -->
                             <Viewbox x:Name="CompositeSaveCheckmark" Width="13" Height="13" VerticalAlignment="Center"
                                      Margin="0,0,4,0" Visibility="Collapsed">
                                 <Canvas Width="24" Height="24">
@@ -2379,16 +2171,10 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Controls: two side-by-side columns, avatar image and
-                     background photo, each holding its own loader card on
-                     top of its own placement/look cards. Scrolls if the
-                     content runs taller than the window. Spans both of
-                     CompositePanel's rows (RowSpan="2") so its top edge
-                     lines up with the home/minimize button row instead of
-                     starting below it, since the nav row only actually
-                     occupies the preview's column (see NavSegmentGroup's Grid.Column
-                     above), so this column has nothing to share that space
-                     with. -->
+                <!-- コントロール: 左右2列(アバター画像 / 背景写真)。各列にローダー
+                     カードと配置/ルックカードを積む。ウィンドウより高ければスクロールする。
+                     CompositePanel の両行にまたがる(RowSpan="2")ので上端がホーム/
+                     最小化ボタンの行にそろう(ナビ行はプレビュー列しか占めない)。 -->
                 <GridSplitter Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource PreviewCardsSplitter}" />
 
                 <ScrollViewer x:Name="CompositeCardsScrollViewer" Grid.Row="0" Grid.RowSpan="2" Grid.Column="2" Margin="0,14,16,14" VerticalScrollBarVisibility="Auto">
@@ -2406,11 +2192,9 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <!-- Both columns use shared rows (loader / look / third
-                         card) instead of independently stacking, so the
-                         look cards, whose sliders are meant to line up row
-                         for row, start at the same height regardless of the
-                         two loader cards' own heights. -->
+                    <!-- 両列は独立して積むのではなく共有行(ローダー / ルック / 3枚目)を
+                         使うので、行ごとにそろえたいルックカードのスライダーが、
+                         2つのローダーカードの高さに関わらず同じ高さから始まる。 -->
                     <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
                         <StackPanel>
                             <TextBlock Text="アバター画像" Style="{StaticResource SectionHeader}" />
@@ -2451,27 +2235,19 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- The avatar image's own look (position/size/rotation
-                         stay in Align mode; shared with Align mode via the
-                         same state). Slider order matches the photo-look
-                         card in the other column so the two line up row for
-                         row; 境界ぼかし has no photo-side counterpart, so it's
-                         kept separate at the bottom instead of breaking that
-                         alignment. -->
+                    <!-- アバター画像のルック(位置/サイズ/回転は位置合わせモード側、
+                         同じ state を共有)。スライダー順は隣の写真ルックカードに合わせて
+                         行ごとにそろえる。境界ぼかし は写真側に対応が無いので、そろえを
+                         崩さず下に分けて置く。 -->
                     <Border x:Name="AvatarLookCard" Grid.Row="1" Grid.Column="0" Style="{StaticResource DimmableCard}" Padding="12" Margin="0,0,0,8">
-                        <!-- Grid (not a plain StackPanel) so the reset button
-                             pins to this Border's own bottom edge, not just
-                             the end of this column's own content: the two
-                             look cards share one Grid row (see the shared-row
-                             comment above), so whichever column has less
-                             content gets stretched taller by its sibling,
-                             leaving blank space below a StackPanel-stacked
-                             button instead of true bottom.
+                        <!-- StackPanel ではなく Grid にして、リセットボタンをこの
+                             Border の下端に固定する。2つのルックカードは1つの Grid 行を
+                             共有するので、内容の少ない列は兄弟に引き伸ばされ、
+                             StackPanel 積みのボタンの下に空白ができてしまう。
 
-                             IsEnabled is toggled from RefreshSkipAvatarUI:
-                             grayed out while _compositeSkipAvatar is on,
-                             since none of these sliders have anything to
-                             adjust with no avatar loaded. -->
+                             IsEnabled は RefreshSkipAvatarUI から切り替える:
+                             _compositeSkipAvatar オン中はグレーアウト(アバター無しでは
+                             調整対象が無い)。 -->
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
@@ -2485,24 +2261,18 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="アバター画像の見た目" Style="{StaticResource SectionHeader}"
                                            VerticalAlignment="Center" />
-                                <!-- Governs both this card and the photo-
-                                     look card, but lives here (in the blank
-                                     space beside this header) rather than
-                                     floating above both, since a shared
-                                     control needs to live somewhere. -->
+                                <!-- このカードと写真ルックカードの両方を制御するが、
+                                     両者の上に浮かせず、このヘッダー横の空きに置く。 -->
                                 <ToggleButton Grid.Column="1" x:Name="LookLinkToggle" Style="{StaticResource LinkToggleButton}"
                                               HorizontalAlignment="Right" VerticalAlignment="Center"
                                               Checked="LookLinkToggle_Changed" Unchecked="LookLinkToggle_Changed" />
                             </Grid>
 
-                                <!-- Nudges all 11 sliders above toward the
-                                     background photo's CURRENT look (see
-                                     MatchAvatarToPhotoButton_Click): a
-                                     statistics-based match (mean/std of
-                                     luminance, saturation, hue, white
-                                     balance), not a neural/AI process, so it
-                                     runs instantly and fully offline. Lucide
-                                     "blend" icon (ISC license). -->
+                                <!-- 上の11スライダーを背景写真の現在のルックへ寄せる
+                                     (MatchAvatarToPhotoButton_Click): 統計ベースの一致
+                                     (輝度/彩度/色相/ホワイトバランスの平均・標準偏差)で
+                                     AI 処理ではないため即座に完全オフラインで動く。
+                                     Lucide "blend" アイコン(ISC ライセンス)。 -->
                                 <Button x:Name="MatchAvatarToPhotoButton" Style="{StaticResource SecondaryPillButton}"
                                         HorizontalAlignment="Left" Padding="12,6" Margin="0,0,0,10" IsEnabled="False"
                                         Click="MatchAvatarToPhotoButton_Click" ToolTip="アバター画像の見た目を背景写真の現在の見た目に近づけます">
@@ -2754,13 +2524,10 @@
                                         </Border>
                                     </Popup>
                                 </Grid>
-                                <!-- Own row (matching every plain slider row's
-                                     3-column layout) instead of sharing the
-                                     label row above, so this slider's length
-                                     matches every other slider's: putting it
-                                     alongside the label+color-button row left
-                                     it visibly shorter (two Auto columns eating
-                                     into its Width="*" track instead of one). -->
+                                <!-- 上のラベル行と共有せず専用行(他の通常スライダー行と
+                                     同じ3列レイアウト)にして、このスライダーの長さを
+                                     他とそろえる。ラベル+色ボタン行に並べると Auto 列2つが
+                                     Width="*" を食って明らかに短くなっていた。 -->
                                 <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -2842,10 +2609,10 @@
                                         <Border x:Name="DropShadowColorSwatch" CornerRadius="5"
                                                 Background="Black" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
                                     </Button>
-                                    <!-- Eyedropper: click, then click anywhere on the preview image
-                                         to sample that pixel's color (see BeginColorPick/
-                                         TryPickColorAtClick in code-behind). Sits between the
-                                         swatch bar and the hex box, its own Auto column. -->
+                                    <!-- スポイト: 押してからプレビュー画像上をクリックして
+                                         そのピクセルの色を拾う(BeginColorPick/
+                                         TryPickColorAtClick)。スウォッチバーと hex ボックスの
+                                         間、専用の Auto 列。 -->
                                     <Button Grid.Column="2" x:Name="DropShadowEyedropperButton" Style="{StaticResource RotateIconButton}"
                                             Margin="6,0,0,0" Click="DropShadowEyedropperButton_Click" ToolTip="プレビューから色を拾う">
                                         <ContentPresenter Content="{StaticResource EyedropperIcon}" />
@@ -2853,12 +2620,9 @@
                                     <TextBox Grid.Column="3" x:Name="DropShadowColorHexBox" Style="{StaticResource SliderRowBox}" Width="100"
                                              ToolTip="カラーコード(#RRGGBB)"
                                              TextChanged="DropShadowColorHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    <!-- Custom in-app popup instead of the native OS color
-                                         dialog, so picking a shadow color looks like the
-                                         rest of AvaSnap (Card, rounded swatches, the same
-                                         slider row style) rather than a jarring system
-                                         window. StaysOpen="False" closes it on any click
-                                         outside, same as a combo box dropdown. -->
+                                    <!-- OS 標準の色ダイアログではなく AvaSnap 風の自前
+                                         ポップアップ。StaysOpen="False" で外側クリックで閉じる
+                                         (コンボボックスのドロップダウンと同じ)。 -->
                                     <Popup x:Name="DropShadowColorPopup" PlacementTarget="{Binding ElementName=DropShadowColorButton}"
                                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
                                         <Border Style="{StaticResource Card}" Padding="12" Width="220">
@@ -2866,13 +2630,10 @@
                                                 <TextBlock Text="影の色" Style="{StaticResource SectionHeader}" />
 
                                                 <!-- カラーホイール: 角度=色相、中心からの距離=彩度。
-                                                     DropShadowColorWheel.Source is a 140x140 bitmap
-                                                     built once (GetColorWheelBitmap, value=1 fixed)
-                                                     since only hue/saturation vary spatially;
-                                                     brightness is the separate 明度 slider below,
-                                                     which just scales the picked hue/saturation's
-                                                     RGB rather than needing the wheel bitmap itself
-                                                     regenerated. -->
+                                                     DropShadowColorWheel.Source は一度だけ生成する
+                                                     140x140 ビットマップ(GetColorWheelBitmap、明度=1
+                                                     固定)。明度は下の別スライダーで、選んだ色相/
+                                                     彩度の RGB を再スケールするだけ。 -->
                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
                                                             <Grid Width="140" Height="140">
                                                     <Image x:Name="DropShadowColorWheel" Width="140" Height="140" Stretch="Fill" Cursor="Hand"
@@ -3039,12 +2800,9 @@
                             </Button>
                             <TextBlock x:Name="PhotoPathText" Text="(背景写真未選択)" TextWrapping="Wrap"
                                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" Margin="0,0,0,6" />
-                            <!-- Populated in code (see RefreshRecentPhotosUI)
-                                 with as many of the newest PNGs actually
-                                 sitting in the screenshot watch folder as
-                                 this row's own width allows, most-recent-
-                                 first (see SizeChanged above and
-                                 CalculateRecentThumbnailFitCount). -->
+                            <!-- コードで生成(RefreshRecentPhotosUI)。スクショ監視
+                                 フォルダに実在する新しい PNG を、行幅に収まるぶんだけ
+                                 新しい順に並べる。 -->
                             <StackPanel x:Name="RecentPhotosPanel" Orientation="Horizontal" Margin="0,0,0,8"
                                         SizeChanged="RecentPhotosPanel_SizeChanged" />
                             <!-- 実写真を使わず単色(またはグラデーション)で塗った
@@ -3281,17 +3039,13 @@
                     </Border>
 
                     <Border x:Name="PhotoLookCard" Grid.Row="1" Grid.Column="2" Style="{StaticResource DimmableCard}" Padding="12" Margin="0,0,0,8">
-                        <!-- Grid (not a plain StackPanel), matching the
-                             avatar-look card's own fix: pins the reset
-                             button to this Border's own bottom edge instead
-                             of leaving blank space below it when this
-                             column's content is shorter than its row-mate.
+                        <!-- StackPanel ではなく Grid(アバタールックカードと同じ対策):
+                             リセットボタンをこの Border の下端に固定し、内容が短いときの
+                             下の空白を防ぐ。
 
-                             IsEnabled is toggled from CreateBlankCanvasButton_Click/
-                             TryLoadPhotoPixels: grayed out while a blank
-                             canvas (no real photo) is active, matching the
-                             avatar-look card's own graying-out while no
-                             avatar is loaded. -->
+                             IsEnabled は CreateBlankCanvasButton_Click/TryLoadPhotoPixels
+                             から切り替える: 背景なしキャンバス(実写真なし)有効中は
+                             グレーアウト。 -->
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
@@ -3305,20 +3059,16 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="背景写真の見た目" Style="{StaticResource SectionHeader}"
                                            VerticalAlignment="Center" />
-                                <!-- Invisible placeholder matching LookLinkToggle's
-                                     size in the avatar-look card (same column
-                                     header): without this, this card's header row
-                                     is shorter than the other one (a plain
-                                     TextBlock vs. a TextBlock+ToggleButton), which
-                                     pushes every slider row below it out of
-                                     vertical alignment with its counterpart across
-                                     the two columns. -->
+                                <!-- アバタールックカードの LookLinkToggle のサイズに
+                                     合わせた不可視プレースホルダ。これが無いとこのカードの
+                                     ヘッダー行が反対側より短くなり、下の全スライダー行が
+                                     2列間で縦にずれる。 -->
                                 <ToggleButton Grid.Column="1" Style="{StaticResource LinkToggleButton}" Visibility="Hidden"
                                               IsHitTestVisible="False" HorizontalAlignment="Right" VerticalAlignment="Center" />
                             </Grid>
 
-                                <!-- Reverse direction of MatchAvatarToPhotoButton,
-                                     see MatchPhotoToAvatarButton_Click. -->
+                                <!-- MatchAvatarToPhotoButton の逆方向。
+                                     MatchPhotoToAvatarButton_Click 参照。 -->
                                 <Button x:Name="MatchPhotoToAvatarButton" Style="{StaticResource SecondaryPillButton}"
                                         HorizontalAlignment="Left" Padding="12,6" Margin="0,0,0,10" IsEnabled="False"
                                         Click="MatchPhotoToAvatarButton_Click" ToolTip="背景写真の見た目をアバター画像の現在の見た目に近づけます">
@@ -3563,10 +3313,8 @@
                                         </Border>
                                     </Popup>
                                 </Grid>
-                                <!-- Own row, matching the avatar-side tint's own
-                                     comment on why (its slider was visibly
-                                     shorter than every other slider while
-                                     sharing the label+color-button row). -->
+                                <!-- 専用行(アバター側ティントと同じ理由: ラベル+色ボタン行を
+                                     共有するとスライダーが他より明らかに短くなる)。 -->
                                 <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -3581,11 +3329,9 @@
                                              TextChanged="PhotoColorTintStrengthBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
 
-                                <!-- ぼかし is its own group, separate from the
-                                     一括調整-linked rows above (it has no
-                                     avatar-side counterpart, so it's never
-                                     part of the link). Matches the divider
-                                     on the avatar-image side. -->
+                                <!-- ぼかし は独立グループ。上の 一括調整 連動行とは別
+                                     (アバター側に対応が無くリンク対象外)。アバター画像側の
+                                     区切りに合わせてある。 -->
                                 <Border Height="1" Background="{DynamicResource HairlineBrush}" Margin="0,2,0,12" />
 
                                 <Grid Margin="0,0,0,10">
@@ -3785,13 +3531,12 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="2">
-                                    <!-- Title-only row, then "・"-prefixed 方向/強さ rows, same
-                                         3-column (label|control|value) grammar as every plain
-                                         slider row: matches the ドロップシャドウ/ライトリーク
-                                         restructuring, replacing the old label+dial+slider mega-row. -->
-                                    <!-- Wrapped in the same 3-column Grid as every other row
-                                         (not a bare TextBlock) so this label sits in the exact
-                                         same Column0 as its neighbors above it. -->
+                                    <!-- タイトルのみの行 → 「・」付きの 方向/強さ 行。他の通常
+                                         スライダー行と同じ3列(ラベル|コントロール|値)構成。
+                                         ドロップシャドウ/ライトリークの再構成に合わせ、旧
+                                         ラベル+ダイヤル+スライダーの巨大行を置き換えたもの。 -->
+                                    <!-- 他行と同じ3列 Grid で包む(素の TextBlock ではない)ので、
+                                         このラベルが上の行と同じ Column0 に入る。 -->
                                     <Grid Margin="0,6,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="116" />
@@ -4017,9 +3762,8 @@
                                          is the same custom wheel+RGB UI as ドロップシャドウ's own,
                                          just with its own presets (暖色/寒色/白) and its own
                                          popup/wheel/slider elements below. -->
-                                    <!-- Wrapped in the same 3-column Grid as every other row
-                                         (not a bare TextBlock) so this label sits in the exact
-                                         same Column0 as its neighbors above it. -->
+                                    <!-- 他行と同じ3列 Grid で包む(素の TextBlock ではない)ので、
+                                         このラベルが上の行と同じ Column0 に入る。 -->
                                     <Grid Margin="0,6,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="116" />
@@ -4456,8 +4200,8 @@
                 </Border>
         </Grid>
 
-        <!-- Compact: shrinks the whole window down to a small corner widget
-             so it doesn't cover VRChat while positioning things live. -->
+        <!-- コンパクト: 窓全体を隅の小ウィジェットに縮め、ライブ調整中に
+             VRChat を覆わないようにする。 -->
         <Grid x:Name="CompactPanel" Grid.Row="1" Visibility="Collapsed">
             <Border Style="{StaticResource Card}" Padding="14" Margin="8">
                 <Grid>
@@ -4500,13 +4244,11 @@
                     <TextBlock x:Name="AboutVersionText" Text="" FontSize="13"
                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,20" />
 
-                    <!-- Populated in code-behind (see ShowAbout/RefreshUpdateSection):
-                         UpdateVersionCombo's items are built programmatically
-                         from UpdateService.GetAvailableVersionsAsync (every
-                         published version, newest first, each ComboBoxItem's
-                         Tag holding the underlying VelopackAsset), since
-                         that list isn't known until the GitHub feed is
-                         actually read. -->
+                    <!-- コードビハインドで生成(ShowAbout/RefreshUpdateSection):
+                         UpdateVersionCombo の項目は UpdateService.GetAvailableVersionsAsync
+                         から作る(公開済み全バージョン、新しい順、各 ComboBoxItem の
+                         Tag に VelopackAsset)。この一覧は GitHub フィードを読むまで
+                         分からないため。 -->
                     <Border Style="{StaticResource Card}" Margin="0,0,0,20">
                         <StackPanel>
                             <TextBlock Text="アップデート" Style="{StaticResource SectionHeader}" />

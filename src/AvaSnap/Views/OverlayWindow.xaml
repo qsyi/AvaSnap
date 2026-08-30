@@ -7,35 +7,24 @@
         Background="Transparent"
         ShowInTaskbar="False"
         ResizeMode="NoResize">
-    <!-- No Background here (unlike a Transparent brush, no Background at all
-         is NOT hit-testable in WPF). This Canvas spans the full virtual
-         screen, so a Transparent Background would swallow every mouse click
-         anywhere on any monitor while click-through is off, instead of only
-         over the image/handles that actually have their own content. -->
+    <!-- ここに Background は付けない(WPF では Transparent ブラシと違い、Background
+         無しはヒットテスト対象にならない)。この Canvas は仮想スクリーン全域に
+         広がるので、Transparent Background だとクリックスルー OFF 時にどのモニタの
+         どこのクリックも吸ってしまう。 -->
     <Canvas x:Name="RootCanvas">
-        <!-- Unity連携ガイド: FOV/pitch/roll are read from the file Unity's
-             CameraCompositionGuideExporter editor script exports (see
-             UnityCameraGuideService), not typed in here. Purely a
-             compositional reference, never baked into anything saved, so
-             it stays visible even during click-through (no drag handle of
-             its own; Unity is what drives it). Placed BEFORE OverlayImage
-             (i.e. behind it, not dimmed/clipped in code) so wherever the
-             avatar PNG is actually opaque naturally covers the guide, and
-             wherever it's transparent the guide shows through at full
-             opacity underneath: ordinary alpha compositing does exactly
-             the "only show through transparent avatar pixels" behavior a
-             bounding-box-based clip could only approximate. -->
-        <!-- Two nested Canvases, not one: ClipToBounds/Clip on an element
-             clips its content in that element's OWN local space, which
-             RenderTransform is then applied on TOP of, so a roll-rotated
-             UnityGuideCanvas clipped to its own bounds would show a ROTATED
-             rectangle silhouette, not the true axis-aligned camera frame,
-             letting lines poke out past the frame's real edges at the
-             rotated corners (or get cut off inside them). The FIX is this
-             outer, never-rotated UnityGuideFrameClip: its own Clip/bounds
-             stay axis-aligned in screen space regardless of what the INNER
-             (rotated) UnityGuideCanvas does, so it's the one actually
-             enforcing "never draw outside the camera frame." -->
+        <!-- Unity連携ガイド: FOV/pitch/roll は Unity の
+             CameraCompositionGuideExporter エディタスクリプトが書き出すファイルから
+             読む(UnityCameraGuideService 参照)。純粋な構図の参照で保存物には
+             焼き込まれないため、クリックスルー中も表示され続ける(専用ドラッグ
+             ハンドルは無く、Unity が駆動する)。OverlayImage より前(=背面)に
+             置くので、アバター PNG が不透明な箇所は自然にガイドを覆い、透明な箇所は
+             下のガイドが完全な不透明度で透けて見える。 -->
+        <!-- Canvas を1つでなく2重にする理由: 要素の ClipToBounds/Clip はその要素の
+             ローカル空間で切り抜き、そのあと RenderTransform が乗るので、ロール回転した
+             UnityGuideCanvas を自身の bounds で切り抜くと回転した矩形シルエットになり、
+             回転した隅で線が枠外へはみ出す(または内側で切れる)。対策がこの外側の
+             決して回転しない UnityGuideFrameClip: その Clip/bounds は内側の回転に
+             関わらずスクリーン空間で軸平行のまま。 -->
         <Canvas x:Name="UnityGuideFrameClip" IsHitTestVisible="False" Visibility="Collapsed" ClipToBounds="True">
             <Canvas x:Name="UnityGuideCanvas" IsHitTestVisible="False">
                 <Canvas.RenderTransform>
@@ -55,11 +44,9 @@
             </Image.RenderTransform>
         </Image>
 
-        <!-- Resize handles: 4 corner grips only, shown while the overlay is
-             interactive (not click-through). Always scale with the aspect
-             ratio locked. Rotates together with the image via the same-angle
-             transform below, so the grips stay visually on the rotated
-             image's corners. -->
+        <!-- リサイズハンドル: 四隅グリップのみ。オーバーレイが操作可能な間
+             (クリックスルー OFF)表示。常にアス比固定でスケール。下の同角度変換で
+             画像と一緒に回転するので、回転した画像の隅にグリップが乗ったままになる。 -->
         <Canvas x:Name="HandlesLayer" RenderTransformOrigin="0.5,0.5">
             <Canvas.RenderTransform>
                 <RotateTransform x:Name="HandlesRotateTransform" />
@@ -78,16 +65,12 @@
                        Cursor="SizeNWSE" Tag="BR" MouseLeftButtonDown="Handle_MouseLeftButtonDown"
                        MouseMove="Handle_MouseMove" MouseLeftButtonUp="Handle_MouseLeftButtonUp" />
 
-            <!-- Rotate gizmo: a handle above the box's top-center, connected by
-                 a thin leader line, dragged in an arc around the box's center
-                 to rotate. Offset from center (not placed exactly on it) so
-                 there's always a well-defined angle the moment you grab it:
-                 an exactly-centered handle would have no meaningful direction
-                 to measure from at the start of the drag. -->
+            <!-- 回転ギズモ: ボックス上端中央の上にあるハンドルを細い引き出し線で
+                 つなぎ、中心まわりの弧に沿ってドラッグして回転する。中心ちょうどでなく
+                 オフセットしてあるのは、掴んだ瞬間から角度が定義できるようにするため。 -->
             <Line x:Name="RotateGizmoLine" Stroke="White" StrokeThickness="2" />
-            <!-- Width/Height bumped from 12 to 16 (see UpdateHandles' own
-                 gizmoHalf), a slightly more forgiving grab target, since
-                 12px was easy to miss at typical UI scale. -->
+            <!-- Width/Height を 12 → 16 に(UpdateHandles の gizmoHalf 参照)。
+                 12px は通常の UI スケールで掴み損ねやすかった。 -->
             <Ellipse x:Name="RotateGizmoHandle" Width="16" Height="16" Fill="White" Stroke="Black" StrokeThickness="1"
                      Cursor="Hand" MouseLeftButtonDown="RotateGizmo_MouseLeftButtonDown"
                      MouseMove="RotateGizmo_MouseMove" MouseLeftButtonUp="RotateGizmo_MouseLeftButtonUp" />
