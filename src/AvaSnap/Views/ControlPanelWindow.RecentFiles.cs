@@ -9,30 +9,23 @@ using System.Windows.Media.Imaging;
 
 namespace AvaSnap.Views;
 
-// ---- Recent avatars / recent photos: small thumbnail quick-pick rows next
-//      to the usual file-dialog buttons, so switching back to an avatar or
-//      background photo used a moment ago doesn't need a fresh Explorer
-//      round-trip every time. Both share the same thumbnail-button builder
-//      below. Split into its own file from the rest of ControlPanelWindow --
-//      a self-contained concern (recent-file bookkeeping + thumbnail
-//      rendering) that doesn't need to sit alongside window navigation,
-//      the composite render pipeline, or the color-wheel math. ----
+// ---- 最近のアバター / 最近の写真: ファイルダイアログボタンの横の小さなサムネイル
+//      クイックピック行。少し前に使ったアバターや背景写真へ、毎回エクスプローラーを
+//      開かずに戻れる。両者は下の同じサムネボタンビルダーを共有。ウィンドウ遷移や
+//      合成レンダーとは独立した関心事なので別ファイルにしてある。 ----
 public partial class ControlPanelWindow
 {
     private const int RecentThumbnailSize = 34;
-    private const int RecentThumbnailSpacing = 6; // matches CreateThumbnailButton's own right Margin
+    private const int RecentThumbnailSpacing = 6; // CreateThumbnailButton の右 Margin と一致
 
-    /// <summary>How many paths are actually kept in memory/persisted --
-    /// deliberately more than any row could ever display (see
-    /// CalculateRecentThumbnailFitCount), so widening the window later can
-    /// reveal more thumbnails without needing to have remembered more than
-    /// this at the time.</summary>
+    /// <summary>実際にメモリ保持/永続化するパス数。どの行が表示できる数よりわざと
+    /// 多くしてある(あとでウィンドウを広げれば、追加で覚え直さずにサムネが増える)。</summary>
     private const int MaxRecentAvatarHistory = 20;
     private const int MaxRecentPhotoScan = 20;
     private List<string> _recentAvatarPaths = new();
 
-    /// <summary>Read by App.xaml.cs at exit to persist alongside the other
-    /// settings, and set once at startup via <see cref="SetRecentAvatarPaths"/>.</summary>
+    /// <summary>終了時に App.xaml.cs が読んで他の設定と一緒に永続化する。起動時に
+    /// <see cref="SetRecentAvatarPaths"/> で1回セット。</summary>
     public IReadOnlyList<string> RecentAvatarPaths => _recentAvatarPaths;
 
     public void SetRecentAvatarPaths(IEnumerable<string> paths)
@@ -56,11 +49,8 @@ public partial class ControlPanelWindow
         PopulateThumbnailRow(CompositeRecentAvatarsPanel, _recentAvatarPaths, LoadImageFile, CompositeRecentAvatarsPanel.ActualWidth);
     }
 
-    /// <summary>Re-populates just one recent-thumbnail row at its current
-    /// width -- wired to each row's own SizeChanged in XAML, so widening the
-    /// window (or switching between Align's single narrow column and
-    /// Composite's wider one) reveals or hides thumbnails to fill however
-    /// much space is actually available, instead of a fixed count.</summary>
+    /// <summary>1つの最近サムネ行を現在の幅で再構築する。各行の SizeChanged に配線
+    /// してあり、ウィンドウ幅に応じて固定数ではなく空きぶんだけサムネを出す。</summary>
     private void AlignRecentAvatarsPanel_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (e.NewSize.Width == e.PreviousSize.Width) return;
@@ -79,19 +69,12 @@ public partial class ControlPanelWindow
         RefreshRecentPhotosUI();
     }
 
-    /// <summary>Scans the screenshot watch folder directly (not a persisted
-    /// list) -- "recent background photos" should always reflect what's
-    /// actually sitting in that folder right now, not a history that could
-    /// point at files the user has since moved or deleted. The scan itself
-    /// (recursive EnumerateFiles + a GetLastWriteTimeUtc stat per file) runs
-    /// on a background thread: a VRChat screenshot folder can accumulate
-    /// thousands of files over time, and doing this synchronously on the UI
-    /// thread every time Composite mode opens (or this row resizes) was
-    /// blocking the whole window, before ShowComposite's own loading spinner
-    /// even had a chance to paint. _recentPhotosScanToken discards a result
-    /// that arrives after a newer scan has already been kicked off (e.g. two
-    /// resizes in quick succession), so a stale, slower scan can't stomp on
-    /// a faster, newer one's result.</summary>
+    /// <summary>スクショ監視フォルダを直接スキャンする(永続リストではない)── 「最近の
+    /// 背景写真」は今そのフォルダに実在するものを常に映すべきで、移動/削除済みかも
+    /// しれない履歴ではない。スキャン(再帰 EnumerateFiles + ファイルごとの
+    /// GetLastWriteTimeUtc)はバックグラウンドスレッドで走る(VRChat のスクショ
+    /// フォルダは数千ファイルに膨れ得るので、UI スレッドで同期に走らせると窓ごと固まる)。
+    /// _recentPhotosScanToken で、新しいスキャン開始後に届いた古い結果を捨てる。</summary>
     private int _recentPhotosScanToken;
 
     private async void RefreshRecentPhotosUI()
@@ -125,10 +108,9 @@ public partial class ControlPanelWindow
         PopulateThumbnailRow(RecentPhotosPanel, recent, LoadPhotoForComposite, availableWidth);
     }
 
-    /// <summary>How many RecentThumbnailSize-wide buttons (plus their own
-    /// trailing RecentThumbnailSpacing) fit within <paramref name="availableWidth"/>,
-    /// at least 1 so a not-yet-laid-out row (ActualWidth still 0) doesn't
-    /// render completely empty.</summary>
+    /// <summary><paramref name="availableWidth"/> に収まる RecentThumbnailSize 幅
+    /// (+ 末尾の RecentThumbnailSpacing)のボタン数。最低 1(未レイアウトで
+    /// ActualWidth が 0 でも空にならないように)。</summary>
     private static int CalculateRecentThumbnailFitCount(double availableWidth)
     {
         int slot = RecentThumbnailSize + RecentThumbnailSpacing;
@@ -145,16 +127,10 @@ public partial class ControlPanelWindow
         }
     }
 
-    /// <summary>Decoded thumbnails keyed by path, so widening/narrowing the
-    /// window (which re-populates every visible recent-thumbnail row via
-    /// PopulateThumbnailRow -- see the *_SizeChanged handlers, which fire
-    /// repeatedly during a live resize drag) reuses the already-decoded
-    /// BitmapImage instead of re-reading and re-decoding the same PNG/JPEG
-    /// from disk on every tick. Capped and FIFO-evicted rather than left
-    /// unbounded -- RecentPhotosPanel's own source (the screenshot watch
-    /// folder) can hold thousands of files over a long session, even though
-    /// only ~20 of them are ever "recent" at once, so the cache shouldn't
-    /// grow to match the whole folder's history over time.</summary>
+    /// <summary>デコード済みサムネのパス別キャッシュ。ウィンドウのリサイズ中に行が
+    /// 何度も再構築されても、同じ PNG/JPEG を毎回読み直さず既デコードの BitmapImage を
+    /// 使い回す。上限つき FIFO 破棄(監視フォルダは長時間で数千ファイルになり得るが
+    /// 「最近」は常時 ~20 なので、キャッシュがフォルダ全履歴まで育たないように)。</summary>
     private static readonly Dictionary<string, BitmapImage> ThumbnailCache = new();
     private static readonly Queue<string> ThumbnailCacheOrder = new();
     private const int MaxThumbnailCacheEntries = 300;

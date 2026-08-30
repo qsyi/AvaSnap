@@ -28,9 +28,8 @@ public partial class OverlayWindow : Window
         _undo = undo;
         _oscListener = oscListener;
 
-        // Cover the full virtual screen (all monitors) at its true origin, so
-        // Canvas coordinates line up 1:1 with screen coordinates regardless of
-        // monitor layout.
+        // 仮想スクリーン全体(全モニタ)をその原点で覆う。Canvas 座標が
+        // モニタ配置に関わらず画面座標と 1:1 になるように。
         Left = SystemParameters.VirtualScreenLeft;
         Top = SystemParameters.VirtualScreenTop;
         Width = SystemParameters.VirtualScreenWidth;
@@ -47,11 +46,9 @@ public partial class OverlayWindow : Window
         PreviewKeyDown += OverlayWindow_PreviewKeyDown;
         StartHotkeyPolling();
 
-        // Auto-hide: only useful while VRChat's camera UI is actually open,
-        // otherwise it's just a floating image over normal gameplay. Driven by
-        // VRChat's own /usercamera/Mode OSC output instead of periodic
-        // screen-capture + template matching -- cheaper and immune to the
-        // false-positive-icon-match risk that approach had.
+        // 自動非表示: VRChat のカメラ UI が開いている間だけ意味がある(それ以外は
+        // ただの浮遊画像)。定期スクショ + テンプレートマッチではなく VRChat の
+        // /usercamera/Mode OSC 出力で駆動する。
         _oscListener.CameraModeChanged += OnCameraModeChanged;
         if (_oscListener.IsCameraOpen is { } open) ApplyCameraOpenState(open);
     }
@@ -60,14 +57,10 @@ public partial class OverlayWindow : Window
 
     private bool _manuallyHidden;
 
-    /// <summary>ControlPanelWindow calls this while it's minimized or in
-    /// compact mode (see its EnterCompact/ExpandButton_Click/
-    /// Window_StateChanged), so the overlay stays hidden even if the user
-    /// re-opens VRChat's camera UI in the meantime -- without this,
-    /// ApplyCameraOpenState's own Show() would fight the minimize and pop
-    /// the overlay back up on top of VRChat unexpectedly. Un-hiding re-syncs
-    /// to whatever the camera's ACTUAL state is now (it may have changed
-    /// while suppressed), rather than assuming it's still open.</summary>
+    /// <summary>ControlPanelWindow が最小化/コンパクト時に呼ぶ。その間に VRChat の
+    /// カメラ UI を開き直してもオーバーレイを隠したままにする(これが無いと
+    /// ApplyCameraOpenState の Show() が最小化と競合して不意にオーバーレイが前面へ出る)。
+    /// 解除時はカメラの「現在の」状態へ同期し直す(抑制中に変わっているかもしれない)。</summary>
     public void SetManuallyHidden(bool hidden)
     {
         if (_manuallyHidden == hidden) return;
@@ -88,13 +81,9 @@ public partial class OverlayWindow : Window
         if (open) Show(); else Hide();
     }
 
-    /// <summary>Sets the overlay's initial visibility to match VRChat's actual
-    /// camera-UI state at app startup, instead of defaulting to always-visible.
-    /// VRChat only sends /usercamera/Mode over OSC on CHANGE, not an initial
-    /// snapshot, so if OSC hasn't reported anything yet the real state is simply
-    /// unknown -- stay hidden until the first OSC message arrives rather than
-    /// guessing (no CV fallback anymore; detection now runs entirely on VRChat's
-    /// own OSC output).</summary>
+    /// <summary>起動時にオーバーレイの初期表示を VRChat の実際のカメラ UI 状態に合わせる
+    /// (常時表示を既定にしない)。VRChat は /usercamera/Mode を「変化時」しか送らないので、
+    /// まだ OSC が何も報告していなければ状態不明 ── 推測せず、最初の OSC が来るまで隠す。</summary>
     public void InitializeCameraVisibility()
     {
         if (_oscListener.IsCameraOpen is { } open)
@@ -105,12 +94,10 @@ public partial class OverlayWindow : Window
         Hide();
     }
 
-    /// <summary>Covers the case the VRChat-focus poll above can't: clicking the
-    /// overlay itself (e.g. a Shift-held drag) activates this window, making
-    /// AvaSnap's own overlay -- not VRChat -- the foreground window right
-    /// after. UndoManager's built-in debounce guards against this overlapping
-    /// with the other Ctrl+Z paths (ControlPanelWindow's own handler, the
-    /// VRChat-focus poll) for the same physical keypress.</summary>
+    /// <summary>上の VRChat フォーカスポーリングでは拾えないケース用: オーバーレイ自体を
+    /// クリック(Shift ドラッグ等)するとこの窓がアクティブになり、直後は AvaSnap が
+    /// 前面窓になる。同じ物理キー押下での他の Ctrl+Z 経路との重複は UndoManager の
+    /// デバウンスが防ぐ。</summary>
     private void OverlayWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
@@ -133,19 +120,12 @@ public partial class OverlayWindow : Window
         }
     }
 
-    /// <summary>The pristine image pre-converted to a raw BGRA32 pixel buffer,
-    /// prepared once on load instead of on every adjustment tweak (the
-    /// FormatConvertedBitmap + WriteableBitmap allocation was needless repeated
-    /// work on top of the actual per-pixel processing). Look adjustments always
-    /// reprocess from this, never from a previously-adjusted result, so
-    /// repeated tweaks never compound/degrade quality.</summary>
+    /// <summary>pristine な画像を BGRA32 生バッファへ変換したもの。読み込み時に1回だけ作る。
+    /// ルック調整は常にこれから再処理する(調整済み結果からではない)ので、繰り返しても劣化しない。</summary>
     private ImageAdjustment.PixelBuffer? _originalPixelBuffer;
 
-    /// <summary>The full-resolution blur stage's own result, cached
-    /// separately from the color stage: re-blurring is the expensive part
-    /// (four channels, two passes), so it's only redone when the edge-blur
-    /// radius itself changes, not on every brightness/contrast/saturation
-    /// tweak.</summary>
+    /// <summary>フル解像度のぼかしステージの結果。色ステージとは別にキャッシュする:
+    /// 再ぼかしが重いので、エッジぼかし半径が変わった時だけ作り直す。</summary>
     private ImageAdjustment.PixelBuffer? _blurredPixelBuffer;
     private double? _blurredAtRadius;
 
@@ -163,14 +143,10 @@ public partial class OverlayWindow : Window
         _state.ImagePath = path;
         ApplyImageAdjustments();
 
-        // The box's Width/Height don't otherwise change on load, but
-        // Stretch="Fill" would visibly distort a new image whose aspect
-        // ratio differs from whatever the box happened to be sized to
-        // before (leftover from a previous image, or the default) -- fix
-        // the height to match immediately instead of waiting for the next
-        // Snap. Adjust around the box's current CENTER (like the mouse-wheel
-        // zoom does) rather than keeping the top-left corner fixed, so the
-        // image doesn't visibly jump before a Snap recenters it anyway.
+        // ボックスの Width/Height は読み込みで変わらないが、Stretch="Fill" だと
+        // アス比の違う新画像が歪むので、次の Snap を待たず高さを合わせる。
+        // マウスホイールズームと同じくボックスの中心基準で調整する(左上固定だと
+        // Snap で再センタリングされる前に画像が飛んで見える)。
         if (bitmap.PixelWidth > 0 && bitmap.PixelHeight > 0)
         {
             double aspect = (double)bitmap.PixelWidth / bitmap.PixelHeight;
@@ -191,25 +167,18 @@ public partial class OverlayWindow : Window
         nameof(OverlayState.ColorTintStrength), nameof(OverlayState.ColorTintR), nameof(OverlayState.ColorTintG), nameof(OverlayState.ColorTintB),
     };
 
-    // ---- Throttle image reprocessing while a slider is being dragged: a full
-    //      re-blur + re-color-adjust on every single tick (dozens/sec) visibly
-    //      lagged, especially on larger source images. Reprocess at most every
-    //      AdjustmentThrottle, and always schedule a trailing update so the
-    //      exact final value still renders shortly after the user stops. ----
+    // ---- スライダードラッグ中の画像再処理をスロットルする: tick ごとに再ぼかし +
+    //      再色調整すると目に見えて遅れる。最大でも AdjustmentThrottle 間隔で処理し、
+    //      末尾更新も必ず予約して、止めた直後に最終値が描画されるようにする。 ----
 
     private static readonly TimeSpan AdjustmentThrottle = TimeSpan.FromMilliseconds(80);
     private DateTime _lastAdjustmentApply = DateTime.MinValue;
     private DispatcherTimer? _pendingAdjustmentTimer;
 
-    // ---- Brightness/contrast/saturation/vibrance/temperature/tint/hue AND
-    //      edge blur all keep live-updating during a drag, reprocessing the
-    //      full-resolution buffer on every tick, throttled by
-    //      AdjustmentThrottle above -- edge blur runs on the GPU via
-    //      GpuAvatarEdgeBlur (a parallel Jump Flooding distance field, not
-    //      the old CPU exact-EDT algorithm this throttle-vs-freeze split
-    //      was originally designed around), so it's cheap enough now to
-    //      treat the same as every other adjustment instead of freezing it
-    //      for the whole drag and only catching up on release. ----
+    // ---- 色調整もエッジぼかしも、ドラッグ中フル解像度バッファを毎 tick 再処理する
+    //      (上の AdjustmentThrottle でスロットル)。エッジぼかしは GPU
+    //      (GpuAvatarEdgeBlur)なので、他の調整と同じ扱いでよく、ドラッグ中フリーズ
+    //      させて離した時だけ追いつかせる、という分岐はもう不要。 ----
 
     public void SetColorDragging(bool dragging)
     {
@@ -223,12 +192,9 @@ public partial class OverlayWindow : Window
 
     private void OnAdjustmentPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        // A null PropertyName is OverlayState's own "more than one property
-        // changed at once" convention (see its BeginBatch doc comment) --
-        // since any of those could be an adjustment property, treat it as
-        // relevant rather than bailing out (which would silently stop the
-        // PNG's color reprocessing from ever re-running after a batched
-        // Undo/Redo, Match-look, or Reset-look change).
+        // PropertyName が null は OverlayState の「複数変わった」慣習。どれかが調整
+        // プロパティかもしれないので、bail out せず関連扱いにする(でないとバッチ
+        // Undo/Redo・ルック一致・リセット後に色再処理が二度と走らなくなる)。
         if (e.PropertyName is not null && !AdjustmentPropertyNames.Contains(e.PropertyName)) return;
 
         var elapsed = DateTime.UtcNow - _lastAdjustmentApply;
@@ -240,9 +206,7 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        // Too soon since the last apply -- schedule a trailing apply for
-        // whatever the value ends up being once the throttle window passes,
-        // so a fast flurry of ticks still ends up rendering the latest one.
+        // 前回適用から早すぎる ── スロットル窓が過ぎた時点の値で末尾適用を予約する。
         _pendingAdjustmentTimer ??= new DispatcherTimer();
         _pendingAdjustmentTimer.Stop();
         _pendingAdjustmentTimer.Interval = AdjustmentThrottle - elapsed;
@@ -258,16 +222,9 @@ public partial class OverlayWindow : Window
         ApplyImageAdjustments();
     }
 
-    /// <summary>Reprocesses the pristine loaded image with the current look
-    /// adjustments (edge blur, brightness, contrast, saturation) and displays
-    /// the result -- called on load and whenever any adjustment value changes,
-    /// not on every _state change (position/size/rotation don't need the image
-    /// itself reprocessed). Re-blurs the full buffer only when the radius
-    /// actually changed since the last blur (GPU-side, via
-    /// ImageAdjustment.BlurPng/GpuAvatarEdgeBlur), and reuses the cached
-    /// result for a cheap color-only reapply the rest of the time -- cheap
-    /// enough to just let the throttle above handle drag ticks like every
-    /// other adjustment, no separate freeze-during-drag needed.</summary>
+    /// <summary>pristine な読み込み画像を現在のルック調整で再処理して表示する。
+    /// 読み込み時と調整値が変わるたびに呼ばれる(位置/サイズ/回転では画像自体の
+    /// 再処理は不要)。ぼかしは半径が変わった時だけ作り直し、それ以外は色だけ再適用する。</summary>
     private void ApplyImageAdjustments()
     {
         if (_originalPixelBuffer is null) return;
@@ -287,16 +244,14 @@ public partial class OverlayWindow : Window
         OverlayImage.Source = ImageAdjustment.ApplyColor(blurredSource, adjustments);
     }
 
-    /// <summary>The loaded image's native pixel size, or null if none is loaded.
-    /// Used to fit (not stretch) the image into a detected VRChat frame while
-    /// preserving its own aspect ratio.</summary>
+    /// <summary>読み込んだ画像のネイティブピクセルサイズ。未読み込みなら null。
+    /// 検出した VRChat 枠へ縦横比を保ってフィット(引き伸ばしではない)させるのに使う。</summary>
     public Size? ImageNativeSize =>
         OverlayImage.Source is BitmapSource bmp ? new Size(bmp.PixelWidth, bmp.PixelHeight) : null;
 
-    /// <summary>The currently-displayed PNG, already reprocessed with the
-    /// current edge-blur/brightness/contrast/saturation look adjustments (see
-    /// <see cref="ApplyImageAdjustments"/>). Used by Composite mode to render
-    /// the exact same look onto a photo instead of the pristine original.</summary>
+    /// <summary>現在表示中の PNG。エッジぼかし/明るさ/コントラスト/彩度などの
+    /// ルック調整を適用済み(<see cref="ApplyImageAdjustments"/> 参照)。合成モードが
+    /// 元画像ではなくこの見た目をそのまま写真上に描くのに使う。</summary>
     public BitmapSource? AdjustedPngSource => OverlayImage.Source as BitmapSource;
 
     /// <summary>エッジぼかしだけ適用した(色調補正前の)アバターバッファ。合成モードで
@@ -316,9 +271,8 @@ public partial class OverlayWindow : Window
         }
     }
 
-    /// <summary>The pristine loaded PNG with none of the look adjustments
-    /// applied (no edge blur, no color grading) -- used for Composite mode's
-    /// before/after look-adjustment comparison slider, as the "before" half.</summary>
+    /// <summary>ルック調整を一切かけていない pristine な PNG(エッジぼかしも色グレードも
+    /// 無し)。合成モードの比較用スライダーの「before」側に使う。</summary>
     public BitmapSource? RawPngSource
     {
         get
@@ -331,36 +285,24 @@ public partial class OverlayWindow : Window
         }
     }
 
-    /// <summary>The pristine loaded PNG's raw pixel buffer, same source as
-    /// <see cref="RawPngSource"/> but without the extra WriteableBitmap
-    /// round-trip -- used by the "look match" buttons, which need to run
-    /// ComputeLookStats over it directly.</summary>
+    /// <summary>pristine な PNG の生ピクセルバッファ。<see cref="RawPngSource"/> と
+    /// 同じソースだが WriteableBitmap の往復なし。「ルック一致」ボタンが
+    /// ComputeLookStats を直接かけるのに使う。</summary>
     public ImageAdjustment.PixelBuffer? OriginalPixelBuffer => _originalPixelBuffer;
 
-    /// <summary>Guide-relevant OverlayState properties -- the only ones
-    /// UpdateGuide's inputs actually depend on (fov/pitch/roll come straight
-    /// from GuideManualFov/Pitch/Roll -- a successful Unity fetch just
-    /// writes into these same three fields, see ControlPanelWindow's
-    /// UnityCameraGuideService.DataUpdated handler -- gated by GuideVisible;
-    /// the guide's own client-rect/roll inputs come from elsewhere and
-    /// already call UpdateGuide directly, see FollowTick). Every OTHER
-    /// property (position, size, rotation, opacity, all the look-adjustment
-    /// sliders) has no effect on the guide at all, so rebuilding its ~20
-    /// Line shapes from scratch on every one of THOSE changes (which is what
-    /// an unconditional UpdateGuide() call here used to do, on every single
-    /// slider tick) was pure waste.</summary>
+    /// <summary>ガイドに関係する OverlayState プロパティ ── UpdateGuide の入力が実際に
+    /// 依存するのはこれだけ(FOV/pitch/roll は GuideManualFov/Pitch/Roll から直接、
+    /// GuideVisible でゲート)。他のプロパティ(位置/サイズ/回転/不透明度/ルック調整)は
+    /// ガイドに一切影響しないので、それらの変化のたびに ~20 本の Line を作り直すのは無駄。</summary>
     private static readonly HashSet<string?> GuideRelevantPropertyNames = new()
     {
         nameof(OverlayState.GuideVisible),
         nameof(OverlayState.GuideManualFov), nameof(OverlayState.GuideManualPitch), nameof(OverlayState.GuideManualRoll),
     };
 
-    /// <summary><paramref name="changedProperty"/> is the OverlayState
-    /// property whose change triggered this call, or null for "unknown/many
-    /// properties changed" (the initial Loaded call, and OverlayState's own
-    /// batched-change notification -- see its BeginBatch doc comment) --
-    /// treated as "refresh everything" since there's no single property to
-    /// check.</summary>
+    /// <summary><paramref name="changedProperty"/> はこの呼び出しを起こした
+    /// OverlayState プロパティ。null は「不明/複数変わった」(初回 Loaded、バッチ通知)で、
+    /// 見るべき単一プロパティが無いので全更新扱い。</summary>
     public void ApplyState(string? changedProperty = null)
     {
         Canvas.SetLeft(OverlayImage, _state.X);
@@ -396,7 +338,7 @@ public partial class OverlayWindow : Window
         PlaceHandle(HandleBL, -half, h - half);
         PlaceHandle(HandleBR, w - half, h - half);
 
-        double gizmoHalf = 8; // half of RotateGizmoHandle's own Width/Height (16)
+        double gizmoHalf = 8; // RotateGizmoHandle の Width/Height(16)の半分
         double gizmoY = -RotateGizmoOffset;
         RotateGizmoLine.X1 = w / 2;
         RotateGizmoLine.Y1 = 0;
@@ -411,25 +353,15 @@ public partial class OverlayWindow : Window
         Canvas.SetTop(handle, y);
     }
 
-    // ---- Unity連携ガイド: FOV/pitch/roll come from _state.GuideManualFov/
-    //      Pitch/Roll alone -- a successful Unity fetch (see
-    //      ControlPanelWindow's UnityCameraGuideService.DataUpdated handler)
-    //      writes into these same three fields directly, same as typing a
-    //      value in by hand, so this window doesn't need its own separate
-    //      subscription to UnityCameraGuideService at all; the usual
-    //      _state.PropertyChanged -> UpdateGuide path (see
-    //      GuideRelevantPropertyNames) already covers it. Independent of
-    //      whether the guide is even shown (_state.GuideVisible). ----
+    // ---- Unity連携ガイド: FOV/pitch/roll は _state.GuideManualFov/Pitch/Roll だけから。
+    //      Unity 取得成功時もこの3フィールドに直接書くので、この窓は
+    //      UnityCameraGuideService を購読しない(通常の _state.PropertyChanged →
+    //      UpdateGuide 経路で足りる)。ガイド表示中かどうかとは無関係。 ----
 
-    /// <summary>Redraws the Unity連携ガイド onto the followed VRChat window's
-    /// client rect: a horizon line placed via the active fov/pitch/roll
-    /// (using the same pinhole formula the old manual-input version used,
-    /// y = h/2 + f*tan(pitch), f = (h/2)/tan(fov/2)) plus the same fan/depth
-    /// grid lines spaced by FOV. Roll is handled by wrapping the WHOLE grid
-    /// in a RotateTransform around the vanishing point (see
-    /// UnityGuideRollRotate/RenderTransformOrigin below) instead of
-    /// rotating each line's endpoints by hand -- WPF already does that
-    /// perfectly well, and it's the exact same visual effect either way.</summary>
+    /// <summary>追従中の VRChat 窓のクライアント矩形へ Unity連携ガイドを描き直す:
+    /// アクティブな fov/pitch/roll から水平線(ピンホール式 y = h/2 + f*tan(pitch)、
+    /// f = (h/2)/tan(fov/2))と、FOV 間隔の放射線/奥行き線。roll はグリッド全体を
+    /// 消失点まわりの RotateTransform で回す(端点を手で回さない)。</summary>
     private void UpdateGuide()
     {
         if (!_state.GuideVisible)
@@ -447,16 +379,11 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        // Clipped/sized to the estimated CAMERA frame (the same rect the
-        // avatar itself gets fitted to on 位置をリセット -- see
-        // VRChatWindowService.ComputeCameraFrameRect's own doc comment),
-        // not the whole VRChat window: the window includes UI chrome
-        // (camera controls, borders) around the actual photographed area,
-        // and a perspective guide for anything outside that isn't
-        // meaningful. The clip itself lives on UnityGuideFrameClip (see its
-        // own XAML comment on why that has to be the OUTER, un-rotated
-        // element) -- UnityGuideCanvas underneath it stays at local (0,0)
-        // and only carries the roll RenderTransform.
+        // VRChat 窓全体ではなく推定カメラフレーム(位置をリセットでアバターを
+        // 合わせるのと同じ矩形)にクリップ/サイズ合わせする。窓には撮影領域の外側に
+        // UI(カメラ操作・枠)が含まれ、その外に透視ガイドを出しても無意味なため。
+        // クリップは UnityGuideFrameClip(外側・未回転の要素)、その下の
+        // UnityGuideCanvas はローカル (0,0) のまま roll の RenderTransform だけ持つ。
         var (frameLeft, frameTop, frameWidth, frameHeight) =
             VRChatWindowService.ComputeCameraFrameRect(clientRect, _oscListener.IsLandscape ?? true);
 
@@ -471,14 +398,10 @@ public partial class OverlayWindow : Window
         UnityGuideCanvas.Children.Clear();
 
         double centerX = w / 2.0;
-        // Clamped to a minimum of 1 degree -- fov=0 makes Math.Tan(0)=0, so
-        // f (a divide by that) becomes Infinity, and Infinity * Math.Tan(0)
-        // (pitch=0 too, a common case) is NaN, not Infinity -- propagating
-        // that into RenderTransformOrigin crashed rather than just failing
-        // to render. The manual FOV slider itself now has Minimum="1" too,
-        // but the synced value comes straight from Unity's own
-        // Camera.fieldOfView with no range guarantee on this side, so the
-        // clamp stays here as the real backstop.
+        // 最低 1 度にクランプ ── fov=0 だと f が Infinity になり、Infinity*tan(0)
+        // (pitch=0 も普通)は Infinity ではなく NaN で、RenderTransformOrigin へ渡すと
+        // クラッシュした。スライダーも Minimum="1" だが、同期値は Unity の
+        // Camera.fieldOfView から来て範囲保証が無いので、ここのクランプが最終防波堤。
         double fovRad = Math.Max(fov, 1.0) * Math.PI / 180.0;
         double f = (h / 2.0) / Math.Tan(fovRad / 2.0);
         double horizonY = h / 2.0 + f * Math.Tan(pitch * Math.PI / 180.0);
@@ -486,16 +409,14 @@ public partial class OverlayWindow : Window
         UnityGuideCanvas.RenderTransformOrigin = new Point(0.5, h > 0 ? horizonY / h : 0.5);
         UnityGuideRollRotate.Angle = -roll;
 
-        // Bright yellow-green ("GreenYellow") instead of the app's own
-        // muted blue accent -- this overlays real VRChat scenery (skin
-        // tones, indoor lighting, etc.), where a low-contrast brand color
-        // easily gets lost; a saturated, unusual-in-nature color reads
-        // clearly against almost any background.
+        // アプリのくすんだ青ではなく明るい黄緑。実際の VRChat の風景(肌色・室内照明等)
+        // に重なるので、低コントラストのブランド色は埋もれる。自然界に少ない飽和色は
+        // ほぼどんな背景でもはっきり読める。
         var lineBrush = new SolidColorBrush(Color.FromRgb(0xAD, 0xFF, 0x2F));
         lineBrush.Freeze();
 
-        const double PrimaryThickness = 3.0; // the horizon line: the one reference everything else is relative to, so it reads as the "main" line at a glance
-        const double SecondaryThickness = 1.75; // fan/depth lines
+        const double PrimaryThickness = 3.0; // 水平線: 他の全線の基準なので一目で「主線」に見えるように
+        const double SecondaryThickness = 1.75; // 放射線/奥行き線
         var secondaryDashArray = new DoubleCollection { 4, 3 };
         secondaryDashArray.Freeze();
 
@@ -507,10 +428,7 @@ public partial class OverlayWindow : Window
                 Stroke = lineBrush, StrokeThickness = isPrimary ? PrimaryThickness : SecondaryThickness,
                 Opacity = opacity, IsHitTestVisible = false,
             };
-            // Dashed for the secondary fan/depth lines only -- keeps the
-            // horizon (the one thing every other line is measured against)
-            // visually distinct as the sole solid line, and reduces how much
-            // the fan/depth grid competes with it for attention.
+            // 放射線/奥行き線だけ破線。水平線を唯一の実線として際立たせる。
             if (!isPrimary) main.StrokeDashArray = secondaryDashArray;
             UnityGuideCanvas.Children.Add(main);
         }
@@ -518,33 +436,19 @@ public partial class OverlayWindow : Window
         const double angleStepDeg = 15;
         const double maxAngleDeg = 75;
 
-        // Every line below is defined to exactly reach the UNROTATED (w,h)
-        // box's own edges -- fine at roll=0, but a same-size box rotated
-        // around (centerX, horizonY) no longer covers the TRUE (axis-
-        // aligned) frame's corners (a rotated rectangle pulls in from its
-        // original corners even as it pokes out past the middle of its
-        // original edges), so endpoints landing exactly on the unrotated
-        // box's edge fall visibly short of the real frame's corners once
-        // actually rotated. Extending every "far" endpoint well past where
-        // it's actually needed, then letting UnityGuideFrameClip's own
-        // (axis-aligned, unrotated) clip trim the excess, means the drawn
-        // lines always reach the true frame edges regardless of roll.
+        // 下の各線は未回転 (w,h) ボックスの縁にちょうど届くよう定義してある。roll=0 なら
+        // よいが、回転させると真の(軸並行)フレームの角に届かなくなる(回転矩形は元の角から
+        // 内側へ引っ込む)。全「遠側」端点を必要以上に延ばし、UnityGuideFrameClip の
+        // (軸並行・未回転の)クリップで余分を切ることで、roll に関わらず縁まで届く。
         const double ExtendFactor = 2.5;
         Point Extend(double x, double y) => new Point(
             centerX + (x - centerX) * ExtendFactor,
             horizonY + (y - horizonY) * ExtendFactor);
 
-        // For the fan lines above, Extend is correct: they radiate FROM the
-        // origin at a fixed angle, so scaling their (x,y) offset from the
-        // origin by the same factor on both axes preserves that angle while
-        // reaching further out. The depth rows and horizon line below are
-        // different -- they're horizontal at a FIXED height (dy from the
-        // horizon), not radiating from the origin -- so scaling their Y
-        // offset the same way as X pushed their height itself 2.5x further
-        // from the horizon than the FOV math intended, which is exactly why
-        // rows that should've stayed inside the frame (low FOV -> large f
-        // -> large dy -> even larger once wrongly multiplied) ended up
-        // pushed outside it. These only need the X reach extended.
+        // 放射線には Extend が正しい(原点から一定角で伸びるので、両軸を同じ係数で
+        // スケールしても角度は保たれる)。奥行き行と水平線は原点からの放射ではなく
+        // 一定高さの水平線なので、Y も同じく延ばすと高さ自体が 2.5 倍ずれる。これらは
+        // X の到達だけ延ばせばよい。
         Point ExtendHorizontal(double x, double y) => new Point(centerX + (x - centerX) * ExtendFactor, y);
 
         for (double angleDeg = -maxAngleDeg; angleDeg <= maxAngleDeg; angleDeg += angleStepDeg)
@@ -557,17 +461,10 @@ public partial class OverlayWindow : Window
             AddLine(centerX, horizonY, farTop.X, farTop.Y, 0.45);
         }
 
-        // Depth rows: a fixed angle step (matching the fan lines above) looks
-        // right at a "typical" FOV, but at a narrow FOV f grows large, so
-        // even the very first step (angleStepDeg) already lands past the
-        // frame edge -- the old "only draw it if it lands within [0,h]"
-        // filter then rejects that row outright, and at narrow enough FOV
-        // rejects EVERY row, leaving nothing but the horizon line. Instead,
-        // solve for the actual angle that reaches each edge of the frame
-        // (atan of the real distance-to-edge over f) and split that into a
-        // fixed row COUNT, so rows are mathematically guaranteed to land
-        // within the frame regardless of FOV -- no filter needed, and the
-        // grid always stays populated.
+        // 奥行きの横線: 固定の角度ステップだと狭い FOV で f が大きくなり、最初の
+        // 1本目から枠外に落ちて全行が消え、地平線だけになる。代わりに枠の各端へ
+        // 届く実際の角度(distance-to-edge / f の atan)を求め、それを固定本数へ
+        // 分割する。FOV に依らず必ず枠内に収まり、グリッドが常に埋まる。
         const int depthRowCount = 5;
         double angleToBottomRad = Math.Atan2(Math.Max(0, h - horizonY), f);
         double angleToTopRad = Math.Atan2(Math.Max(0, horizonY), f);
@@ -592,7 +489,7 @@ public partial class OverlayWindow : Window
         }
     }
 
-    // ---- Click-through (WS_EX_TRANSPARENT) ----
+    // ---- クリックスルー (WS_EX_TRANSPARENT) ----
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TRANSPARENT = 0x20;
@@ -613,14 +510,11 @@ public partial class OverlayWindow : Window
         SetWindowLong(hwnd, GWL_EXSTYLE, style);
     }
 
-    // ---- Click-through hotkey: click-through is ON by default (clicks pass
-    //      through to VRChat for normal play); holding Shift temporarily turns
-    //      it OFF so the overlay can be dragged/resized, and releasing it goes
-    //      back to click-through. Polled via GetAsyncKeyState instead of a
-    //      KeyDown/KeyUp handler because once click-through is active this
-    //      window can't receive input at all (that's the point of
-    //      WS_EX_TRANSPARENT) and VRChat -- not this window -- holds keyboard
-    //      focus, so only a system-wide key-state check sees Shift being held. ----
+    // ---- クリックスルーのホットキー: 既定は ON(クリックは VRChat へ通す)。Shift 押下中だけ
+    //      一時 OFF にしてオーバーレイをドラッグ/リサイズでき、離すと元に戻る。
+    //      クリックスルー中はこの窓が入力を受け取れず(WS_EX_TRANSPARENT の目的)、
+    //      キーボードフォーカスは VRChat にあるので、システム全体のキー状態チェック
+    //      (GetAsyncKeyState)でしか Shift を検出できない。 ----
 
     private const int VK_SHIFT = 0x10;
 
@@ -629,16 +523,13 @@ public partial class OverlayWindow : Window
 
     private bool _lastShiftDown;
 
-    // ---- Undo/Redo while VRChat has focus: Ctrl+Z only reaches our own
-    //      PreviewKeyDown handlers when one of AvaSnap's own windows has
-    //      keyboard focus -- normally VRChat does, since that's the whole
-    //      point of the overlay. Deliberately NOT a global hotkey
-    //      (RegisterHotKey/a low-level keyboard hook): that would hijack
-    //      Ctrl+Z system-wide, breaking undo in every other app while AvaSnap
-    //      is running. Polling + checking the foreground window ourselves
-    //      never blocks/consumes the keystroke, so it stays harmless outside
-    //      VRChat -- same non-intrusive approach as the Shift click-through
-    //      poll above. ----
+    // ---- VRChat にフォーカスがある間の Undo/Redo: Ctrl+Z が自前の PreviewKeyDown に
+    //      届くのは AvaSnap の窓がキーボードフォーカスを持つときだけで、通常は
+    //      VRChat が持っている。あえてグローバルホットキー(RegisterHotKey や
+    //      低レベルキーフック)にはしない ── それだと Ctrl+Z をシステム全体で
+    //      奪い、AvaSnap 起動中は他アプリの undo を壊す。ポーリング + 自前で
+    //      フォアグラウンド窓を確認する方式はキー入力を消費しないので VRChat 外では
+    //      無害。上の Shift クリックスルー監視と同じやり方。 ----
 
     private const int VK_CONTROL = 0x11;
     private const int VK_Z = 0x5A;
@@ -650,11 +541,8 @@ public partial class OverlayWindow : Window
     private DispatcherTimer? _hotkeyPollTimer;
     private bool _lastCtrlZDown, _lastCtrlShiftZDown, _lastCtrlYDown;
 
-    /// <summary>One timer instead of two separate ones (Shift click-through
-    /// used to poll every 30ms, undo/redo every 50ms, both calling
-    /// GetAsyncKeyState(VK_SHIFT) independently) -- both are cheap per-tick
-    /// P/Invoke checks, so there's no reason to run two perpetual
-    /// DispatcherTimers for the app's entire lifetime instead of one.</summary>
+    /// <summary>Shift クリックスルーと undo/redo を1本のタイマーでまとめて監視する
+    /// (どちらも1ティックあたり安価な P/Invoke チェック)。</summary>
     private void StartHotkeyPolling()
     {
         _hotkeyPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
@@ -675,10 +563,8 @@ public partial class OverlayWindow : Window
             bool ctrlShiftZDown = ctrl && shift && z;
             bool ctrlYDown = ctrl && y;
 
-            // Edge-triggered (only on the transition into "held"), and only
-            // while VRChat is the foreground window -- AvaSnap's own windows
-            // already get Ctrl+Z via their normal PreviewKeyDown handlers, so
-            // this only needs to cover the VRChat-focused case.
+            // 「押された瞬間」のエッジのみ、かつ VRChat がフォアグラウンドのときだけ。
+            // AvaSnap 自身の窓は通常の PreviewKeyDown で Ctrl+Z を拾う。
             if (_followedHwnd is { } hwnd && GetForegroundWindow() == hwnd)
             {
                 if (ctrlShiftZDown && !_lastCtrlShiftZDown) _undo.Redo();
@@ -693,29 +579,21 @@ public partial class OverlayWindow : Window
         _hotkeyPollTimer.Start();
     }
 
-    // ---- Z-order: stay attached to the VRChat window instead of being
-    //      globally "always on top" ----
+    // ---- Z 順: グローバルな「常に最前面」ではなく VRChat 窓に紐付けて追従する ----
 
-    /// <summary>
-    /// Makes this overlay an "owned" window of the VRChat window (see
-    /// <see cref="WindowOwnership"/>) and starts following its position.
-    /// </summary>
+    /// <summary>このオーバーレイを VRChat 窓の owned window にし
+    /// (<see cref="WindowOwnership"/> 参照)、位置追従を開始する。</summary>
     public void AttachToOwner(IntPtr ownerHwnd)
     {
         WindowOwnership.SetOwner(this, ownerHwnd);
         StartFollowing(ownerHwnd);
     }
 
-    // ---- Follow: keep the overlay's position locked relative to the VRChat
-    //      window if the user drags that window somewhere else on screen.
-    //
-    // Rather than only polling, this hooks EVENT_OBJECT_LOCATIONCHANGE so the
-    // OS notifies us the instant VRChat's window moves -- effectively a lock
-    // (no perceptible lag) without the fragility of forcibly reparenting our
-    // window into another process's window tree via SetParent, which is not
-    // designed to host arbitrary foreign top-level windows and can misbehave.
-    // A slow safety-net timer covers the rare case an out-of-context WinEvent
-    // gets dropped under load. ----
+    // ---- 追従: VRChat 窓が動かされてもオーバーレイの相対位置を固定し続ける。
+    //      EVENT_OBJECT_LOCATIONCHANGE をフックして OS から移動即時に通知を受ける
+    //      (体感ラグ無し)。SetParent で他プロセスの窓ツリーに強制ペアレントする
+    //      方式は外部トップレベル窓のホストを想定しておらず不安定なので避ける。
+    //      遅いセーフティネットタイマーが、負荷時に WinEvent を取りこぼしたレアケースを拾う。 ----
 
     private const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
@@ -735,25 +613,21 @@ public partial class OverlayWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-    /// <summary>The followed VRChat window's client rect as of the last known
-    /// move/resize, cached instead of re-queried -- callers that just need "roughly
-    /// where is VRChat right now" (e.g. the control panel's position display)
-    /// should use this instead of their own fresh FindVRChatWindow() + P/Invoke
-    /// lookup, which is expensive enough that calling it on every _state
-    /// PropertyChanged during a live window drag (many times a second, once per
-    /// WinEventHook callback) noticeably backs up the UI thread and made the
-    /// overlay visibly lag/jump while VRChat's window was being moved.</summary>
+    /// <summary>追従中の VRChat 窓のクライアント矩形(最後の移動/リサイズ時点)。
+    /// 都度取得せずキャッシュする ── 「今 VRChat がだいたいどこか」だけ要る呼び出し元
+    /// (コントロールパネルの位置表示など)は、自前の FindVRChatWindow() + P/Invoke
+    /// ではなくこれを使う。窓ドラッグ中に毎 PropertyChanged で問い合わせると UI
+    /// スレッドが詰まり、オーバーレイが目に見えてカクつく。</summary>
     public System.Drawing.Rectangle? FollowedClientRect => _lastKnownClientRect;
 
-    /// <summary>The VRChat window currently being followed, or null if not
-    /// attached yet.</summary>
+    /// <summary>現在追従中の VRChat 窓。未アタッチなら null。</summary>
     public IntPtr? FollowedHwnd => _followedHwnd;
 
     private IntPtr? _followedHwnd;
     private System.Drawing.Rectangle? _lastKnownClientRect;
     private DispatcherTimer? _followSafetyNetTimer;
     private IntPtr _winEventHook;
-    private WinEventDelegate? _winEventDelegate; // keep alive: GC would otherwise collect it while native code holds the pointer
+    private WinEventDelegate? _winEventDelegate; // 保持必須: ネイティブ側がポインタを持つ間に GC されないように
 
     private void StartFollowing(IntPtr hwnd)
     {
@@ -782,28 +656,25 @@ public partial class OverlayWindow : Window
 
     private void OnWinEvent(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
     {
-        if (idObject != OBJID_WINDOW || idChild != 0) return; // ignore sub-elements, only the window itself
+        if (idObject != OBJID_WINDOW || idChild != 0) return; // 子要素は無視、窓自体のみ
         if (_followedHwnd is not { } followed || hwnd != followed) return;
         FollowTick();
     }
 
-    /// <summary>Fires when the followed VRChat window's client SIZE changes
-    /// (resize/maximize/restore) -- passes the already-known hwnd and fresh
-    /// client rect so subscribers can react without their own fresh
-    /// FindVRChatWindow() scan (that EnumWindows-based lookup is what made the
-    /// overlay lag during rapid WinEventHook callbacks before).</summary>
+    /// <summary>追従中の VRChat 窓のクライアント「サイズ」が変わったとき発火
+    /// (リサイズ/最大化/復元)。既知の hwnd と最新のクライアント矩形を渡すので、
+    /// 購読側は自前の FindVRChatWindow() スキャン(これが以前オーバーレイを
+    /// カクつかせた原因)なしで反応できる。</summary>
     public event Action<IntPtr, System.Drawing.Rectangle>? ClientResized;
 
-    /// <summary>Tracks the VRChat window's on-screen position, shifting the
-    /// overlay by however far the window's top-left corner moved, and raises
-    /// <see cref="ClientResized"/> when the size itself changes (no more
-    /// auto-rescale math here -- callers decide what to do, e.g. re-run the
-    /// position estimate).</summary>
+    /// <summary>VRChat 窓の画面位置を追い、左上隅が動いたぶんだけオーバーレイを
+    /// ずらす。サイズ自体が変わったら <see cref="ClientResized"/> を発火する
+    /// (自動リスケールはここでは行わず、呼び出し側が判断する)。</summary>
     private void FollowTick()
     {
         if (_followedHwnd is not { } hwnd) return;
         var current = VRChatWindowService.GetClientRectOnScreen(hwnd);
-        if (current is null) return; // window closed/minimized; leave overlay where it is
+        if (current is null) return; // 窓が閉じた/最小化。オーバーレイは今の位置に残す
 
         if (_lastKnownClientRect is { } last)
         {
@@ -824,7 +695,7 @@ public partial class OverlayWindow : Window
         UpdateGuide();
     }
 
-    // ---- Mouse interaction: left-drag = move ----
+    // ---- マウス操作: 左ドラッグ = 移動 ----
 
     private void OverlayImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -851,10 +722,9 @@ public partial class OverlayWindow : Window
         _state.Y = _dragStartY + (current.Y - _dragStartMouse.Y);
     }
 
-    // ---- Resize handles: 4 corner grips, rotation-aware (mouse movement in
-    //      screen space is un-rotated into the overlay's local space before
-    //      being applied, so dragging a corner still resizes along the
-    //      overlay's own axes even when it's rotated) ----
+    // ---- リサイズハンドル: 四隅グリップ。回転対応(スクリーン空間のマウス移動を
+    //      オーバーレイのローカル空間へ逆回転してから適用するので、回転中でも隅ドラッグが
+    //      オーバーレイ自身の軸に沿ってリサイズされる)。 ----
 
     private const double MinHandleSize = 20;
 
@@ -875,7 +745,7 @@ public partial class OverlayWindow : Window
         _handleStartWidth = _state.Width;
         _handleStartHeight = _state.Height;
         handle.CaptureMouse();
-        e.Handled = true; // don't let this bubble up to OverlayImage's move-drag handler
+        e.Handled = true; // OverlayImage の移動ドラッグハンドラへバブルさせない
     }
 
     private void Handle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -895,9 +765,7 @@ public partial class OverlayWindow : Window
         double screenDx = current.X - _handleDragStartMouse.X;
         double screenDy = current.Y - _handleDragStartMouse.Y;
 
-        // Un-rotate the screen-space drag delta into the overlay's own local
-        // axes, so dragging a corner still scales along the overlay's own
-        // rotated axes even when it's rotated.
+        // スクリーン空間のドラッグ差分をオーバーレイのローカル軸へ逆回転する。
         double rad = -_state.RotationDegrees * Math.PI / 180.0;
         double cos = Math.Cos(rad), sin = Math.Sin(rad);
         double localDx = screenDx * cos - screenDy * sin;
@@ -906,12 +774,9 @@ public partial class OverlayWindow : Window
         bool left = _activeHandleTag.Contains('L');
         bool top = _activeHandleTag.Contains('T');
 
-        // Locked-aspect corner resize, scaled from the box's center: project
-        // the drag onto the corner's own diagonal (center -> the corner's
-        // starting position) to get a single continuous scale factor, instead
-        // of comparing width-driven vs height-driven candidates each frame --
-        // that comparison flip-flopped near the diagonal (the natural drag
-        // direction for a corner) and felt jittery.
+        // アスペクト固定の隅リサイズ、中心基準スケール。ドラッグを隅の対角線
+        // (中心→隅の開始位置)へ射影して連続したスケール係数を1つ得る。幅駆動と
+        // 高さ駆動の候補を毎フレーム比較する方式は対角線付近で振動する。
         double halfW0 = _handleStartWidth / 2;
         double halfH0 = _handleStartHeight / 2;
         double cornerDist0 = Math.Sqrt(halfW0 * halfW0 + halfH0 * halfH0);
@@ -922,11 +787,10 @@ public partial class OverlayWindow : Window
         double projected = localDx * dirX + localDy * dirY;
 
         double scale = (cornerDist0 + projected) / cornerDist0;
-        if (scale <= 0) return; // dragged past center; ignore rather than invert
+        if (scale <= 0) return; // 中心を越えてドラッグ。反転させず無視
 
-        // Lock to the loaded image's own native aspect ratio when available --
-        // more robust than the box's current W/H, which could have drifted
-        // from the image's true ratio (rounding, or an earlier manual edit).
+        // 可能なら読み込んだ画像のネイティブ縦横比に固定する。ボックスの現 W/H は
+        // 真の比率からずれている可能性がある(丸めや過去の手編集)。
         double aspect = ImageNativeSize is { Width: > 0, Height: > 0 } native
             ? native.Width / native.Height
             : _handleStartWidth / _handleStartHeight;
@@ -944,9 +808,8 @@ public partial class OverlayWindow : Window
         _state.Y = centerY - newHeight / 2;
     }
 
-    // ---- Rotate gizmo: drag the handle above the box in an arc around the
-    //      box's center to rotate. Same soft-snap targets as the control
-    //      panel's rotation slider, for a consistent feel between the two. ----
+    // ---- 回転ギズモ: ボックス上のハンドルを中心まわりの弧に沿ってドラッグして回転。
+    //      ソフトスナップ先はコントロールパネルの回転スライダーと同じ。 ----
 
     private const double RotateGizmoOffset = 30;
 
