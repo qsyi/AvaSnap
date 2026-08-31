@@ -294,6 +294,7 @@ public partial class ControlPanelWindow : Window
             TitleBarMinimizeButton.Visibility = Visibility.Visible;
             TitleBarMaximizeButton.Visibility = Visibility.Visible;
             HideHomeSettings();
+            DropGuideOverlay.Visibility = Visibility.Collapsed; // ドラッグ中断で残っていた場合の保険
             // このモードに入るたび再スキャン(キャッシュしない)。監視フォルダの今の中身を常に映す。
             RefreshRecentPhotosUI();
             // 作業領域ぎりぎりまで(少しだけ小さく)。このモードは写真プレビュー +
@@ -832,7 +833,7 @@ public partial class ControlPanelWindow : Window
         // コンパクトモードには専用の拡大機構(ExpandButton)があるので最大化ボタンは不要。
         TitleBarMaximizeButton.Visibility = Visibility.Collapsed;
         HideHomeSettings();
-        CompactModeText.Text = mode == PanelMode.Align ? "位置合わせモード" : "写真合成モード";
+        CompactModeText.Text = mode == PanelMode.Align ? "位置合わせモード" : "レタッチモード";
 
         MinWidth = 260;
         // 元の想定 +4: タイトルバーを Windows 標準のキャプション高に合わせて
@@ -1210,25 +1211,123 @@ public partial class ControlPanelWindow : Window
 
     // ---- 最近のアバター / 最近の写真: ControlPanelWindow.RecentFiles.cs に分離。 ----
 
+    // ---- ドラッグ&ドロップ: レタッチモードでは画像ドラッグ中に DropGuideOverlay を出し、
+    //      ドロップ位置(上部左=アバター / 上部右=背景 / 下部=1枚レタッチ)で読み込み先を
+    //      分ける。他モード / ガイド外へのドロップは従来どおりアバター画像として読み込む。 ----
+
+    private enum DropZone { Avatar, Background, Single }
+
+    private static readonly Brush DropZoneIdleBorder = MakeFrozen(Color.FromRgb(0x9A, 0x9A, 0xB0));
+    private static readonly Brush DropZoneIdleFill = MakeFrozen(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF));
+    private static readonly Brush DropZoneActiveBorder = MakeFrozen(Color.FromRgb(0x7B, 0x87, 0xE0));
+    private static readonly Brush DropZoneActiveFill = MakeFrozen(Color.FromArgb(0x55, 0x4A, 0x58, 0xC4));
+
+    private static Brush MakeFrozen(Color c)
+    {
+        var b = new SolidColorBrush(c);
+        b.Freeze();
+        return b;
+    }
+
     private void Window_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = GetDroppedPngPath(e) is not null ? DragDropEffects.Copy : DragDropEffects.None;
+        bool hasImage = GetDroppedImagePath(e) is not null || GetDroppedPngPath(e) is not null;
+        if (hasImage && CompositePanel.Visibility == Visibility.Visible && !_isMaskEditModeActive)
+        {
+            DropGuideOverlay.Visibility = Visibility.Visible;
+        }
+        e.Effects = hasImage ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
+    }
+
+    private void Window_DragLeave(object sender, DragEventArgs e)
+    {
+        // DragLeave はバブリングするので窓内の境界越えでも飛ぶ。カーソルが窓の外へ
+        // 出たときだけ隠す。
+        var p = e.GetPosition(this);
+        if (p.X >= 0 && p.Y >= 0 && p.X <= ActualWidth && p.Y <= ActualHeight) return;
+        DropGuideOverlay.Visibility = Visibility.Collapsed;
+        HighlightDropZone(null);
     }
 
     private void Window_Drop(object sender, DragEventArgs e)
     {
+        DropGuideOverlay.Visibility = Visibility.Collapsed;
         if (GetDroppedPngPath(e) is { } path)
         {
-            LoadImageFile(path);
+            LoadImageFile(path); // ガイド外 / 位置合わせモード: 従来どおりアバター画像
         }
     }
 
-    private static string? GetDroppedPngPath(DragEventArgs e)
+    private void DropGuide_DragOver(object sender, DragEventArgs e)
+    {
+        DropGuideOverlay.Visibility = Visibility.Visible;
+        var zone = HitTestDropZone(e.GetPosition(DropGuideOverlay));
+        HighlightDropZone(zone);
+        e.Effects = ZonePath(e, zone) is not null ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void DropGuide_Drop(object sender, DragEventArgs e)
+    {
+        DropGuideOverlay.Visibility = Visibility.Collapsed;
+        HighlightDropZone(null);
+        var zone = HitTestDropZone(e.GetPosition(DropGuideOverlay));
+        if (ZonePath(e, zone) is not { } path) return;
+        switch (zone)
+        {
+            case DropZone.Avatar: LoadImageFile(path); break;
+            case DropZone.Background: LoadPhotoForComposite(path); break;
+            case DropZone.Single: LoadSingleImageForRetouch(path); break;
+        }
+        e.Handled = true;
+    }
+
+    /// <summary>アバターゾーンは透過を要するので PNG のみ、それ以外は PNG/JPEG。</summary>
+    private static string? ZonePath(DragEventArgs e, DropZone zone) =>
+        zone == DropZone.Avatar ? GetDroppedPngPath(e) : GetDroppedImagePath(e);
+
+    private DropZone HitTestDropZone(Point p)
+    {
+        if (p.Y >= DropGuideOverlay.ActualHeight * 0.6) return DropZone.Single;
+        return p.X < DropGuideOverlay.ActualWidth / 2 ? DropZone.Avatar : DropZone.Background;
+    }
+
+    private void HighlightDropZone(DropZone? active)
+    {
+        SetZoneLook(DropZoneAvatar, active == DropZone.Avatar);
+        SetZoneLook(DropZoneBackground, active == DropZone.Background);
+        SetZoneLook(DropZoneSingle, active == DropZone.Single);
+    }
+
+    private static void SetZoneLook(Border zone, bool on)
+    {
+        zone.BorderBrush = on ? DropZoneActiveBorder : DropZoneIdleBorder;
+        zone.Background = on ? DropZoneActiveFill : DropZoneIdleFill;
+    }
+
+    /// <summary>「合成せず1枚でレタッチ」: ドロップ画像を背景写真として読み込み、
+    /// アバター無し(<see cref="_compositeSkipAvatar"/>)に切り替える。以降は通常の
+    /// 写真レタッチと同じパイプライン(色調補正 / 仕上げ / 切り抜き / デカール / マスク)が
+    /// 1枚に対して働き、そのまま保存できる。</summary>
+    private void LoadSingleImageForRetouch(string path)
+    {
+        LoadPhotoForComposite(path);
+        if (_photoPixelBuffer is null) return; // 読み込み失敗
+        _compositeSkipAvatar = true;
+        RefreshSkipAvatarUI();
+        _ = RenderCompositePreview();
+    }
+
+    private static string? GetDroppedPngPath(DragEventArgs e) => FindDropped(e, ".png");
+
+    private static string? GetDroppedImagePath(DragEventArgs e) => FindDropped(e, ".png", ".jpg", ".jpeg");
+
+    private static string? FindDropped(DragEventArgs e, params string[] extensions)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return null;
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] files) return null;
-        return Array.Find(files, f => string.Equals(Path.GetExtension(f), ".png", StringComparison.OrdinalIgnoreCase));
+        return Array.Find(files, f => extensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>手動リセット: Z 順アタッチ + 移動追従を確立してから位置推定を適用する

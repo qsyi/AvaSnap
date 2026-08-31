@@ -88,7 +88,7 @@
                 <TextBlock x:Name="FileNameText" Text="" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                            TextTrimming="CharacterEllipsis" Margin="0,3,0,10" />
                 <StackPanel Orientation="Horizontal">
-                    <Button x:Name="OpenButton" Content="合成する" HorizontalAlignment="Left"
+                    <Button x:Name="OpenButton" Content="レタッチで開く" HorizontalAlignment="Left"
                             Style="{StaticResource ToastPillButton}" Click="OpenButton_Click" Margin="0,0,6,0" />
                     <Button x:Name="OpenFolderButton" Content="フォルダを開く" HorizontalAlignment="Left"
                             Style="{StaticResource ToastSecondaryPillButton}" Click="OpenFolderButton_Click" />

@@ -13,6 +13,7 @@
         AllowDrop="True"
         Drop="Window_Drop"
         DragOver="Window_DragOver"
+        DragLeave="Window_DragLeave"
         PreviewKeyDown="Window_PreviewKeyDown"
         PreviewKeyUp="Window_PreviewKeyUp"
         TextOptions.TextFormattingMode="Ideal"
@@ -1144,7 +1145,7 @@
         <StackPanel x:Name="HomePanel" Grid.Row="1" Margin="22" VerticalAlignment="Center">
             <TextBlock Text="AvaSnap" FontSize="30" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}"
                        HorizontalAlignment="Center" Margin="0,0,0,2" />
-            <TextBlock Text="VRChatカメラ合成ツール" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"
+            <TextBlock Text="VRChatカメラ合成・レタッチツール" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"
                        HorizontalAlignment="Center" Margin="0,0,0,28" />
 
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
@@ -1164,9 +1165,9 @@
 
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
                 <StackPanel>
-                    <TextBlock Text="写真合成モード" FontSize="16" FontWeight="SemiBold"
+                    <TextBlock Text="レタッチモード" FontSize="16" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <TextBlock Text="VRChatで撮った背景写真に位置合わせ済みのアバター画像を合成します" FontSize="12"
+                    <TextBlock Text="撮った写真にアバター画像を合成して仕上げます。画像1枚だけを読み込んで色調補正・トリミングするレタッチにも使えます。" FontSize="12"
                                Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,14" />
                     <Button Content="開く" Style="{StaticResource SecondaryPillButton}" FontSize="13" HorizontalAlignment="Left"
                             Click="CompositeModeButton_Click" />
@@ -1258,7 +1259,7 @@
                         </StackPanel>
                     </Button>
                     <Border Style="{StaticResource NavSegmentDivider}" />
-                    <Button Content="写真合成モードへ" Style="{StaticResource NavSegmentButtonLast}" Click="CompositeModeButton_Click" />
+                    <Button Content="レタッチモードへ" Style="{StaticResource NavSegmentButtonLast}" Click="CompositeModeButton_Click" />
                 </StackPanel>
             </Border>
 
@@ -2077,6 +2078,77 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
+
+                    <!-- ドロップガイド: レタッチモードで画像をドラッグしている間だけ表示。
+                         ドロップ位置で読み込み先を選ぶ ── 上部左=アバター画像 /
+                         上部右=背景画像 / 下部=合成せず1枚でレタッチ。位置判定と
+                         ゾーンのハイライトは DropGuide_DragOver / DropGuide_Drop。 -->
+                    <Grid x:Name="DropGuideOverlay" AllowDrop="True" Visibility="Collapsed" Background="#B4101018"
+                          DragOver="DropGuide_DragOver" Drop="DropGuide_Drop">
+                        <Grid Margin="14">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="2*" />
+                                <RowDefinition Height="1.3*" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border x:Name="DropZoneAvatar" Grid.Row="0" Grid.Column="0" Margin="6"
+                                    CornerRadius="12" BorderThickness="2" BorderBrush="{DynamicResource HairlineBrush}"
+                                    Background="#1FFFFFFF">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Viewbox Width="30" Height="30">
+                                        <Canvas Width="24" Height="24">
+                                            <Ellipse Canvas.Left="8" Canvas.Top="3" Width="8" Height="8" Stroke="White" StrokeThickness="2" />
+                                            <Path Data="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" Stroke="White" StrokeThickness="2"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="アバター画像" Foreground="White" FontWeight="SemiBold" FontSize="14"
+                                               HorizontalAlignment="Center" Margin="0,8,0,2" />
+                                    <TextBlock Text="透過PNG・写真の上に合成" Foreground="#CCFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="DropZoneBackground" Grid.Row="0" Grid.Column="1" Margin="6"
+                                    CornerRadius="12" BorderThickness="2" BorderBrush="{DynamicResource HairlineBrush}"
+                                    Background="#1FFFFFFF">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Viewbox Width="30" Height="30">
+                                        <Canvas Width="24" Height="24">
+                                            <Rectangle Canvas.Left="3" Canvas.Top="3" Width="18" Height="18" RadiusX="2" RadiusY="2"
+                                                       Stroke="White" StrokeThickness="2" />
+                                            <Ellipse Canvas.Left="7" Canvas.Top="7" Width="3.5" Height="3.5" Stroke="White" StrokeThickness="2" />
+                                            <Path Data="m21 15-4.5-4.5L6 21" Stroke="White" StrokeThickness="2"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="背景画像" Foreground="White" FontWeight="SemiBold" FontSize="14"
+                                               HorizontalAlignment="Center" Margin="0,8,0,2" />
+                                    <TextBlock Text="PNG / JPEG・アバターの背景に" Foreground="#CCFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="DropZoneSingle" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="6"
+                                    CornerRadius="12" BorderThickness="2" BorderBrush="{DynamicResource HairlineBrush}"
+                                    Background="#1FFFFFFF">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Viewbox Width="28" Height="28">
+                                        <Canvas Width="24" Height="24">
+                                            <Path Data="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" Stroke="White" StrokeThickness="2"
+                                                  StrokeStartLineCap="Round" />
+                                            <Path Data="M2 14h4M10 12h4M18 16h4" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="合成せず1枚でレタッチ" Foreground="White" FontWeight="SemiBold" FontSize="14"
+                                               HorizontalAlignment="Center" Margin="0,6,0,2" />
+                                    <TextBlock Text="ドロップした画像を1枚だけ色調補正・トリミング" Foreground="#CCFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
                     </Grid>
 
                     <!-- ビフォー/アフター比較: 上のプレビューと同じ幅。0(既定/左端)では
