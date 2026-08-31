@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using AvaSnap.Views;
 
 namespace AvaSnap.Services;
@@ -82,21 +83,35 @@ public static class ProjectService
     public const string Extension = ".avasnap";
 
     /// <summary>Projects フォルダ内の .avasnap を保存日時の新しい順に列挙する
-    /// (プレビューは各ファイルから軽量パースで取り出す)。</summary>
+    /// (プレビューは各ファイルから軽量パースで取り出す)。1つのファイルが一時的に
+    /// 読めなくても(保存直後のロック・AV スキャン・インデクサ等)一覧全体を空に
+    /// せず、そのファイルは最小情報のまま残す ── これをやらないと「最近のプロジェクト」
+    /// がときどき丸ごと消える。</summary>
     public static IReadOnlyList<ProjectInfo> ListProjects()
     {
+        string[] files;
         try
         {
             if (!Directory.Exists(ProjectsDir)) return Array.Empty<ProjectInfo>();
-            var list = new List<ProjectInfo>();
-            foreach (var p in Directory.EnumerateFiles(ProjectsDir, "*" + Extension))
+            files = Directory.GetFiles(ProjectsDir, "*" + Extension);
+        }
+        catch (IOException) { return Array.Empty<ProjectInfo>(); }
+        catch (UnauthorizedAccessException) { return Array.Empty<ProjectInfo>(); }
+
+        var list = new List<ProjectInfo>(files.Length);
+        foreach (var p in files)
+        {
+            DateTime saved = DateTime.MinValue;
+            try { saved = File.GetLastWriteTimeUtc(p); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            byte[]? preview = null;
+            if (TryReadAllText(p) is { } text)
             {
-                DateTime saved = File.GetLastWriteTimeUtc(p);
-                byte[]? preview = null;
                 try
                 {
-                    var sum = JsonSerializer.Deserialize<ProjectSummaryDto>(File.ReadAllText(p), Options);
-                    if (sum is not null)
+                    if (JsonSerializer.Deserialize<ProjectSummaryDto>(text, Options) is { } sum)
                     {
                         if (sum.SavedUtc != default) saved = sum.SavedUtc;
                         if (!string.IsNullOrEmpty(sum.PreviewJpegBase64))
@@ -107,13 +122,25 @@ public static class ProjectService
                     }
                 }
                 catch (JsonException) { }
-                catch (IOException) { }
-                list.Add(new ProjectInfo(p, Path.GetFileNameWithoutExtension(p), saved, preview));
             }
-            return list.OrderByDescending(i => i.ModifiedUtc).ToList();
+            list.Add(new ProjectInfo(p, Path.GetFileNameWithoutExtension(p), saved, preview));
         }
-        catch (IOException) { return Array.Empty<ProjectInfo>(); }
-        catch (UnauthorizedAccessException) { return Array.Empty<ProjectInfo>(); }
+        return list.OrderByDescending(i => i.ModifiedUtc).ToList();
+    }
+
+    /// <summary>共有違反(保存直後の一時ロック・AV スキャン等)で失敗しても数回だけ
+    /// 短く待って読み直す。ファイルが無ければ <c>null</c>。</summary>
+    private static string? TryReadAllText(string path)
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            try { return File.ReadAllText(path); }
+            catch (FileNotFoundException) { return null; }
+            catch (DirectoryNotFoundException) { return null; }
+            catch (IOException) { Thread.Sleep(30); }
+            catch (UnauthorizedAccessException) { Thread.Sleep(30); }
+        }
+        return null;
     }
 
     private static readonly JsonSerializerOptions Options = new()
@@ -141,17 +168,24 @@ public static class ProjectService
 
     public static void Save(ProjectDto dto, string path)
     {
+        var tmp = path + ".tmp";
         try
         {
             dto.SavedUtc = DateTime.UtcNow;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var tmp = path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, Options));
-            File.Move(tmp, path, overwrite: true); // 書き込み途中で壊れないよう一旦 .tmp
+            // 書き込み途中の破損を避けて一旦 .tmp。差し替えは共有違反で失敗しうるので
+            // 数回だけ待って再試行(MoveFileEx は失敗しても元ファイルを壊さない)。
+            for (int attempt = 0; ; attempt++)
+            {
+                try { File.Move(tmp, path, overwrite: true); break; }
+                catch (IOException) when (attempt < 4) { Thread.Sleep(40); }
+            }
         }
         catch
         {
             // ベストエフォート。保存に失敗しても編集は続行できる。
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { } // .avasnap 以外を残さない
         }
     }
 
