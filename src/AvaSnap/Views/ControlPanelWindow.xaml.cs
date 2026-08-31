@@ -832,7 +832,7 @@ public partial class ControlPanelWindow : Window
         if (_preCompactMode == PanelMode.Align) ShowAlign(); else ShowComposite();
     });
 
-    private void OnVrChatClientResized(IntPtr hwnd, System.Drawing.Rectangle region) => ApplyPositionEstimate(hwnd, region);
+    private void OnVrChatClientResized(IntPtr hwnd, Rect region) => ApplyPositionEstimate(hwnd, region);
 
     private void OnOscOrientationChanged(bool landscape) => Dispatcher.Invoke(() =>
     {
@@ -1216,7 +1216,7 @@ public partial class ControlPanelWindow : Window
         _overlayWindow.AttachToOwner(hwnd.Value);
         AttachToOwner(hwnd.Value);
 
-        var clientRect = VRChatWindowService.GetClientRectOnScreen(hwnd.Value);
+        var clientRect = VRChatWindowService.GetClientRectInDips(hwnd.Value);
         if (clientRect is not { Width: > 0, Height: > 0 } region)
         {
             ResetStatusText.Text = "VRChatにアタッチしました（ウィンドウ位置の取得に失敗、位置は変更していません）。";
@@ -1229,8 +1229,9 @@ public partial class ControlPanelWindow : Window
     /// 縦横比をその枠にフィットさせる。向き未報告なら現サイズで再センタリングに
     /// フォールバック。既知の hwnd/rect を受け取る ── 現在値を持つ呼び出し元は
     /// FindVRChatWindow() や AttachToOwner をやり直さない。手動/自動どちらの
-    /// 呼び出しも undo で包む(入れ子 Begin/Commit が並行編集との重なりを正しく扱う)。</summary>
-    private void ApplyPositionEstimate(IntPtr hwnd, System.Drawing.Rectangle region)
+    /// 呼び出しも undo で包む(入れ子 Begin/Commit が並行編集との重なりを正しく扱う)。
+    /// <paramref name="region"/> は DIP。</summary>
+    private void ApplyPositionEstimate(IntPtr hwnd, Rect region)
     {
         _undo.BeginChange();
         // 下の X/Y/Width/Height は1つの論理移動。バッチで OverlayState 通知を
@@ -3132,7 +3133,7 @@ public partial class ControlPanelWindow : Window
         if (_oscListener.IsLandscape is not { } landscape) return null;
         var hwnd = VRChatWindowService.FindVRChatWindow();
         if (hwnd is null) return null;
-        if (VRChatWindowService.GetClientRectOnScreen(hwnd.Value) is not { Width: > 0, Height: > 0 } region) return null;
+        if (VRChatWindowService.GetClientRectInDips(hwnd.Value) is not { Width: > 0, Height: > 0 } region) return null;
 
         var frame = VRChatWindowService.ComputeCameraFrameRect(region, landscape, photoAspect);
         if (frame.Width <= 0 || frame.Height <= 0) return null;

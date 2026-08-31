@@ -613,18 +613,18 @@ public partial class OverlayWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-    /// <summary>追従中の VRChat 窓のクライアント矩形(最後の移動/リサイズ時点)。
-    /// 都度取得せずキャッシュする ── 「今 VRChat がだいたいどこか」だけ要る呼び出し元
-    /// (コントロールパネルの位置表示など)は、自前の FindVRChatWindow() + P/Invoke
-    /// ではなくこれを使う。窓ドラッグ中に毎 PropertyChanged で問い合わせると UI
-    /// スレッドが詰まり、オーバーレイが目に見えてカクつく。</summary>
-    public System.Drawing.Rectangle? FollowedClientRect => _lastKnownClientRect;
+    /// <summary>追従中の VRChat 窓のクライアント矩形(最後の移動/リサイズ時点)を
+    /// WPF の DIP 座標系で。都度取得せずキャッシュする ── 「今 VRChat がだいたい
+    /// どこか」だけ要る呼び出し元は、自前の FindVRChatWindow() + P/Invoke ではなく
+    /// これを使う。窓ドラッグ中に毎 PropertyChanged で問い合わせると UI スレッドが
+    /// 詰まり、オーバーレイが目に見えてカクつく。</summary>
+    public Rect? FollowedClientRect => _lastKnownClientRect;
 
     /// <summary>現在追従中の VRChat 窓。未アタッチなら null。</summary>
     public IntPtr? FollowedHwnd => _followedHwnd;
 
     private IntPtr? _followedHwnd;
-    private System.Drawing.Rectangle? _lastKnownClientRect;
+    private Rect? _lastKnownClientRect;
     private DispatcherTimer? _followSafetyNetTimer;
     private IntPtr _winEventHook;
     private WinEventDelegate? _winEventDelegate; // 保持必須: ネイティブ側がポインタを持つ間に GC されないように
@@ -638,7 +638,7 @@ public partial class OverlayWindow : Window
         }
 
         _followedHwnd = hwnd;
-        _lastKnownClientRect = VRChatWindowService.GetClientRectOnScreen(hwnd);
+        _lastKnownClientRect = VRChatWindowService.GetClientRectInDips(hwnd);
 
         uint threadId = GetWindowThreadProcessId(hwnd, out uint processId);
         _winEventDelegate = OnWinEvent;
@@ -665,21 +665,21 @@ public partial class OverlayWindow : Window
     /// (リサイズ/最大化/復元)。既知の hwnd と最新のクライアント矩形を渡すので、
     /// 購読側は自前の FindVRChatWindow() スキャン(これが以前オーバーレイを
     /// カクつかせた原因)なしで反応できる。</summary>
-    public event Action<IntPtr, System.Drawing.Rectangle>? ClientResized;
+    public event Action<IntPtr, Rect>? ClientResized;
 
     /// <summary>VRChat 窓の画面位置を追い、左上隅が動いたぶんだけオーバーレイを
     /// ずらす。サイズ自体が変わったら <see cref="ClientResized"/> を発火する
-    /// (自動リスケールはここでは行わず、呼び出し側が判断する)。</summary>
+    /// (自動リスケールはここでは行わず、呼び出し側が判断する)。座標は DIP。</summary>
     private void FollowTick()
     {
         if (_followedHwnd is not { } hwnd) return;
-        var current = VRChatWindowService.GetClientRectOnScreen(hwnd);
+        var current = VRChatWindowService.GetClientRectInDips(hwnd);
         if (current is null) return; // 窓が閉じた/最小化。オーバーレイは今の位置に残す
 
         if (_lastKnownClientRect is { } last)
         {
-            int dx = current.Value.Left - last.Left;
-            int dy = current.Value.Top - last.Top;
+            double dx = current.Value.X - last.X;
+            double dy = current.Value.Y - last.Y;
             if (dx != 0 || dy != 0)
             {
                 _state.X += dx;

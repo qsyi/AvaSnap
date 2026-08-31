@@ -27,6 +27,9 @@ public static class VRChatWindowService
     [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
 
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hWnd);
+
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -64,6 +67,8 @@ public static class VRChatWindowService
         return found == IntPtr.Zero ? null : found;
     }
 
+    /// <summary>クライアント領域の画面矩形を「物理ピクセル」で返す。Win32 の生値なので、
+    /// WPF 座標系(DIP)で使う場合は <see cref="GetClientRectInDips"/> を使うこと。</summary>
     public static Rectangle? GetClientRectOnScreen(IntPtr hWnd)
     {
         if (!GetClientRect(hWnd, out var rect))
@@ -77,24 +82,49 @@ public static class VRChatWindowService
         return new Rectangle(topLeft.X, topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y);
     }
 
+    /// <summary>hWnd のあるモニタの表示スケール(1.0 = 100%)。取得失敗や DPI 非対応
+    /// プロセスでは 1.0。</summary>
+    public static double GetWindowDpiScale(IntPtr hWnd)
+    {
+        uint dpi = GetDpiForWindow(hWnd);
+        return dpi == 0 ? 1.0 : dpi / 96.0;
+    }
+
+    /// <summary>クライアント領域を WPF の DIP 座標系(仮想スクリーン原点基準)で返す。
+    /// Win32 は物理ピクセルを返すので、表示スケール 100% 以外でそのまま
+    /// <see cref="GetClientRectOnScreen"/> の値を WPF 座標(Canvas.SetLeft、
+    /// _state.X 等)へ入れるとスケール分ずれる。オーバーレイ配置・カメラ枠推定・
+    /// FOVガイドはすべて WPF 座標系なのでこちらを使う。</summary>
+    public static System.Windows.Rect? GetClientRectInDips(IntPtr hWnd)
+    {
+        if (GetClientRectOnScreen(hWnd) is not { } px) return null;
+        double s = GetWindowDpiScale(hWnd);
+        return new System.Windows.Rect(
+            px.Left / s - System.Windows.SystemParameters.VirtualScreenLeft,
+            px.Top / s - System.Windows.SystemParameters.VirtualScreenTop,
+            Math.Max(0, px.Width / s),   // Rect ctor は負の幅/高さで throw する
+            Math.Max(0, px.Height / s)); // 呼び出し側は { Width: > 0 } で弾く
+    }
+
     // ---- カメラフレームの推定値: サンプルログ(5解像度・12サンプル)から。フレームは
     //      常にクライアント領域の中央、アス比は 16:9(横)/ 9:16(縦)固定、高さは
     //      ウィンドウ自身のアス比に依らずクライアント高の ほぼ一定比。あくまで初期推定で
-    //      あり(極小解像度・非100% DPI・将来の VRChat UI 変更では未検証)、ユーザーが
-    //      後から手で微調整できる前提。OverlayWindow の FOVガイドが、アバターを合わせる
-    //      のと同じ推定値を使えるようここに置く。 ----
+    //      あり(極小解像度・将来の VRChat UI 変更では未検証)、ユーザーが後から手で
+    //      微調整できる前提。region は DIP(GetClientRectInDips)で渡すこと。OverlayWindow の
+    //      FOVガイドが、アバターを合わせるのと同じ推定値を使えるようここに置く。 ----
 
     public const double LandscapeHeightFraction = 0.4678;
     public const double PortraitHeightFraction = 0.8296;
     public const double LandscapeAspect = 16.0 / 9.0;
     public const double PortraitAspect = 9.0 / 16.0;
 
-    /// <summary>フレーム高(画面ピクセル)は常に推定値だが、幅は
-    /// <paramref name="aspectOverride"/> で 16:9/9:16 固定の代わりに既知のアス比から
-    /// 出せる。合成モードは実写真を持っている(VRChat カメラの実出力の正解)ので、
-    /// 別解像度の写真を 16:9/9:16 と決めつけるとオーバーレイが不均一に伸びる。</summary>
+    /// <summary>フレーム高は常に推定値だが、幅は <paramref name="aspectOverride"/> で
+    /// 16:9/9:16 固定の代わりに既知のアス比から出せる。合成モードは実写真を持っている
+    /// (VRChat カメラの実出力の正解)ので、別解像度の写真を 16:9/9:16 と決めつけると
+    /// オーバーレイが不均一に伸びる。<paramref name="region"/> は DIP
+    /// (<see cref="GetClientRectInDips"/>)で渡すこと ── 返り値もその座標系。</summary>
     public static (double Left, double Top, double Width, double Height) ComputeCameraFrameRect(
-        Rectangle region, bool landscape, double? aspectOverride = null)
+        System.Windows.Rect region, bool landscape, double? aspectOverride = null)
     {
         double heightFraction = landscape ? LandscapeHeightFraction : PortraitHeightFraction;
         double frameAspect = aspectOverride ?? (landscape ? LandscapeAspect : PortraitAspect);
