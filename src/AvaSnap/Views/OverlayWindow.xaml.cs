@@ -129,6 +129,17 @@ public partial class OverlayWindow : Window
     private ImageAdjustment.PixelBuffer? _blurredPixelBuffer;
     private double? _blurredAtRadius;
 
+    /// <summary>読み込み中のアバター画像を破棄する(新規プロジェクトなど)。
+    /// 位置合わせモードも空になる ── アバターはモード間で共有される1枚なので。</summary>
+    public void ClearImage()
+    {
+        OverlayImage.Source = null;
+        _originalPixelBuffer = null;
+        _blurredPixelBuffer = null;
+        _blurredAtRadius = null;
+        _state.ImagePath = null;
+    }
+
     public void LoadImage(string path)
     {
         var bitmap = new BitmapImage();

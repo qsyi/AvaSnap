@@ -1535,6 +1535,14 @@ public partial class ControlPanelWindow : Window
     {
         _undo.BeginChange();
         _state.BeginBatch();
+        ResetAvatarLookFields();
+        _state.EndBatch();
+        _undo.CommitChange();
+    }
+
+    /// <summary>アバタールックの全スライダーを既定へ。呼び出し側で BeginBatch/EndBatch。</summary>
+    private void ResetAvatarLookFields()
+    {
         _state.EdgeBlurRadius = 5; // 0 ではなく既定値。ぼかし無しは中立の基準ではない
         _state.Brightness = 0;
         _state.Contrast = 0;
@@ -1551,8 +1559,6 @@ public partial class ControlPanelWindow : Window
         _state.ColorTintR = 255;
         _state.ColorTintG = 255;
         _state.ColorTintB = 255;
-        _state.EndBatch();
-        _undo.CommitChange();
     }
 
     private static bool TryParse(string text, out double value) =>

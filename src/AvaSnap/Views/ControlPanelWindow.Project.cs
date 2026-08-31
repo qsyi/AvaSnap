@@ -45,31 +45,33 @@ public partial class ControlPanelWindow
 
     private void NewProjectButton_Click(object sender, RoutedEventArgs e)
     {
-        SaveCurrentProject(); // 現在のを確定してから
-        var r = MessageBox.Show(
-            "新しいプロジェクトを開きます。\n現在の作業は自動保存済みです。",
-            "新規プロジェクト", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (r != MessageBoxResult.OK) return;
-
+        SaveCurrentProject();       // 現在のを確定してから(確認ダイアログは無し)
         _currentProjectPath = ProjectService.NewProjectPath();
         ClearRetouchState();
         _projectDirty = true;
-        SaveCurrentProject();        // 空プロジェクトを即ファイル化
+        SaveCurrentProject();       // 空プロジェクトを即ファイル化
         UpdateProjectNameUi();
     }
 
     private void UpdateProjectNameUi() =>
         ProjectNameText.Text = Path.GetFileNameWithoutExtension(_currentProjectPath);
 
-    /// <summary>新規プロジェクト用のリセット: 背景写真・デカール・マスク・レタッチ
-    /// パラメータを既定へ戻す。アバター画像は位置合わせモードと共有のグローバル資産
-    /// なので残す(プロジェクトにはパスを記録するので開き直せば復元される)。</summary>
+    /// <summary>新規プロジェクト用のリセット: 背景写真・アバター画像・デカール・マスク・
+    /// レタッチパラメータを全て既定へ戻し、まっさらな状態にする。アバターはモード間で
+    /// 共有の1枚なので位置合わせモードも空になる。</summary>
     private void ClearRetouchState()
     {
         _photoPixelBuffer = null;
         _photoPath = null;
         _photoRotationQuarters = 0;
         PhotoPathText.Text = "(背景写真未選択)";
+
+        _overlayWindow.ClearImage();
+        _state.BeginBatch();
+        ResetAvatarLookFields();
+        _state.RotationDegrees = 0;
+        _state.EndBatch();
+        RefreshFromState();
 
         _isBlankCanvasActive = false;
         BlankCanvasColorPanel.Visibility = Visibility.Collapsed;
