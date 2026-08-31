@@ -1248,12 +1248,44 @@ public partial class ControlPanelWindow : Window
         return b;
     }
 
+    // WPF はドラッグを中止/画面外で離した時などに DragLeave/Drop を必ずしも
+    // 発火しないので、ガイドが出っぱなしになる。OLE のドラッグループは実行中
+    // 定期的に DragOver を呼ぶため、最後の DragOver から一定時間途切れたら
+    // 「ドラッグ終了」とみなして隠す。
+    private DispatcherTimer? _dragEndWatch;
+    private DateTime _lastDragOverUtc;
+
+    private void MarkDragActive()
+    {
+        _lastDragOverUtc = DateTime.UtcNow;
+        if (_dragEndWatch is null)
+        {
+            _dragEndWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _dragEndWatch.Tick += (_, _) =>
+            {
+                // DragOver は基本マウス移動時のみ届く。静止ドラッグでの誤消しを避けつつ
+                // 中止/画面外リリースからの復帰は速いよう、やや長めに待つ。
+                if ((DateTime.UtcNow - _lastDragOverUtc).TotalMilliseconds < 700) return;
+                HideDropGuide();
+            };
+        }
+        _dragEndWatch.Start();
+    }
+
+    private void HideDropGuide()
+    {
+        _dragEndWatch?.Stop();
+        DropGuideOverlay.Visibility = Visibility.Collapsed;
+        HighlightDropZone(null);
+    }
+
     private void Window_DragOver(object sender, DragEventArgs e)
     {
         bool hasImage = GetDroppedImagePath(e) is not null;
         if (hasImage && CompositePanel.Visibility == Visibility.Visible && !_isMaskEditModeActive)
         {
             DropGuideOverlay.Visibility = Visibility.Visible;
+            MarkDragActive();
         }
         e.Effects = hasImage ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
@@ -1262,16 +1294,15 @@ public partial class ControlPanelWindow : Window
     private void Window_DragLeave(object sender, DragEventArgs e)
     {
         // DragLeave はバブリングするので窓内の境界越えでも飛ぶ。カーソルが窓の外へ
-        // 出たときだけ隠す。
+        // 出たときだけ隠す(窓内に残っていれば watchdog が終了を検知する)。
         var p = e.GetPosition(this);
         if (p.X >= 0 && p.Y >= 0 && p.X <= ActualWidth && p.Y <= ActualHeight) return;
-        DropGuideOverlay.Visibility = Visibility.Collapsed;
-        HighlightDropZone(null);
+        HideDropGuide();
     }
 
     private void Window_Drop(object sender, DragEventArgs e)
     {
-        DropGuideOverlay.Visibility = Visibility.Collapsed;
+        HideDropGuide();
         if (GetDroppedImagePath(e) is { } path)
         {
             LoadImageFile(path); // ガイド外 / 位置合わせモード: 従来どおりアバター画像
@@ -1281,17 +1312,20 @@ public partial class ControlPanelWindow : Window
     private void DropGuide_DragOver(object sender, DragEventArgs e)
     {
         DropGuideOverlay.Visibility = Visibility.Visible;
-        HighlightDropZone(HitTestDropZone(e.GetPosition(DropGuideOverlay)));
+        MarkDragActive();
+        HighlightDropZone(HitTestDropZone(e));
         e.Effects = GetDroppedImagePath(e) is not null ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
+    private void DropGuide_DragLeave(object sender, DragEventArgs e) => HighlightDropZone(null);
+
     private void DropGuide_Drop(object sender, DragEventArgs e)
     {
-        DropGuideOverlay.Visibility = Visibility.Collapsed;
-        HighlightDropZone(null);
+        var zone = HitTestDropZone(e);
+        HideDropGuide();
         if (GetDroppedImagePath(e) is not { } path) return;
-        switch (HitTestDropZone(e.GetPosition(DropGuideOverlay)))
+        switch (zone)
         {
             case DropZone.Avatar: LoadImageFile(path); break;
             case DropZone.Background: LoadPhotoForComposite(path); break;
@@ -1300,10 +1334,16 @@ public partial class ControlPanelWindow : Window
         e.Handled = true;
     }
 
-    private DropZone HitTestDropZone(Point p)
+    /// <summary>座標の基準はレイアウト済みが保証される PreviewHost。DropGuideOverlay は
+    /// ドラッグ中に Visible にした直後だと ActualWidth/Height が 0 のことがあり、
+    /// それを基準にすると常に下段(Single)判定になってしまう。</summary>
+    private DropZone HitTestDropZone(DragEventArgs e)
     {
-        if (p.Y >= DropGuideOverlay.ActualHeight * 0.6) return DropZone.Single;
-        return p.X < DropGuideOverlay.ActualWidth / 2 ? DropZone.Avatar : DropZone.Background;
+        double w = PreviewHost.ActualWidth, h = PreviewHost.ActualHeight;
+        if (w <= 0 || h <= 0) return DropZone.Background;
+        var p = e.GetPosition(PreviewHost);
+        if (p.Y >= h * 0.6) return DropZone.Single;
+        return p.X < w / 2 ? DropZone.Avatar : DropZone.Background;
     }
 
     private void HighlightDropZone(DropZone? active)

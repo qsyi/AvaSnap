@@ -2084,7 +2084,7 @@
                          上部右=背景画像 / 下部=合成せず1枚でレタッチ。位置判定と
                          ゾーンのハイライトは DropGuide_DragOver / DropGuide_Drop。 -->
                     <Grid x:Name="DropGuideOverlay" AllowDrop="True" Visibility="Collapsed" Background="#B4101018"
-                          DragOver="DropGuide_DragOver" Drop="DropGuide_Drop">
+                          DragOver="DropGuide_DragOver" DragLeave="DropGuide_DragLeave" Drop="DropGuide_Drop">
                         <Grid Margin="14">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="2*" />
