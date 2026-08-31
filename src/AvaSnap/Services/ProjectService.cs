@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -200,5 +201,52 @@ public static class ProjectService
         {
             return null;
         }
+    }
+
+    /// <summary>プロジェクトファイルをゴミ箱へ送る(完全削除ではないので元に戻せる)。
+    /// 取り残しの <c>.tmp</c> があれば一緒に片付ける。</summary>
+    public static void Delete(string path)
+    {
+        try
+        {
+            string tmp = path + ".tmp";
+            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch { } }
+            if (File.Exists(path)) RecycleFile(path);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct SHFILEOPSTRUCT
+    {
+        public IntPtr hwnd;
+        public uint wFunc;
+        public string pFrom;
+        public string? pTo;
+        public ushort fFlags;
+        public int fAnyOperationsAborted;
+        public IntPtr hNameMappings;
+        public string? lpszProgressTitle;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHFileOperation(ref SHFILEOPSTRUCT fileOp);
+
+    private const uint FO_DELETE = 0x0003;
+    private const ushort FOF_SILENT = 0x0004;
+    private const ushort FOF_NOCONFIRMATION = 0x0010;
+    private const ushort FOF_ALLOWUNDO = 0x0040;
+    private const ushort FOF_NOERRORUI = 0x0400;
+
+    private static void RecycleFile(string path)
+    {
+        var op = new SHFILEOPSTRUCT
+        {
+            wFunc = FO_DELETE,
+            pFrom = path + "\0\0", // pFrom はダブル null 終端
+            fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI,
+        };
+        SHFileOperation(ref op);
     }
 }

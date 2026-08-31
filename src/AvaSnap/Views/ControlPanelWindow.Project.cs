@@ -187,6 +187,20 @@ public partial class ControlPanelWindow
             ToolTip = info.Name,
         };
         btn.Click += (_, _) => OpenProject(info.Path);
+
+        var deleteItem = new MenuItem { Header = "削除" };
+        deleteItem.Click += (_, _) =>
+        {
+            ProjectService.Delete(info.Path); // ゴミ箱へ(元に戻せる)
+            RefreshRecentProjectsUi();
+        };
+        btn.ContextMenu = new ContextMenu
+        {
+            Background = (Brush)FindResource("CardBackgroundBrush"),
+            Foreground = (Brush)FindResource("TextPrimaryBrush"),
+            BorderBrush = (Brush)FindResource("HairlineBrush"),
+            Items = { deleteItem },
+        };
         return btn;
     }
 
