@@ -172,8 +172,14 @@ public partial class ControlPanelWindow : Window
         // オーバーレイは VRChat カメラが開いたと確認できるまで隠れている
         // (OverlayWindow.InitializeCameraVisibility/ApplyCameraOpenState 参照)。
         // 事情を知らないと戸惑うので、未確認の間は位置合わせモードで目立つバナーを出す。
-        _oscListener.CameraModeChanged += (open) => Dispatcher.Invoke(() => UpdateCameraBanner(open));
-        UpdateCameraBanner(_oscListener.IsCameraOpen);
+        _oscListener.CameraModeChanged += (_) => Dispatcher.Invoke(RefreshAlignBanner);
+        RefreshAlignBanner();
+
+        // OSC は「変化時のみ」送信で、VRChat が後から起動するケースもあるため、
+        // 位置合わせモード表示中は定期的に検知状況を見直す(ポート競合なら再 bind も試す)。
+        _oscHintTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _oscHintTimer.Tick += OscHintTick;
+        _oscHintTimer.Start();
 
         ShowHome();
     }
@@ -183,12 +189,38 @@ public partial class ControlPanelWindow : Window
     /// VRChat と一緒に前へ出る。</summary>
     public void AttachToOwner(IntPtr ownerHwnd) => WindowOwnership.SetOwner(this, ownerHwnd);
 
-    /// <summary>カメラが開いていると確認できていないとき(確認済みで閉、または OSC
-    /// 未報告で不明)だけ表示。どちらもライブオーバーレイは今隠れているので、
-    /// 位置合わせモードは理由の分からない空の VRChat 窓を映すことになる。</summary>
-    private void UpdateCameraBanner(bool? isOpen)
+    private readonly DispatcherTimer _oscHintTimer;
+    private readonly DateTime _startedUtc = DateTime.UtcNow;
+
+    private void OscHintTick(object? sender, EventArgs e)
     {
-        CameraClosedBanner.Visibility = isOpen == true ? Visibility.Collapsed : Visibility.Visible;
+        if (AlignPanel.Visibility != Visibility.Visible) return; // バナーは位置合わせモードだけ
+        if (_oscListener.BindFailed) _oscListener.Start();       // ポートが空いたかもしれない。再試行
+        RefreshAlignBanner();
+    }
+
+    /// <summary>位置合わせモード上部バナーの3状態切り替え:
+    /// (1) OSC 未検知 / ポート競合 → OSC 有効化のヒント + 手順ボタン、
+    /// (2) OSC は届いているがカメラ未オープン(またはまだ不明)→「カメラを開いて」、
+    /// (3) カメラ オープン → 非表示。どのケースもライブオーバーレイは隠れている。</summary>
+    private void RefreshAlignBanner()
+    {
+        if (_oscListener.IsCameraOpen == true)
+        {
+            CameraClosedBanner.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        bool vrchatRunning = VRChatWindowService.FindVRChatWindow() is not null;
+        // BindFailed は即断。「無反応」は起動直後の取りこぼしで空振りしないよう数秒待つ。
+        bool oscUndetected = _oscListener.BindFailed
+            || (vrchatRunning && !_oscListener.HasReceivedAnyMessage && (DateTime.UtcNow - _startedUtc).TotalSeconds > 6);
+
+        CameraClosedBannerText.Text = oscUndetected
+            ? (_oscListener.BindFailed ? "OSCポートを他のアプリが使用中です" : "VRChatのOSCが検知されません")
+            : "VRChatのカメラを開いてください";
+        OscSetupGuideButton.Visibility = oscUndetected ? Visibility.Visible : Visibility.Collapsed;
+        CameraClosedBanner.Visibility = Visibility.Visible;
     }
 
     // ---- ナビゲーション: 小さなホーム画面から2モードを選ぶ。各画面は中身に合わせた
@@ -246,6 +278,7 @@ public partial class ControlPanelWindow : Window
 
         // ShowHome/EnterCompact の抑制を解除し、VRChat の現在のカメラ状態へ再同期する。
         _overlayWindow.SetManuallyHidden(false);
+        RefreshAlignBanner();
     });
 
     private void ShowComposite()
@@ -1469,6 +1502,33 @@ public partial class ControlPanelWindow : Window
         };
         anim.Completed += (_, _) => UnityIntegrationGuideOverlay.Visibility = Visibility.Collapsed;
         UnityIntegrationGuideTransform.BeginAnimation(TranslateTransform.YProperty, anim);
+    }
+
+    // ---- OSC有効化ガイド: 上の Unity連携ガイドと同じスライドイン方式。位置合わせモードの
+    //      バナー(RefreshAlignBanner)の「OSCを有効にする手順」ボタンから開く。 ----
+
+    private void OpenOscSetupGuideButton_Click(object sender, RoutedEventArgs e)
+    {
+        OscSetupGuideOverlay.Visibility = Visibility.Visible;
+        var anim = new DoubleAnimation(UnityIntegrationGuideOffscreenY, 0, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+        };
+        OscSetupGuideTransform.BeginAnimation(TranslateTransform.YProperty, anim);
+    }
+
+    private void CloseOscSetupGuideButton_Click(object sender, RoutedEventArgs e) => CloseOscSetupGuide();
+
+    private void OscSetupGuideScrim_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseOscSetupGuide();
+
+    private void CloseOscSetupGuide()
+    {
+        var anim = new DoubleAnimation(0, UnityIntegrationGuideOffscreenY, TimeSpan.FromMilliseconds(180))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn },
+        };
+        anim.Completed += (_, _) => OscSetupGuideOverlay.Visibility = Visibility.Collapsed;
+        OscSetupGuideTransform.BeginAnimation(TranslateTransform.YProperty, anim);
     }
 
     /// <summary>qsToolBoxのインストールページ(https://qsyi.github.io/qsToolbox/install)

@@ -21,20 +21,31 @@ public sealed class VrChatOscListener : IDisposable
     /// <summary>VRChat の OSC 出力から得た最後の向き。</summary>
     public bool? IsLandscape { get; private set; }
 
+    /// <summary>ポート <see cref="DefaultPort"/> の bind に失敗した(他の OSC アプリが
+    /// 使用中など)。この間はどの OSC も受信できない。<see cref="Start"/> 成功時に解除。</summary>
+    public bool BindFailed { get; private set; }
+
+    /// <summary>bind 後、このポートで UDP パケットを1つでも受信したか。VRChat は OSC
+    /// 有効時、カメラ以外にもアバターパラメータ等を絶えず送るので、bind 成功かつ VRChat
+    /// 起動中なのにこれが false のままなら「VRChat 側で OSC 無効」の可能性が高い。</summary>
+    public bool HasReceivedAnyMessage { get; private set; }
+
     private UdpClient? _client;
     private CancellationTokenSource? _cts;
 
     public void Start(int port = DefaultPort)
     {
         Stop();
+        BindFailed = false;
         try
         {
             _client = new UdpClient(port);
         }
         catch (SocketException)
         {
-            // ポート使用中(別の OSC リスナー等)。静かに諦める。呼び出し側は
-            // OSC 状態不明時の挙動を続ける。
+            // ポート使用中(別の OSC リスナー等)。諦めるが BindFailed を立てて
+            // 呼び出し側がヒントを出せるようにする。空いたら再 Start() で復帰。
+            BindFailed = true;
             _client = null;
             return;
         }
@@ -72,6 +83,8 @@ public sealed class VrChatOscListener : IDisposable
             {
                 continue; // 一時的な受信エラー。受信継続
             }
+
+            HasReceivedAnyMessage = true; // 9001 に何か届いた = OSC は有効で到達している
 
             try
             {

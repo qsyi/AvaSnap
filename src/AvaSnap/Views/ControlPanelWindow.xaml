@@ -1262,10 +1262,18 @@
                 </StackPanel>
             </Border>
 
+            <!-- 3状態: (1)OSC 未検知/ポート競合 → OSC 有効化ヒント + 手順ボタン、
+                 (2)OSC は動作中だがカメラ未オープン → 「カメラを開いて」、
+                 (3)カメラ オープン → 非表示。RefreshAlignBanner が切り替える。 -->
             <Border x:Name="CameraClosedBanner" Grid.Row="1" Background="#FFF3CD" BorderBrush="#FFE69C" BorderThickness="1"
                     CornerRadius="8" Margin="16,10,16,0" Padding="14,12" Visibility="Collapsed">
-                <TextBlock Text="VRChatのカメラを開いてください" FontSize="17" FontWeight="Bold" Foreground="#7A5B00"
-                           TextWrapping="Wrap" TextAlignment="Center" />
+                <StackPanel>
+                    <TextBlock x:Name="CameraClosedBannerText" Text="VRChatのカメラを開いてください" FontSize="17" FontWeight="Bold"
+                               Foreground="#7A5B00" TextWrapping="Wrap" TextAlignment="Center" />
+                    <Button x:Name="OscSetupGuideButton" Content="OSCを有効にする手順" Style="{StaticResource PillButton}"
+                            FontSize="12" Padding="12,5" HorizontalAlignment="Center" Margin="0,8,0,0"
+                            Visibility="Collapsed" Click="OpenOscSetupGuideButton_Click" />
+                </StackPanel>
             </Border>
 
             <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
@@ -4343,6 +4351,98 @@
                     <TextBlock Text="VCCで対象のUnityプロジェクトを開き、パッケージ一覧から「AvaSnap連携」を探してAddしてください。"
                                FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- OSC有効化ガイド: 位置合わせモードのバナー「OSCを有効にする手順」ボタン
+             (OpenOscSetupGuideButton_Click)から開く、Unity連携ガイドと同じ作りの
+             上から降りてくるオーバーレイ。VRChat内ラジアルメニューの3ステップを
+             簡易ラジアル図で示す。 -->
+        <Grid x:Name="OscSetupGuideOverlay" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed">
+            <Border Background="#88000000" MouseLeftButtonDown="OscSetupGuideScrim_MouseLeftButtonDown" />
+            <Border x:Name="OscSetupGuidePanel" Style="{StaticResource Card}"
+                    VerticalAlignment="Top" Margin="16,16,16,0" Padding="16"
+                    TextElement.Foreground="{DynamicResource TextPrimaryBrush}"
+                    RenderTransformOrigin="0.5,0">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="OscSetupGuideTransform" Y="-400" />
+                </Border.RenderTransform>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="VRChatでOSCを有効にする" Style="{StaticResource SectionHeader}"
+                                   Margin="0" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="&#10005;" Style="{StaticResource BackButton}"
+                                Padding="8,4" Click="CloseOscSetupGuideButton_Click" />
+                    </Grid>
+
+                    <TextBlock Text="VRChat内でアクションメニュー（ラジアルメニュー）を開き、次の順に選びます。"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextWrapping="Wrap" Margin="0,12,0,10" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                            <Viewbox Width="56" Height="56">
+                                <Canvas Width="48" Height="48">
+                                    <Ellipse Canvas.Left="4" Canvas.Top="4" Width="40" Height="40"
+                                             Stroke="{DynamicResource HairlineBrush}" StrokeThickness="2" />
+                                    <Line X1="24" Y1="24" X2="24" Y2="12" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" />
+                                    <Ellipse Canvas.Left="21" Canvas.Top="21" Width="6" Height="6" Fill="{DynamicResource TextSecondaryBrush}" />
+                                    <Ellipse Canvas.Left="18" Canvas.Top="2" Width="12" Height="12" Fill="{DynamicResource PrimaryBrush}" />
+                                </Canvas>
+                            </Viewbox>
+                            <TextBlock Text="① オプション" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                            <Viewbox Width="56" Height="56">
+                                <Canvas Width="48" Height="48">
+                                    <Ellipse Canvas.Left="4" Canvas.Top="4" Width="40" Height="40"
+                                             Stroke="{DynamicResource HairlineBrush}" StrokeThickness="2" />
+                                    <Line X1="24" Y1="24" X2="15" Y2="33" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" />
+                                    <Ellipse Canvas.Left="21" Canvas.Top="21" Width="6" Height="6" Fill="{DynamicResource TextSecondaryBrush}" />
+                                    <Ellipse Canvas.Left="7" Canvas.Top="29" Width="12" Height="12" Fill="{DynamicResource PrimaryBrush}" />
+                                </Canvas>
+                            </Viewbox>
+                            <TextBlock Text="② OSC" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                            <Viewbox Width="56" Height="56">
+                                <Canvas Width="48" Height="48">
+                                    <Ellipse Canvas.Left="4" Canvas.Top="4" Width="40" Height="40"
+                                             Stroke="{DynamicResource HairlineBrush}" StrokeThickness="2" />
+                                    <Line X1="24" Y1="24" X2="24" Y2="36" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" />
+                                    <Ellipse Canvas.Left="21" Canvas.Top="21" Width="6" Height="6" Fill="{DynamicResource TextSecondaryBrush}" />
+                                    <Ellipse Canvas.Left="18" Canvas.Top="34" Width="12" Height="12" Fill="{DynamicResource PrimaryBrush}" />
+                                </Canvas>
+                            </Viewbox>
+                            <TextBlock Text="③「有効」をオン" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="うまく検知されない場合" FontWeight="SemiBold" FontSize="13" Margin="0,14,0,4"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <StackPanel>
+                        <TextBlock Text="・「有効」を一度オフ→オンし直す" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,3" />
+                        <TextBlock Text="・直らなければ同じメニューの「設定をリセット」" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,3" />
+                        <TextBlock Text="・他のOSCアプリ（VRCFaceTracking等）がポート9001を使用中だと受信できません。そのアプリを閉じるかVRChatを再起動してください"
+                                   FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,3" />
+                        <TextBlock Text="・OSCの出力ポートを変更している場合は既定（9001）に戻してください" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </Grid>
