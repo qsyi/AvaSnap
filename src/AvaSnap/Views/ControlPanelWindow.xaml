@@ -1608,19 +1608,22 @@
                     </StackPanel>
                 </Border>
 
-                <!-- プロジェクト: 手動保存は無く自動保存。「新規プロジェクト」(アイコンのみ)で
-                     日時名の新ファイルへ切り替える(ControlPanelWindow.Project.cs)。 -->
-                <Button Style="{StaticResource RotateIconButton}" Margin="10,0,0,0"
-                        Click="NewProjectButton_Click" ToolTip="新規プロジェクト(現在の作業は自動保存されます)">
-                    <Viewbox Width="15" Height="15">
-                        <Canvas Width="24" Height="24">
-                            <Path Data="M14 3v4a1 1 0 0 0 1 1h4" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                            <Path Data="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                            <Path Data="M12 11v6M9 14h6" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" StrokeStartLineCap="Round" />
-                        </Canvas>
-                    </Viewbox>
+                <!-- プロジェクト: 手動保存は無く自動保存。「新規プロジェクト」で日時名の
+                     新ファイルへ切り替える(ControlPanelWindow.Project.cs)。 -->
+                <Button Style="{StaticResource SecondaryPillButton}" Margin="10,0,0,0" Padding="11,6" FontSize="12"
+                        Click="NewProjectButton_Click" ToolTip="現在の作業は自動保存され、新しい空のプロジェクトを開きます">
+                    <StackPanel Orientation="Horizontal">
+                        <Viewbox Width="14" Height="14" Margin="0,0,6,0">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="M14 3v4a1 1 0 0 0 1 1h4" Stroke="White" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                <Path Data="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" Stroke="White" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                <Path Data="M12 11v6M9 14h6" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock Text="新規プロジェクト" VerticalAlignment="Center" />
+                    </StackPanel>
                 </Button>
                 <TextBlock x:Name="ProjectNameText" Text="" VerticalAlignment="Center" Margin="10,0,0,0"
                            FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"

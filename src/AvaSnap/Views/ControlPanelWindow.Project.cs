@@ -40,12 +40,18 @@ public partial class ControlPanelWindow
         _projectSaveTimer.Start();
     }
 
-    /// <summary>保留中の変更を現在のプロジェクトファイルへ確定する。</summary>
+    /// <summary>背景写真かアバター画像のどちらかがあるか。どちらも無いプロジェクトは
+    /// ファイルを作らない(自動保存をスキップする)。</summary>
+    private bool HasProjectContent => _photoPixelBuffer is not null || !string.IsNullOrEmpty(_state.ImagePath);
+
+    /// <summary>保留中の変更を現在のプロジェクトファイルへ確定する。画像が1つも
+    /// 無ければ書き出さない。</summary>
     public void SaveCurrentProject()
     {
         _projectSaveTimer?.Stop();
         if (!_projectDirty) return;
         _projectDirty = false;
+        if (!HasProjectContent) return;
         ProjectService.Save(BuildProjectDto(), _currentProjectPath);
         SaveProjectThumbnail();
     }
@@ -95,8 +101,7 @@ public partial class ControlPanelWindow
         SaveCurrentProject();       // 現在のを確定してから(確認ダイアログは無し)
         _currentProjectPath = ProjectService.NewProjectPath();
         ClearRetouchState();
-        _projectDirty = true;
-        SaveCurrentProject();       // 空プロジェクトを即ファイル化
+        _projectDirty = false;      // 画像を読み込むまではファイルを作らない
         UpdateProjectNameUi();
     }
 
