@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AvaSnap.Views;
@@ -59,12 +60,38 @@ public sealed record DecalDto(
     bool IsFrame, byte ColorR, byte ColorG, byte ColorB, double StrokePercent,
     double Opacity);
 
+/// <summary>一覧表示用のプロジェクトの要約(パス・名前・更新時刻・プレビュー PNG のパス)。</summary>
+public sealed record ProjectInfo(string Path, string Name, DateTime ModifiedUtc, string? ThumbnailPath);
+
 public static class ProjectService
 {
     public static readonly string ProjectsDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AvaSnap", "Projects");
 
     public const string Extension = ".avasnap";
+
+    /// <summary>プロジェクトのプレビュー PNG のパス(<c>同名.png</c>)。保存時に書き出す。</summary>
+    public static string ThumbnailPathFor(string projectPath) => Path.ChangeExtension(projectPath, ".png");
+
+    /// <summary>Projects フォルダ内の .avasnap を更新の新しい順に列挙する。</summary>
+    public static IReadOnlyList<ProjectInfo> ListProjects()
+    {
+        try
+        {
+            if (!Directory.Exists(ProjectsDir)) return Array.Empty<ProjectInfo>();
+            return Directory.EnumerateFiles(ProjectsDir, "*" + Extension)
+                .Select(p =>
+                {
+                    string thumb = ThumbnailPathFor(p);
+                    return new ProjectInfo(p, Path.GetFileNameWithoutExtension(p),
+                        File.GetLastWriteTimeUtc(p), File.Exists(thumb) ? thumb : null);
+                })
+                .OrderByDescending(i => i.ModifiedUtc)
+                .ToList();
+        }
+        catch (IOException) { return Array.Empty<ProjectInfo>(); }
+        catch (UnauthorizedAccessException) { return Array.Empty<ProjectInfo>(); }
+    }
 
     private static readonly JsonSerializerOptions Options = new()
     {

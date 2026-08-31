@@ -247,6 +247,7 @@ public partial class ControlPanelWindow : Window
         HomeSettingsToggle.Visibility = Visibility.Visible;
         Width = 400;
         Height = HomeHeight;
+        RefreshRecentProjectsUi(); // .avasnap があればセクションを出し、その分ウィンドウを高くする
         PinToRightEdge();
 
         // ホームは位置合わせ用ではないので、ライブオーバーレイがここで VRChat の上に
@@ -1226,7 +1227,6 @@ public partial class ControlPanelWindow : Window
         RefreshSkipAvatarUI();
         ScheduleCompositeRender();
         AddRecentAvatarPath(path);
-        MarkProjectDirty(); // 位置合わせモードからの読み込みでも記録する
     }
 
     // ---- 最近のアバター / 最近の写真: ControlPanelWindow.RecentFiles.cs に分離。 ----

@@ -1,5 +1,9 @@
 using System.IO;
+using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using AvaSnap.Services;
@@ -26,12 +30,14 @@ public partial class ControlPanelWindow
     }
 
     /// <summary>編集が起きたことを記録し、自動保存を(デバウンスして)予約する。
-    /// レタッチモード表示中のみ ── ScheduleCompositeRender 等から呼ばれる。</summary>
+    /// レタッチモードを実際に開いている間のみ ── 起動時やモード外の初期化イベントで
+    /// 空プロジェクトが保存されるのを防ぐ。</summary>
     private void MarkProjectDirty()
     {
+        if (_projectSaveTimer is null || CompositePanel.Visibility != Visibility.Visible) return;
         _projectDirty = true;
-        _projectSaveTimer?.Stop();
-        _projectSaveTimer?.Start();
+        _projectSaveTimer.Stop();
+        _projectSaveTimer.Start();
     }
 
     /// <summary>保留中の変更を現在のプロジェクトファイルへ確定する。</summary>
@@ -41,6 +47,47 @@ public partial class ControlPanelWindow
         if (!_projectDirty) return;
         _projectDirty = false;
         ProjectService.Save(BuildProjectDto(), _currentProjectPath);
+        SaveProjectThumbnail();
+    }
+
+    /// <summary>ホーム一覧用のプレビュー PNG(<c>同名.png</c>)を書き出す。中身が
+    /// 無ければ古いプレビューを消す。</summary>
+    private void SaveProjectThumbnail()
+    {
+        string thumb = ProjectService.ThumbnailPathFor(_currentProjectPath);
+        try
+        {
+            if (_lastComposite is { PixelWidth: > 0, PixelHeight: > 0 } src)
+            {
+                const int targetW = 360;
+                double sc = Math.Min(1.0, targetW / (double)src.PixelWidth);
+                BitmapSource scaled = sc < 1.0 ? new TransformedBitmap(src, new ScaleTransform(sc, sc)) : src;
+                TrySavePng(scaled, thumb);
+            }
+            else if (File.Exists(thumb))
+            {
+                File.Delete(thumb);
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>ホームの一覧からプロジェクトを開く。現在のプロジェクトは先に自動保存。</summary>
+    public void OpenProject(string path)
+    {
+        if (string.Equals(path, _currentProjectPath, StringComparison.OrdinalIgnoreCase))
+        {
+            ShowComposite();
+            return;
+        }
+        SaveCurrentProject();
+        if (ProjectService.Load(path) is not { } dto) return;
+        _currentProjectPath = path;
+        ApplyProjectDto(dto);
+        UpdateProjectNameUi();
+        ShowComposite();
+        _projectDirty = false; // 開いた直後は未変更(ShowComposite のレンダーで付いた分を消す)
     }
 
     private void NewProjectButton_Click(object sender, RoutedEventArgs e)
@@ -55,6 +102,77 @@ public partial class ControlPanelWindow
 
     private void UpdateProjectNameUi() =>
         ProjectNameText.Text = Path.GetFileNameWithoutExtension(_currentProjectPath);
+
+    private const int ProjectCardWidth = 150;
+
+    /// <summary>ホームの「最近のプロジェクト」列を作り直す。空なら区画ごと隠し、
+    /// あればウィンドウを少し高くして収める。</summary>
+    private void RefreshRecentProjectsUi()
+    {
+        RecentProjectsPanel.Children.Clear();
+        var list = ProjectService.ListProjects()
+            .Where(p => !string.Equals(p.Path, _currentProjectPath, StringComparison.OrdinalIgnoreCase))
+            .Take(30)
+            .ToList();
+
+        bool has = list.Count > 0;
+        RecentProjectsSection.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var info in list)
+            RecentProjectsPanel.Children.Add(CreateProjectCard(info));
+
+        if (HomePanel.Visibility == Visibility.Visible)
+            Height = HomeHeight + (has ? 176 : 0);
+    }
+
+    private FrameworkElement CreateProjectCard(ProjectInfo info)
+    {
+        var thumbHost = new Border
+        {
+            Width = ProjectCardWidth, Height = 84, CornerRadius = new CornerRadius(6),
+            Background = (Brush)FindResource("InputBackgroundBrush"),
+            BorderBrush = (Brush)FindResource("HairlineBrush"), BorderThickness = new Thickness(1),
+            ClipToBounds = true,
+        };
+        if (info.ThumbnailPath is { } tp)
+        {
+            try
+            {
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.DecodePixelWidth = ProjectCardWidth * 2;
+                bmp.UriSource = new Uri(tp);
+                bmp.EndInit();
+                bmp.Freeze();
+                thumbHost.Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill };
+            }
+            catch (Exception ex) when (ex is IOException or NotSupportedException or UriFormatException) { }
+        }
+
+        var stack = new StackPanel { Width = ProjectCardWidth };
+        stack.Children.Add(thumbHost);
+        stack.Children.Add(new TextBlock
+        {
+            Text = info.Name, FontSize = 11, Margin = new Thickness(0, 5, 0, 0),
+            TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = ProjectCardWidth,
+            Foreground = (Brush)FindResource("TextPrimaryBrush"),
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = info.ModifiedUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm"),
+            FontSize = 10, Foreground = (Brush)FindResource("TextSecondaryBrush"),
+        });
+
+        var btn = new Button
+        {
+            Style = (Style)FindResource("ProjectCardButton"),
+            Content = stack,
+            Margin = new Thickness(0, 0, 8, 0),
+            ToolTip = info.Name,
+        };
+        btn.Click += (_, _) => OpenProject(info.Path);
+        return btn;
+    }
 
     /// <summary>新規プロジェクト用のリセット: 背景写真・アバター画像・デカール・マスク・
     /// レタッチパラメータを全て既定へ戻し、まっさらな状態にする。アバターはモード間で
@@ -131,35 +249,46 @@ public partial class ControlPanelWindow
         return dto;
     }
 
-    /// <summary>プロジェクトを現在の UI へ適用する。v1 では起動時=常に新規なので
-    /// 直接は呼ばれないが、round-trip 検証と将来の「最近のプロジェクト」用に用意。</summary>
+    /// <summary>プロジェクトを現在の UI へ適用する。DTO が指定していない画像は
+    /// クリアするので、前に開いていたプロジェクトの状態は残らない。</summary>
     private void ApplyProjectDto(ProjectDto dto)
     {
         bool missing = false;
 
         // 背景写真
-        if (!string.IsNullOrEmpty(dto.PhotoPath) && File.Exists(dto.PhotoPath))
+        if (!string.IsNullOrEmpty(dto.PhotoPath) && File.Exists(dto.PhotoPath) && TryLoadPhotoPixels(dto.PhotoPath!))
         {
-            if (TryLoadPhotoPixels(dto.PhotoPath!))
-            {
-                int q = ((dto.PhotoRotationQuarters % 4) + 4) % 4;
-                for (int i = 0; i < q && _photoPixelBuffer is { } p; i++)
-                    _photoPixelBuffer = ImageAdjustment.RotateClockwise90(p);
-                if (_photoPixelBuffer is { } rp)
-                    ImageAdjustment.PrecomputeFilmGrainNoise(rp.Width, rp.Height);
-                _photoRotationQuarters = q;
-            }
-            else { missing = true; }
+            int q = ((dto.PhotoRotationQuarters % 4) + 4) % 4;
+            for (int i = 0; i < q && _photoPixelBuffer is { } p; i++)
+                _photoPixelBuffer = ImageAdjustment.RotateClockwise90(p);
+            if (_photoPixelBuffer is { } rp)
+                ImageAdjustment.PrecomputeFilmGrainNoise(rp.Width, rp.Height);
+            _photoRotationQuarters = q;
         }
-        else if (!string.IsNullOrEmpty(dto.PhotoPath)) { missing = true; }
+        else
+        {
+            if (!string.IsNullOrEmpty(dto.PhotoPath)) missing = true;
+            _photoPixelBuffer = null;
+            _photoPath = null;
+            _photoRotationQuarters = 0;
+            PhotoPathText.Text = "(背景写真未選択)";
+        }
 
         // アバター
         if (!string.IsNullOrEmpty(dto.AvatarPath) && File.Exists(dto.AvatarPath))
         {
             try { _overlayWindow.LoadImage(dto.AvatarPath!); }
-            catch (Exception ex) when (ex is IOException or NotSupportedException or FileFormatException or UriFormatException or ArgumentException) { missing = true; }
+            catch (Exception ex) when (ex is IOException or NotSupportedException or FileFormatException or UriFormatException or ArgumentException)
+            {
+                missing = true;
+                _overlayWindow.ClearImage();
+            }
         }
-        else if (!string.IsNullOrEmpty(dto.AvatarPath)) { missing = true; }
+        else
+        {
+            if (!string.IsNullOrEmpty(dto.AvatarPath)) missing = true;
+            _overlayWindow.ClearImage();
+        }
 
         if (dto.AvatarLook is { } al)
         {
@@ -204,7 +333,9 @@ public partial class ControlPanelWindow
         RefreshSplitGapRowEnabled();
         UpdateSplitGuides();
 
-        _compositePlacementInitialized = true;
+        // 配置が保存済み(幅>0)ならそれを使う。空プロジェクトなら未初期化のままにして
+        // 次に写真を読んだ時に自動推定させる。
+        _compositePlacementInitialized = (dto.Placement?.CompositePlaceWidth ?? 0) > 0;
         _undo.Clear();
         _cropModeEntrySnapshot = null;
         _avatarPlacementModeEntrySnapshot = null;
