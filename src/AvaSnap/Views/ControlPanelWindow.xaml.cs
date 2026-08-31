@@ -181,6 +181,8 @@ public partial class ControlPanelWindow : Window
         _oscHintTimer.Tick += OscHintTick;
         _oscHintTimer.Start();
 
+        InitProjectAutoSave(); // 起動時は常に新規プロジェクト(空)から
+
         ShowHome();
     }
 
@@ -233,6 +235,7 @@ public partial class ControlPanelWindow : Window
 
     private void ShowHome() => WithRedrawSuspended(() =>
     {
+        SaveCurrentProject(); // レタッチを離れる前に保留中の変更を確定
         HomePanel.Visibility = Visibility.Visible;
         AlignPanel.Visibility = Visibility.Collapsed;
         CompositePanel.Visibility = Visibility.Collapsed;
@@ -263,6 +266,7 @@ public partial class ControlPanelWindow : Window
 
     private void ShowAlign() => WithRedrawSuspended(() =>
     {
+        SaveCurrentProject();
         HomePanel.Visibility = Visibility.Collapsed;
         AlignPanel.Visibility = Visibility.Visible;
         CompositePanel.Visibility = Visibility.Collapsed;
@@ -428,6 +432,7 @@ public partial class ControlPanelWindow : Window
     /// ライセンス/サードパーティ表記は別の LicensePanel(ShowLicense 参照)。</summary>
     private void ShowAbout() => WithRedrawSuspended(() =>
     {
+        SaveCurrentProject();
         if (!_aboutContentLoaded)
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
@@ -461,6 +466,7 @@ public partial class ControlPanelWindow : Window
     /// (csproj 参照)、中の一部の表記(SIL OFL、MIT)が要求するオフライン閲覧に対応する。</summary>
     private void ShowLicense() => WithRedrawSuspended(() =>
     {
+        SaveCurrentProject();
         if (!_licenseContentLoaded)
         {
             LicenseText.Text = LoadEmbeddedText("Assets/LICENSE.md");
@@ -817,6 +823,7 @@ public partial class ControlPanelWindow : Window
 
     private void EnterCompact(PanelMode mode) => WithRedrawSuspended(() =>
     {
+        SaveCurrentProject();
         // 小さな隅ウィジェットを最大化状態で見せない。
         WindowState = WindowState.Normal;
         _preCompactMode = mode;
@@ -1219,6 +1226,7 @@ public partial class ControlPanelWindow : Window
         RefreshSkipAvatarUI();
         ScheduleCompositeRender();
         AddRecentAvatarPath(path);
+        MarkProjectDirty(); // 位置合わせモードからの読み込みでも記録する
     }
 
     // ---- 最近のアバター / 最近の写真: ControlPanelWindow.RecentFiles.cs に分離。 ----
@@ -2089,6 +2097,7 @@ public partial class ControlPanelWindow : Window
 
     private ImageAdjustment.PixelBuffer? _photoPixelBuffer;
     private string? _photoPath;
+    private int _photoRotationQuarters; // アプリ内 90° 回転ボタンの回数(mod 4)。プロジェクト保存用
     private double _photoBrightness, _photoContrast, _photoSaturation;
     private double _photoVibrance, _photoTemperature, _photoTint, _photoHue;
     private double _photoHighlights, _photoShadows, _photoWhites, _photoBlacks;
@@ -2820,6 +2829,7 @@ public partial class ControlPanelWindow : Window
 
         _compositePlacementInitialized = false; // 新しい写真は配置推定をやり直す
         _photoPath = path;
+        _photoRotationQuarters = 0; // 新しい写真 = 未回転(プロジェクト保存用)
         PhotoPathText.Text = Path.GetFileName(path);
         // 実写真に切り替えたら「背景なしで作成」の色/グラデーションUIは
         // もう意味を持たない(RegenerateBlankCanvasが実写真を上書きして
@@ -2855,6 +2865,7 @@ public partial class ControlPanelWindow : Window
         _undo.BeginChange();
         _photoPixelBuffer = ImageAdjustment.RotateClockwise90(photo);
         ImageAdjustment.PrecomputeFilmGrainNoise(_photoPixelBuffer.Width, _photoPixelBuffer.Height);
+        _photoRotationQuarters = (_photoRotationQuarters + 1) & 3; // プロジェクト保存用
         _compositePlacementInitialized = false;
         _decalLayerOrder.RemoveAll(l => l is not null);
         ExitDecalPlacementMode();
@@ -4809,6 +4820,7 @@ public partial class ControlPanelWindow : Window
     private void ScheduleCompositeRender()
     {
         if (CompositePanel.Visibility != Visibility.Visible) return;
+        MarkProjectDirty(); // レタッチ中の編集はほぼ全てここを通る → 自動保存を予約
 
         var elapsed = DateTime.UtcNow - _lastCompositeRender;
         if (elapsed >= CompositeRenderThrottle)

@@ -137,6 +137,7 @@ public partial class ControlPanelWindow
             _splitCount = Math.Clamp(n, 1, MaxSplitCount);
         RefreshSplitGapRowEnabled();
         UpdateSplitGuides();
+        MarkProjectDirty();
     }
 
     private void SplitGapBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -144,6 +145,7 @@ public partial class ControlPanelWindow
         if (_suppressEvents) return;
         _splitGapPx = int.TryParse(SplitGapBox.Text, out var g) ? Math.Clamp(g, 0, MaxSplitGapPx) : 0;
         UpdateSplitGuides();
+        MarkProjectDirty();
     }
 
     private void RefreshSplitGapRowEnabled()

@@ -45,6 +45,7 @@ public partial class ControlPanelWindow
         public double X, Y, Width, Height; // フル解像度の写真ピクセル空間、_compositePlaceX/Y/Width/Height と同じ規約
         public double Rotation; // 度、_compositeRotation と同じ規約(正 = 時計回り)
         public double Opacity = 1.0; // 0..1、このデカール個別の不透明度
+        public string? SourcePath; // 画像デカールの元ファイル(プロジェクト保存用)。枠線は null
 
         // ---- 枠線デカール専用。IsFrame == false = 従来どおりの画像デカール(以降の
         //      分岐はすべて「IsFrame でなければ画像として扱う」で画像経路は不変)。 ----
@@ -112,6 +113,7 @@ public partial class ControlPanelWindow
         {
             Pixels = pixels,
             Thumbnail = bitmap,
+            SourcePath = path,
             X = crop.Left + crop.Width / 2 - width / 2,
             Y = crop.Top + crop.Height / 2 - height / 2,
             Width = width,

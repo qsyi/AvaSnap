@@ -123,10 +123,8 @@ public partial class App : Application
             _controlPanelWindow.SetRecentAvatarPaths(recentAvatars);
         }
 
-        if (!string.IsNullOrEmpty(saved?.PhotoPath) && File.Exists(saved.PhotoPath))
-        {
-            _controlPanelWindow.RestorePhotoSilently(saved.PhotoPath);
-        }
+        // 背景写真は起動時に復元しない ── レタッチはプロジェクト管理になり、
+        // 起動時は常に空の新規プロジェクトから始める(ControlPanelWindow 側)。
 
         // オーバーレイと同じ owned-window の Z 順トリック: VRChat を前面にしたら
         // コントロールパネルも一緒に前面へ。
@@ -152,6 +150,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _controlPanelWindow?.SaveCurrentProject(); // 現在のプロジェクトを確定
         if (_state is not null)
         {
             SettingsService.Save(_state, _screenshotWatcher?.ManualFolder, _controlPanelWindow?.PhotoPath, _controlPanelWindow?.RecentAvatarPaths, ThemeService.IsDarkMode);

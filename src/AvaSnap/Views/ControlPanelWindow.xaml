@@ -1552,29 +1552,52 @@
                 <ColumnDefinition Width="2*" MinWidth="440" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource NavSegmentGroup}" HorizontalAlignment="Left" Margin="16,14,16,8">
-                <StackPanel Orientation="Horizontal">
-                    <Button Style="{StaticResource NavSegmentButtonFirst}" Click="BackToHome_Click">
-                        <StackPanel Orientation="Horizontal">
-                            <!-- Lucide "house" アイコン(ISC ライセンス)。旧絵文字の
-                                 置き換えで、解像度非依存のラインアイコン。 -->
-                            <Viewbox Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center">
-                                <Canvas Width="24" Height="24">
-                                    <Path Data="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
-                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                                    <Path Data="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
-                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
-                                </Canvas>
-                            </Viewbox>
-                            <TextBlock Text="ホーム" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                    <Border Style="{StaticResource NavSegmentDivider}" />
-                    <Button Content="位置合わせモードへ" Style="{StaticResource NavSegmentButtonLast}" Click="AlignModeButton_Click" />
-                </StackPanel>
-            </Border>
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="16,14,16,8">
+                <Border Style="{StaticResource NavSegmentGroup}">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource NavSegmentButtonFirst}" Click="BackToHome_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <!-- Lucide "house" アイコン(ISC ライセンス)。旧絵文字の
+                                     置き換えで、解像度非依存のラインアイコン。 -->
+                                <Viewbox Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
+                                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                        <Path Data="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+                                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBlock Text="ホーム" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Border Style="{StaticResource NavSegmentDivider}" />
+                        <Button Content="位置合わせモードへ" Style="{StaticResource NavSegmentButtonLast}" Click="AlignModeButton_Click" />
+                    </StackPanel>
+                </Border>
+
+                <!-- プロジェクト: 手動保存は無く自動保存。「新規プロジェクト」で日時名の
+                     新ファイルへ切り替える(ControlPanelWindow.Project.cs)。 -->
+                <Button Style="{StaticResource SecondaryPillButton}" Margin="10,0,0,0" Padding="12,6" FontSize="13"
+                        Click="NewProjectButton_Click" ToolTip="現在のプロジェクトは自動保存され、新しい空のプロジェクトを開きます">
+                    <StackPanel Orientation="Horizontal">
+                        <Viewbox Width="13" Height="13" Margin="0,0,5,0">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="M14 3v4a1 1 0 0 0 1 1h4" Stroke="White" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                <Path Data="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" Stroke="White" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                <Path Data="M12 11v6M9 14h6" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock Text="新規プロジェクト" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <TextBlock x:Name="ProjectNameText" Text="" VerticalAlignment="Center" Margin="10,0,0,0"
+                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" MaxWidth="220" />
+            </StackPanel>
 
                 <!-- プレビュー -->
                 <Grid Grid.Row="1" Grid.Column="0" Margin="16,2,14,14">
