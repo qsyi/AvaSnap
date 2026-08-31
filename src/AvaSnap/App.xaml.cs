@@ -114,6 +114,22 @@ public partial class App : Application
         _controlPanelWindow.Show();
         _screenshotNotifications.PhotoSelected += path => _controlPanelWindow.LoadPhotoForComposite(path);
 
+        // Explorer で .avasnap をダブルクリックした場合、その引数のプロジェクトを開く。
+        // 以降、二重起動で渡ってくる「開いて」通知も既存ウィンドウで処理する。
+        foreach (var arg in e.Args)
+        {
+            if (arg.EndsWith(ProjectService.Extension, StringComparison.OrdinalIgnoreCase) && File.Exists(arg))
+            {
+                _controlPanelWindow.OpenProject(Path.GetFullPath(arg));
+                break;
+            }
+        }
+        SingleInstance.ListenForOpenRequests(path => Dispatcher.Invoke(() =>
+        {
+            _controlPanelWindow?.OpenProject(path);
+            _controlPanelWindow?.Activate();
+        }));
+
         // ControlPanelWindow が DataUpdated を購読したので、エクスポートファイルの
         // 読み取り/監視を始めて安全(上の _unityCameraGuide 生成箇所のコメント参照)。
         _unityCameraGuide.Start();

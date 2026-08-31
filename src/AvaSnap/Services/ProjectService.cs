@@ -39,6 +39,17 @@ public sealed class ProjectDto
     // ---- 保存設定 ----
     public int SplitCount { get; set; } = 1;
     public int SplitGapPx { get; set; }
+
+    /// <summary>ホーム一覧用の小さなプレビュー(JPEG を Base64 で埋め込み)。
+    /// サイドカーファイルを作らず .avasnap 単体で持ち運べるようにするため。</summary>
+    public string? PreviewJpegBase64 { get; set; }
+}
+
+/// <summary>一覧表示だけに必要な部分を取り出す軽量 DTO(全 DTO を読まずに済ませる)。</summary>
+internal sealed class ProjectSummaryDto
+{
+    public DateTime SavedUtc { get; set; }
+    public string? PreviewJpegBase64 { get; set; }
 }
 
 /// <summary>アバター画像のルック(<see cref="OverlayState"/> の該当フィールド)。
@@ -60,8 +71,8 @@ public sealed record DecalDto(
     bool IsFrame, byte ColorR, byte ColorG, byte ColorB, double StrokePercent,
     double Opacity);
 
-/// <summary>一覧表示用のプロジェクトの要約(パス・名前・更新時刻・プレビュー PNG のパス)。</summary>
-public sealed record ProjectInfo(string Path, string Name, DateTime ModifiedUtc, string? ThumbnailPath);
+/// <summary>一覧表示用のプロジェクトの要約(パス・名前・更新時刻・プレビュー JPEG バイト列)。</summary>
+public sealed record ProjectInfo(string Path, string Name, DateTime ModifiedUtc, byte[]? PreviewJpeg);
 
 public static class ProjectService
 {
@@ -70,24 +81,36 @@ public static class ProjectService
 
     public const string Extension = ".avasnap";
 
-    /// <summary>プロジェクトのプレビュー PNG のパス(<c>同名.png</c>)。保存時に書き出す。</summary>
-    public static string ThumbnailPathFor(string projectPath) => Path.ChangeExtension(projectPath, ".png");
-
-    /// <summary>Projects フォルダ内の .avasnap を更新の新しい順に列挙する。</summary>
+    /// <summary>Projects フォルダ内の .avasnap を保存日時の新しい順に列挙する
+    /// (プレビューは各ファイルから軽量パースで取り出す)。</summary>
     public static IReadOnlyList<ProjectInfo> ListProjects()
     {
         try
         {
             if (!Directory.Exists(ProjectsDir)) return Array.Empty<ProjectInfo>();
-            return Directory.EnumerateFiles(ProjectsDir, "*" + Extension)
-                .Select(p =>
+            var list = new List<ProjectInfo>();
+            foreach (var p in Directory.EnumerateFiles(ProjectsDir, "*" + Extension))
+            {
+                DateTime saved = File.GetLastWriteTimeUtc(p);
+                byte[]? preview = null;
+                try
                 {
-                    string thumb = ThumbnailPathFor(p);
-                    return new ProjectInfo(p, Path.GetFileNameWithoutExtension(p),
-                        File.GetLastWriteTimeUtc(p), File.Exists(thumb) ? thumb : null);
-                })
-                .OrderByDescending(i => i.ModifiedUtc)
-                .ToList();
+                    var sum = JsonSerializer.Deserialize<ProjectSummaryDto>(File.ReadAllText(p), Options);
+                    if (sum is not null)
+                    {
+                        if (sum.SavedUtc != default) saved = sum.SavedUtc;
+                        if (!string.IsNullOrEmpty(sum.PreviewJpegBase64))
+                        {
+                            try { preview = Convert.FromBase64String(sum.PreviewJpegBase64); }
+                            catch (FormatException) { }
+                        }
+                    }
+                }
+                catch (JsonException) { }
+                catch (IOException) { }
+                list.Add(new ProjectInfo(p, Path.GetFileNameWithoutExtension(p), saved, preview));
+            }
+            return list.OrderByDescending(i => i.ModifiedUtc).ToList();
         }
         catch (IOException) { return Array.Empty<ProjectInfo>(); }
         catch (UnauthorizedAccessException) { return Array.Empty<ProjectInfo>(); }

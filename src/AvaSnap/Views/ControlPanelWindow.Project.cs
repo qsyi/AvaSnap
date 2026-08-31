@@ -55,30 +55,28 @@ public partial class ControlPanelWindow
         _projectDirty = false;
         if (!HasProjectContent) return;
         ProjectService.Save(BuildProjectDto(), _currentProjectPath);
-        SaveProjectThumbnail();
     }
 
-    /// <summary>ホーム一覧用のプレビュー PNG(<c>同名.png</c>)を書き出す。中身が
-    /// 無ければ古いプレビューを消す。</summary>
-    private void SaveProjectThumbnail()
+    /// <summary>ホーム一覧カード用の小さなプレビューを JPEG バイト列で返す(埋め込み用)。
+    /// 合成結果がまだ無ければ <c>null</c>。</summary>
+    private byte[]? BuildProjectPreviewJpeg()
     {
-        string thumb = ProjectService.ThumbnailPathFor(_currentProjectPath);
+        if (_lastComposite is not { PixelWidth: > 0, PixelHeight: > 0 } src) return null;
         try
         {
-            if (_lastComposite is { PixelWidth: > 0, PixelHeight: > 0 } src)
-            {
-                const int targetW = 360;
-                double sc = Math.Min(1.0, targetW / (double)src.PixelWidth);
-                BitmapSource scaled = sc < 1.0 ? new TransformedBitmap(src, new ScaleTransform(sc, sc)) : src;
-                TrySavePng(scaled, thumb);
-            }
-            else if (File.Exists(thumb))
-            {
-                File.Delete(thumb);
-            }
+            const int targetW = 320;
+            double sc = Math.Min(1.0, targetW / (double)src.PixelWidth);
+            BitmapSource scaled = sc < 1.0 ? new TransformedBitmap(src, new ScaleTransform(sc, sc)) : src;
+            var enc = new JpegBitmapEncoder { QualityLevel = 72 };
+            enc.Frames.Add(BitmapFrame.Create(scaled));
+            using var ms = new MemoryStream();
+            enc.Save(ms);
+            return ms.ToArray();
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is IOException or NotSupportedException or OverflowException)
+        {
+            return null;
+        }
     }
 
     /// <summary>ホームの一覧からプロジェクトを開く。現在のプロジェクトは先に自動保存。</summary>
@@ -151,7 +149,7 @@ public partial class ControlPanelWindow
             BorderBrush = (Brush)FindResource("HairlineBrush"), BorderThickness = new Thickness(1),
             ClipToBounds = true,
         };
-        if (info.ThumbnailPath is { } tp)
+        if (info.PreviewJpeg is { Length: > 0 } bytes)
         {
             try
             {
@@ -159,12 +157,12 @@ public partial class ControlPanelWindow
                 bmp.BeginInit();
                 bmp.CacheOption = BitmapCacheOption.OnLoad;
                 bmp.DecodePixelWidth = ProjectCardWidth * 2;
-                bmp.UriSource = new Uri(tp);
+                bmp.StreamSource = new MemoryStream(bytes);
                 bmp.EndInit();
                 bmp.Freeze();
                 thumbHost.Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill };
             }
-            catch (Exception ex) when (ex is IOException or NotSupportedException or UriFormatException) { }
+            catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException) { }
         }
 
         var stack = new StackPanel { Width = ProjectCardWidth };
@@ -256,6 +254,8 @@ public partial class ControlPanelWindow
             SplitCount = _splitCount,
             SplitGapPx = _splitGapPx,
         };
+        if (BuildProjectPreviewJpeg() is { } jpeg)
+            dto.PreviewJpegBase64 = Convert.ToBase64String(jpeg);
         foreach (var l in _decalLayerOrder)
         {
             dto.Decals.Add(l is null
