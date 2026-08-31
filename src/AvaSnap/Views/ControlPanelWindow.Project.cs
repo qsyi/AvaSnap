@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -107,6 +109,17 @@ public partial class ControlPanelWindow
 
     private void UpdateProjectNameUi() =>
         ProjectNameText.Text = Path.GetFileNameWithoutExtension(_currentProjectPath);
+
+    private void OpenProjectsFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(ProjectService.ProjectsDir);
+            Process.Start(new ProcessStartInfo(ProjectService.ProjectsDir) { UseShellExecute = true });
+        }
+        catch (Win32Exception) { }
+        catch (IOException) { }
+    }
 
     private const int ProjectCardWidth = 150;
 

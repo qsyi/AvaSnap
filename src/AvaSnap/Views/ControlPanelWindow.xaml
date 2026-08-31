@@ -1199,7 +1199,26 @@
             <!-- 最近のプロジェクト: 保存済み .avasnap をサムネ付きで横並び表示。
                  クリックでレタッチモードで開く。空なら丸ごと非表示(RefreshRecentProjectsUi)。 -->
             <StackPanel x:Name="RecentProjectsSection" Margin="0,8,0,0" Visibility="Collapsed">
-                <TextBlock Text="最近のプロジェクト" Style="{StaticResource SectionHeader}" FontSize="12" Margin="2,0,0,6" />
+                <Grid Margin="2,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="最近のプロジェクト" Style="{StaticResource SectionHeader}"
+                               FontSize="12" Margin="0" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Style="{StaticResource BackButton}" Padding="6,3" FontSize="11"
+                            Click="OpenProjectsFolderButton_Click" ToolTip="プロジェクトの保存フォルダをエクスプローラーで開く">
+                        <StackPanel Orientation="Horizontal">
+                            <Viewbox Width="13" Height="13" Margin="0,0,4,0">
+                                <Canvas Width="24" Height="24">
+                                    <Path Data="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
+                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2" StrokeLineJoin="Round" />
+                                </Canvas>
+                            </Viewbox>
+                            <TextBlock Text="フォルダを開く" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                     <StackPanel x:Name="RecentProjectsPanel" Orientation="Horizontal" />
                 </ScrollViewer>
@@ -1244,6 +1263,21 @@
                         HorizontalAlignment="Left" Click="LicenseButton_Click" />
 
                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,10,0,10" />
+                <Button Style="{StaticResource SecondaryPillButton}" FontSize="13"
+                        HorizontalAlignment="Left" Padding="14,6" Margin="0,0,0,8" Click="OpenProjectsFolderButton_Click"
+                        ToolTip="レタッチのプロジェクトファイル(.avasnap)の保存先">
+                    <StackPanel Orientation="Horizontal">
+                        <Viewbox Width="13" Height="13" Margin="0,0,6,0">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
+                                      Stroke="White" StrokeThickness="2" StrokeLineJoin="Round" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock Text="プロジェクトフォルダを開く" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,2,0,10" />
                 <!-- ユーザー提供のGoogleフォームへの外部リンク。ブラウザで
                      開くだけで、アプリ内には何も保存/送信しない。 -->
                 <Button Style="{StaticResource SecondaryPillButton}" FontSize="13"
