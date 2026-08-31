@@ -1031,6 +1031,48 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- 最近のプロジェクトカードの右クリックメニュー。既定の MenuItem は
+             チェック/アイコン用の広い左余白とシステム色のハイライトが付いて
+             ダークテーマから浮くので、アプリの配色に合わせて作り直す。 -->
+        <Style x:Key="ProjectCardMenuItem" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource PrimaryTintHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ProjectCardMenu" TargetType="ContextMenu">
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ProjectCardMenuItem}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{DynamicResource CardBackgroundBrush}"
+                                BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1"
+                                CornerRadius="8" Padding="4">
+                            <StackPanel IsItemsHost="True" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <!-- 明示的な AdornerLayer ホスト: WindowStyle="None" + 自作のコンテンツツリー

@@ -196,9 +196,7 @@ public partial class ControlPanelWindow
         };
         btn.ContextMenu = new ContextMenu
         {
-            Background = (Brush)FindResource("CardBackgroundBrush"),
-            Foreground = (Brush)FindResource("TextPrimaryBrush"),
-            BorderBrush = (Brush)FindResource("HairlineBrush"),
+            Style = (Style)FindResource("ProjectCardMenu"),
             Items = { deleteItem },
         };
         return btn;
