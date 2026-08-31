@@ -1181,8 +1181,8 @@ public partial class ControlPanelWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "PNG画像 (*.png)|*.png",
-            Title = "アバター画像(透過PNG)を選択",
+            Filter = ImageFileDialogFilter,
+            Title = "アバター画像を選択",
         };
         if (dialog.ShowDialog() == true)
         {
@@ -1193,7 +1193,19 @@ public partial class ControlPanelWindow : Window
     private void LoadImageFile(string path)
     {
         _undo.BeginChange();
-        _overlayWindow.LoadImage(path);
+        try
+        {
+            _overlayWindow.LoadImage(path);
+        }
+        catch (Exception ex) when (ex is IOException or NotSupportedException or FileFormatException or UriFormatException or ArgumentException)
+        {
+            _undo.CommitChange();
+            if (CompositePanel.Visibility == Visibility.Visible)
+                ShowCompositeSaveStatus("画像を読み込めませんでした。", success: false);
+            else
+                ResetStatusText.Text = "画像を読み込めませんでした。";
+            return;
+        }
         PerformReset();
         _undo.CommitChange();
         RefreshFromState();
@@ -1213,7 +1225,14 @@ public partial class ControlPanelWindow : Window
 
     // ---- ドラッグ&ドロップ: レタッチモードでは画像ドラッグ中に DropGuideOverlay を出し、
     //      ドロップ位置(上部左=アバター / 上部右=背景 / 下部=1枚レタッチ)で読み込み先を
-    //      分ける。他モード / ガイド外へのドロップは従来どおりアバター画像として読み込む。 ----
+    //      分ける。他モード / ガイド外へのドロップは従来どおりアバター画像として読み込む。
+    //      アバター/背景とも形式は限定しない(WPF BitmapImage がデコードできる画像なら可)。 ----
+
+    private static readonly string[] ImageExtensions =
+        { ".png", ".jpg", ".jpeg", ".jfif", ".bmp", ".gif", ".tif", ".tiff" };
+
+    private const string ImageFileDialogFilter =
+        "画像ファイル|*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.gif;*.tif;*.tiff|すべてのファイル|*.*";
 
     private enum DropZone { Avatar, Background, Single }
 
@@ -1231,7 +1250,7 @@ public partial class ControlPanelWindow : Window
 
     private void Window_DragOver(object sender, DragEventArgs e)
     {
-        bool hasImage = GetDroppedImagePath(e) is not null || GetDroppedPngPath(e) is not null;
+        bool hasImage = GetDroppedImagePath(e) is not null;
         if (hasImage && CompositePanel.Visibility == Visibility.Visible && !_isMaskEditModeActive)
         {
             DropGuideOverlay.Visibility = Visibility.Visible;
@@ -1253,7 +1272,7 @@ public partial class ControlPanelWindow : Window
     private void Window_Drop(object sender, DragEventArgs e)
     {
         DropGuideOverlay.Visibility = Visibility.Collapsed;
-        if (GetDroppedPngPath(e) is { } path)
+        if (GetDroppedImagePath(e) is { } path)
         {
             LoadImageFile(path); // ガイド外 / 位置合わせモード: 従来どおりアバター画像
         }
@@ -1262,9 +1281,8 @@ public partial class ControlPanelWindow : Window
     private void DropGuide_DragOver(object sender, DragEventArgs e)
     {
         DropGuideOverlay.Visibility = Visibility.Visible;
-        var zone = HitTestDropZone(e.GetPosition(DropGuideOverlay));
-        HighlightDropZone(zone);
-        e.Effects = ZonePath(e, zone) is not null ? DragDropEffects.Copy : DragDropEffects.None;
+        HighlightDropZone(HitTestDropZone(e.GetPosition(DropGuideOverlay)));
+        e.Effects = GetDroppedImagePath(e) is not null ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -1272,9 +1290,8 @@ public partial class ControlPanelWindow : Window
     {
         DropGuideOverlay.Visibility = Visibility.Collapsed;
         HighlightDropZone(null);
-        var zone = HitTestDropZone(e.GetPosition(DropGuideOverlay));
-        if (ZonePath(e, zone) is not { } path) return;
-        switch (zone)
+        if (GetDroppedImagePath(e) is not { } path) return;
+        switch (HitTestDropZone(e.GetPosition(DropGuideOverlay)))
         {
             case DropZone.Avatar: LoadImageFile(path); break;
             case DropZone.Background: LoadPhotoForComposite(path); break;
@@ -1282,10 +1299,6 @@ public partial class ControlPanelWindow : Window
         }
         e.Handled = true;
     }
-
-    /// <summary>アバターゾーンは透過を要するので PNG のみ、それ以外は PNG/JPEG。</summary>
-    private static string? ZonePath(DragEventArgs e, DropZone zone) =>
-        zone == DropZone.Avatar ? GetDroppedPngPath(e) : GetDroppedImagePath(e);
 
     private DropZone HitTestDropZone(Point p)
     {
@@ -1319,15 +1332,11 @@ public partial class ControlPanelWindow : Window
         _ = RenderCompositePreview();
     }
 
-    private static string? GetDroppedPngPath(DragEventArgs e) => FindDropped(e, ".png");
-
-    private static string? GetDroppedImagePath(DragEventArgs e) => FindDropped(e, ".png", ".jpg", ".jpeg");
-
-    private static string? FindDropped(DragEventArgs e, params string[] extensions)
+    private static string? GetDroppedImagePath(DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return null;
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] files) return null;
-        return Array.Find(files, f => extensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase));
+        return Array.Find(files, f => ImageExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>手動リセット: Z 順アタッチ + 移動追従を確立してから位置推定を適用する
@@ -2853,8 +2862,8 @@ public partial class ControlPanelWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "画像 (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
-            Title = "VRChatで撮った背景写真を選択",
+            Filter = ImageFileDialogFilter,
+            Title = "背景写真を選択",
         };
         if (dialog.ShowDialog() == true)
         {

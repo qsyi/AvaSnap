@@ -1167,7 +1167,7 @@
                 <StackPanel>
                     <TextBlock Text="レタッチモード" FontSize="16" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <TextBlock Text="撮った写真にアバター画像を合成して仕上げます。画像1枚だけを読み込んで色調補正・トリミングするレタッチにも使えます。" FontSize="12"
+                    <TextBlock Text="画像を色調補正・トリミング・エフェクトで仕上げます。写真とアバター画像の合成にも対応。" FontSize="12"
                                Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,14" />
                     <Button Content="開く" Style="{StaticResource SecondaryPillButton}" FontSize="13" HorizontalAlignment="Left"
                             Click="CompositeModeButton_Click" />
@@ -2108,7 +2108,7 @@
                                     </Viewbox>
                                     <TextBlock Text="アバター画像" Foreground="White" FontWeight="SemiBold" FontSize="14"
                                                HorizontalAlignment="Center" Margin="0,8,0,2" />
-                                    <TextBlock Text="透過PNG・写真の上に合成" Foreground="#CCFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+                                    <TextBlock Text="写真の上に合成する画像" Foreground="#CCFFFFFF" FontSize="11" HorizontalAlignment="Center" />
                                 </StackPanel>
                             </Border>
 
@@ -2127,7 +2127,7 @@
                                     </Viewbox>
                                     <TextBlock Text="背景画像" Foreground="White" FontWeight="SemiBold" FontSize="14"
                                                HorizontalAlignment="Center" Margin="0,8,0,2" />
-                                    <TextBlock Text="PNG / JPEG・アバターの背景に" Foreground="#CCFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+                                    <TextBlock Text="アバターの背景になる画像" Foreground="#CCFFFFFF" FontSize="11" HorizontalAlignment="Center" />
                                 </StackPanel>
                             </Border>
 
