@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
@@ -39,7 +40,10 @@ public sealed class VrChatOscListener : IDisposable
         BindFailed = false;
         try
         {
-            _client = new UdpClient(port);
+            // ループバック限定で bind する。VRChat の OSC 出力は必ず 127.0.0.1 宛なので
+            // これで受信でき、かつ非ループバックの待ち受けを開かないので Windows
+            // ファイアウォールの許可ダイアログが出ない(LAN 側にも晒さない)。
+            _client = new UdpClient(new IPEndPoint(IPAddress.Loopback, port));
         }
         catch (SocketException)
         {
