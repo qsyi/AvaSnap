@@ -28,11 +28,21 @@ public partial class ControlPanelWindow
 
     private void InitProjectAutoSave()
     {
-        ProjectService.PruneOlderThan(ProjectRetentionDays); // 起動時に1回、古いものを整理
         _pristineComposite = CaptureCompositeSnapshot();
         _projectSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _projectSaveTimer.Tick += (_, _) => SaveCurrentProject();
         UpdateProjectNameUi();
+
+        // 古いプロジェクトの整理と取り残し .tmp の掃除はディスク I/O + シェル操作なので
+        // ウィンドウ生成を止めないようバックグラウンドで。終わったらホーム一覧を更新。
+        _ = Task.Run(() =>
+        {
+            ProjectService.PruneOlderThan(ProjectRetentionDays);
+            ProjectService.SweepOrphanTempFiles();
+        }).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+        {
+            if (HomePanel.Visibility == Visibility.Visible) RefreshRecentProjectsUi();
+        }));
     }
 
     /// <summary>編集が起きたことを記録し、自動保存を(デバウンスして)予約する。
@@ -59,6 +69,31 @@ public partial class ControlPanelWindow
         _projectDirty = false;
         if (!HasProjectContent) return;
         ProjectService.Save(BuildProjectDto(), _currentProjectPath);
+    }
+
+    // 埋め込みプレビューは高頻度の自動保存のたびに再エンコードすると重いので、
+    // 10 秒ごとに1回だけ作り直してキャッシュを使い回す(サムネイルなので多少古くても可)。
+    private string? _previewCacheB64;
+    private DateTime _previewCacheUtc = DateTime.MinValue;
+    private static readonly TimeSpan PreviewMaxAge = TimeSpan.FromSeconds(10);
+
+    private void InvalidatePreviewCache()
+    {
+        _previewCacheB64 = null;
+        _previewCacheUtc = DateTime.MinValue;
+    }
+
+    /// <summary>埋め込み用プレビューを Base64 で返す。10 秒以内の再要求はキャッシュを返す。
+    /// 合成結果がまだ無い間は直近のキャッシュ(無ければ <c>null</c>)。</summary>
+    private string? BuildProjectPreviewBase64()
+    {
+        if (_previewCacheB64 is not null && DateTime.UtcNow - _previewCacheUtc < PreviewMaxAge)
+            return _previewCacheB64;
+        if (BuildProjectPreviewJpeg() is not { } jpeg)
+            return _previewCacheB64;
+        _previewCacheB64 = Convert.ToBase64String(jpeg);
+        _previewCacheUtc = DateTime.UtcNow;
+        return _previewCacheB64;
     }
 
     /// <summary>ホーム一覧カード用の小さなプレビューを JPEG バイト列で返す(埋め込み用)。
@@ -99,6 +134,7 @@ public partial class ControlPanelWindow
             return;
         }
         _currentProjectPath = path;
+        InvalidatePreviewCache(); // 別プロジェクトのサムネイルを埋め込まないように
         ApplyProjectDto(dto);
         UpdateProjectNameUi();
         ShowComposite();
@@ -109,6 +145,7 @@ public partial class ControlPanelWindow
     {
         SaveCurrentProject();       // 現在のを確定してから(確認ダイアログは無し)
         _currentProjectPath = ProjectService.NewProjectPath();
+        InvalidatePreviewCache();
         ClearRetouchState();
         _projectDirty = false;      // 画像を読み込むまではファイルを作らない
         UpdateProjectNameUi();
@@ -298,8 +335,7 @@ public partial class ControlPanelWindow
             SplitCount = _splitCount,
             SplitGapPx = _splitGapPx,
         };
-        if (BuildProjectPreviewJpeg() is { } jpeg)
-            dto.PreviewJpegBase64 = Convert.ToBase64String(jpeg);
+        dto.PreviewJpegBase64 = BuildProjectPreviewBase64();
         foreach (var l in _decalLayerOrder)
         {
             dto.Decals.Add(l is null

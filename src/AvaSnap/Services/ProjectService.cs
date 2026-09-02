@@ -157,6 +157,24 @@ public static class ProjectService
         catch (UnauthorizedAccessException) { }
     }
 
+    /// <summary>書き込み中断(クラッシュ等)で取り残された <c>.avasnap.tmp</c> を削除する。
+    /// 起動時に1回。フォルダを .avasnap だけに保つため。</summary>
+    public static void SweepOrphanTempFiles()
+    {
+        try
+        {
+            if (!Directory.Exists(ProjectsDir)) return;
+            foreach (var p in Directory.GetFiles(ProjectsDir, "*" + Extension + ".tmp"))
+            {
+                try { File.Delete(p); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     /// <summary>共有違反(保存直後の一時ロック・AV スキャン等)で失敗しても数回だけ
     /// 短く待って読み直す。ファイルが無ければ <c>null</c>。</summary>
     private static string? TryReadAllText(string path)
