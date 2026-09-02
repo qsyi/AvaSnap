@@ -141,14 +141,30 @@ public partial class ControlPanelWindow
         _projectDirty = false; // 開いた直後は未変更(ShowComposite のレンダーで付いた分を消す)
     }
 
-    private void NewProjectButton_Click(object sender, RoutedEventArgs e)
+    private void NewProjectButton_Click(object sender, RoutedEventArgs e) => StartNewProject();
+
+    /// <summary>現在のプロジェクトを確定し、新しい空プロジェクトへ切り替える
+    /// (確認ダイアログは無し)。ホームの「新規プロジェクトで開く」と
+    /// レタッチモードの「新規プロジェクト」ボタンの共通処理。</summary>
+    private void StartNewProject()
     {
-        SaveCurrentProject();       // 現在のを確定してから(確認ダイアログは無し)
+        SaveCurrentProject();       // 現在のを確定してから
         _currentProjectPath = ProjectService.NewProjectPath();
         InvalidatePreviewCache();
         ClearRetouchState();
         _projectDirty = false;      // 画像を読み込むまではファイルを作らない
         UpdateProjectNameUi();
+    }
+
+    /// <summary>ホームのレタッチモードカードのボタンを、作業中プロジェクトの有無で切り替える。
+    /// 有り: 「続きから開く」+「新規プロジェクトで開く」、無し: 「開く」のみ。
+    /// 「有り」= 既に保存済みのファイルがある、または未保存の変更を持っている状態。
+    /// 起動直後(新規パス・未編集。前回のアバター画像だけ復元)は「無し」。</summary>
+    private void UpdateCompositeModeCard()
+    {
+        bool hasWip = File.Exists(_currentProjectPath) || (_projectDirty && HasProjectContent);
+        CompositeModeButton.Content = hasWip ? "続きから開く" : "開く";
+        CompositeModeNewButton.Visibility = hasWip ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateProjectNameUi() =>

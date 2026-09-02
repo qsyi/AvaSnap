@@ -248,6 +248,7 @@ public partial class ControlPanelWindow : Window
         Width = 400;
         Height = HomeHeight;
         RefreshRecentProjectsUi(); // .avasnap があればセクションを出し、その分ウィンドウを高くする
+        UpdateCompositeModeCard(); // 作業中プロジェクトの有無でレタッチカードのボタンを切り替え
         PinToRightEdge();
 
         // ホームは位置合わせ用ではないので、ライブオーバーレイがここで VRChat の上に
@@ -394,6 +395,12 @@ public partial class ControlPanelWindow : Window
     private void AlignModeButton_Click(object sender, RoutedEventArgs e) => ShowAlign();
 
     private void CompositeModeButton_Click(object sender, RoutedEventArgs e) => ShowComposite();
+
+    private void CompositeModeNewButton_Click(object sender, RoutedEventArgs e)
+    {
+        StartNewProject();
+        ShowComposite();
+    }
 
     private void BackToHome_Click(object sender, RoutedEventArgs e) => ShowHome();
 

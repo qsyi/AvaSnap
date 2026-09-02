@@ -1233,8 +1233,17 @@
                                Foreground="{DynamicResource TextPrimaryBrush}" />
                     <TextBlock Text="画像を色調補正・トリミング・エフェクトで仕上げます。写真とアバター画像の合成にも対応。" FontSize="12"
                                Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,14" />
-                    <Button Content="開く" Style="{StaticResource SecondaryPillButton}" FontSize="13" HorizontalAlignment="Left"
-                            Click="CompositeModeButton_Click" />
+                    <!-- 作業中のプロジェクトがある(HasProjectContent)ときだけ「新規プロジェクトで開く」を
+                         並べて出す。そのとき「開く」は「続きから開く」に切り替わる(ControlPanelWindow.Project.cs
+                         の UpdateCompositeModeCard)。 -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                        <Button x:Name="CompositeModeButton" Content="開く" Style="{StaticResource SecondaryPillButton}"
+                                FontSize="13" Click="CompositeModeButton_Click" />
+                        <Button x:Name="CompositeModeNewButton" Content="新規プロジェクトで開く" Style="{StaticResource BackButton}"
+                                FontSize="12" FontWeight="Normal" Foreground="{DynamicResource TextSecondaryBrush}"
+                                Margin="8,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"
+                                Click="CompositeModeNewButton_Click" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
