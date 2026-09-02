@@ -83,12 +83,11 @@ public static class ProjectService
 
     public const string Extension = ".avasnap";
 
-    /// <summary>Projects フォルダ内の .avasnap を保存日時の新しい順に列挙する
-    /// (プレビューは各ファイルから軽量パースで取り出す)。1つのファイルが一時的に
-    /// 読めなくても(保存直後のロック・AV スキャン・インデクサ等)一覧全体を空に
-    /// せず、そのファイルは最小情報のまま残す ── これをやらないと「最近のプロジェクト」
-    /// がときどき丸ごと消える。</summary>
-    public static IReadOnlyList<ProjectInfo> ListProjects()
+    /// <summary>Projects フォルダ内の .avasnap を新しい順に最大 <paramref name="max"/> 件。
+    /// まず安価な更新時刻で並べて上位だけを開く(全件フルパースしない)。1つのファイルが
+    /// 一時的に読めなくても(保存直後のロック・AV スキャン等)そのファイルは最小情報の
+    /// まま残す ── 一覧が丸ごと消えないように。</summary>
+    public static IReadOnlyList<ProjectInfo> ListProjects(int max = 10)
     {
         string[] files;
         try
@@ -99,14 +98,16 @@ public static class ProjectService
         catch (IOException) { return Array.Empty<ProjectInfo>(); }
         catch (UnauthorizedAccessException) { return Array.Empty<ProjectInfo>(); }
 
-        var list = new List<ProjectInfo>(files.Length);
-        foreach (var p in files)
-        {
-            DateTime saved = DateTime.MinValue;
-            try { saved = File.GetLastWriteTimeUtc(p); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+        var recent = files
+            .Select(p => (Path: p, Mtime: SafeMtime(p)))
+            .OrderByDescending(t => t.Mtime)
+            .Take(Math.Max(0, max))
+            .ToList();
 
+        var list = new List<ProjectInfo>(recent.Count);
+        foreach (var (p, mtime) in recent)
+        {
+            DateTime saved = mtime;
             byte[]? preview = null;
             if (TryReadAllText(p) is { } text)
             {
@@ -127,6 +128,33 @@ public static class ProjectService
             list.Add(new ProjectInfo(p, Path.GetFileNameWithoutExtension(p), saved, preview));
         }
         return list.OrderByDescending(i => i.ModifiedUtc).ToList();
+    }
+
+    private static DateTime SafeMtime(string path)
+    {
+        try { return File.GetLastWriteTimeUtc(path); }
+        catch (IOException) { return DateTime.MinValue; }
+        catch (UnauthorizedAccessException) { return DateTime.MinValue; }
+    }
+
+    /// <summary><paramref name="days"/> 日以上更新のない .avasnap をゴミ箱へ移す(元に戻せる)。
+    /// 起動時に1回だけ呼ぶ想定。中身は開かず更新時刻だけで判定する。</summary>
+    public static void PruneOlderThan(int days)
+    {
+        try
+        {
+            if (!Directory.Exists(ProjectsDir)) return;
+            DateTime cutoff = DateTime.UtcNow.AddDays(-days);
+            foreach (var p in Directory.GetFiles(ProjectsDir, "*" + Extension))
+            {
+                if (SafeMtime(p) < cutoff)
+                {
+                    try { RecycleFile(p); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+                }
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     /// <summary>共有違反(保存直後の一時ロック・AV スキャン等)で失敗しても数回だけ

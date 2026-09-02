@@ -23,8 +23,12 @@ public partial class ControlPanelWindow
     private DispatcherTimer? _projectSaveTimer;
     private CompositeSnapshot? _pristineComposite; // 起動直後の既定値。新規プロジェクトのリセットに使う
 
+    private const int ProjectRetentionDays = 90;
+    private const int RecentProjectsShown = 10;
+
     private void InitProjectAutoSave()
     {
+        ProjectService.PruneOlderThan(ProjectRetentionDays); // 起動時に1回、古いものを整理
         _pristineComposite = CaptureCompositeSnapshot();
         _projectSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _projectSaveTimer.Tick += (_, _) => SaveCurrentProject();
@@ -88,7 +92,12 @@ public partial class ControlPanelWindow
             return;
         }
         SaveCurrentProject();
-        if (ProjectService.Load(path) is not { } dto) return;
+        if (ProjectService.Load(path) is not { } dto)
+        {
+            FlashRecentProjectsNote("プロジェクトを開けませんでした。");
+            RefreshRecentProjectsUi();
+            return;
+        }
         _currentProjectPath = path;
         ApplyProjectDto(dto);
         UpdateProjectNameUi();
@@ -120,15 +129,36 @@ public partial class ControlPanelWindow
     }
 
     private const int ProjectCardWidth = 150;
+    private const string RecentProjectsNoteDefault =
+        "90日以上開いていないプロジェクトは自動的にゴミ箱へ移動します。";
+    private DispatcherTimer? _recentNoteResetTimer;
+
+    /// <summary>「最近のプロジェクト」欄の注記行に一時的なメッセージを出し、
+    /// 数秒後に既定の説明文へ戻す。</summary>
+    private void FlashRecentProjectsNote(string message)
+    {
+        RecentProjectsNote.Text = message;
+        _recentNoteResetTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _recentNoteResetTimer.Stop();
+        _recentNoteResetTimer.Tick -= RecentNoteResetTick;
+        _recentNoteResetTimer.Tick += RecentNoteResetTick;
+        _recentNoteResetTimer.Start();
+    }
+
+    private void RecentNoteResetTick(object? sender, EventArgs e)
+    {
+        _recentNoteResetTimer?.Stop();
+        RecentProjectsNote.Text = RecentProjectsNoteDefault;
+    }
 
     /// <summary>ホームの「最近のプロジェクト」列を作り直す。空なら区画ごと隠し、
     /// あればウィンドウを少し高くして収める。</summary>
     private void RefreshRecentProjectsUi()
     {
         RecentProjectsPanel.Children.Clear();
-        var list = ProjectService.ListProjects()
+        var list = ProjectService.ListProjects(RecentProjectsShown + 1)
             .Where(p => !string.Equals(p.Path, _currentProjectPath, StringComparison.OrdinalIgnoreCase))
-            .Take(30)
+            .Take(RecentProjectsShown)
             .ToList();
 
         bool has = list.Count > 0;
@@ -137,7 +167,7 @@ public partial class ControlPanelWindow
             RecentProjectsPanel.Children.Add(CreateProjectCard(info));
 
         if (HomePanel.Visibility == Visibility.Visible)
-            Height = HomeHeight + (has ? 176 : 0);
+            Height = HomeHeight + (has ? 214 : 0); // カード + 日付 + 横スクロールバー + 注記行のぶん
     }
 
     private FrameworkElement CreateProjectCard(ProjectInfo info)
@@ -160,7 +190,8 @@ public partial class ControlPanelWindow
                 bmp.StreamSource = new MemoryStream(bytes);
                 bmp.EndInit();
                 bmp.Freeze();
-                thumbHost.Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill };
+                // Uniform + Border 背景をマットにして、縦写真が強く切れないようにする
+                thumbHost.Child = new Image { Source = bmp, Stretch = Stretch.Uniform };
             }
             catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException) { }
         }
@@ -193,6 +224,7 @@ public partial class ControlPanelWindow
         {
             ProjectService.Delete(info.Path); // ゴミ箱へ(元に戻せる)
             RefreshRecentProjectsUi();
+            FlashRecentProjectsNote("ゴミ箱に移動しました。");
         };
         btn.ContextMenu = new ContextMenu
         {

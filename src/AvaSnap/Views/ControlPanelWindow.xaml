@@ -1264,6 +1264,9 @@
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                     <StackPanel x:Name="RecentProjectsPanel" Orientation="Horizontal" />
                 </ScrollViewer>
+                <TextBlock x:Name="RecentProjectsNote" Margin="2,6,0,0" FontSize="10"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="90日以上開いていないプロジェクトは自動的にゴミ箱へ移動します。" />
             </StackPanel>
         </StackPanel>
 
