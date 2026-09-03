@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using ComputeSharp;
 
 namespace AvaSnap.Services;
@@ -12,6 +13,33 @@ namespace AvaSnap.Services;
 public static class GpuDepthBlur
 {
     private const int WorkLongEdge = 1280;
+
+    /// <summary>BGRA バッファ(stride = width*4)に被写界深度ぼかしを適用する。GPU が
+    /// 無い/失敗したら false(<paramref name="pixels"/> は不変)。GpuToneGradient.TryApply
+    /// と同じ「アップロード1回 → 処理 → ダウンロード1回」の契約。</summary>
+    public static bool TryApply(byte[] pixels, int stride, int width, int height,
+        DepthMap depth, double focus, double strength, double maxRadius)
+    {
+        if (strength <= 0 || maxRadius <= 0) return true;
+        if (stride != width * 4 || pixels.Length < stride * height) return false;
+        if (GpuAvailability.Device is not { } device) return false;
+
+        try
+        {
+            Span<Bgra32> span = MemoryMarshal.Cast<byte, Bgra32>(pixels.AsSpan(0, stride * height));
+            ReadWriteTexture2D<Bgra32, float4> texture = GpuTexturePool.Rent(device, "DepthBlur.In", width, height);
+            texture.CopyFrom(span);
+
+            if (!ApplyToTexture(texture, device, width, height, depth, focus, strength, maxRadius)) return false;
+
+            texture.CopyTo(span);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
     /// <summary>GPU 上の合成テクスチャ <paramref name="texture"/> に in-place で適用する。
     /// <paramref name="depth"/> は 0..1(1 = 手前)。<paramref name="focus"/> も 0..1。

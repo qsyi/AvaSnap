@@ -61,6 +61,11 @@ public sealed record CompositePlacement(
     double CompositePlaceX, double CompositePlaceY, double CompositePlaceWidth, double CompositePlaceHeight,
     double CompositeRotation);
 
+/// <summary>被写界深度(深度依存ぼかし)。深度マップ自体は合成から再計算する派生
+/// データなので保持せず、有効フラグとピント/強さ/最大半径/高精度だけを持つ。</summary>
+public sealed record CompositeDepthBlur(
+    bool DepthBlurEnabled, double DepthFocus, double DepthStrength, double DepthMaxRadius, bool DepthHighPrecision);
+
 /// <summary>「背景なしで作成」キャンバスの単色/グラデーション設定。</summary>
 public sealed record CompositeBlankCanvas(
     byte BlankCanvasR, byte BlankCanvasG, byte BlankCanvasB,
@@ -81,6 +86,7 @@ public sealed record CompositeSnapshot(
     EquatableArray<DecalEntrySnapshot> Decals,
     CompositeBlankCanvas BlankCanvas,
     CompositeMasks Masks,
+    CompositeDepthBlur DepthBlur,
     ImageAdjustment.PixelBuffer? PhotoBuffer);
 
 public partial class ControlPanelWindow : Window
@@ -146,6 +152,7 @@ public partial class ControlPanelWindow : Window
         RefreshWatchFolderText();
         RefreshPhotoLookUI();
         RefreshFinishUI();
+        RefreshDepthBlurUi();
         RefreshSkipAvatarUI();
         RefreshSplitGapRowEnabled();
         PreviewKeyDown += ControlPanelWindow_PreviewKeyDown;
@@ -2198,6 +2205,21 @@ public partial class ControlPanelWindow : Window
     private double _skinWbAmount;
     private byte _skinWbR = 255, _skinWbG = 255, _skinWbB = 255;
 
+    /// <summary>被写界深度(深度依存ぼかし)。<see cref="_depthMap"/> は Depth Anything V2
+    /// で合成結果から推定した相対深度(0..1、1=手前)。ボタンで明示的に計算し、合成に
+    /// 影響する変更で <see cref="_depthMapStale"/> を立てる(自動再計算はしない)。
+    /// _depthMap はプロジェクトに保存せず、読み込み時に有効なら1回計算する。
+    /// GpuDepthBlur 参照。</summary>
+    private bool _depthBlurEnabled;
+    private double _depthFocus = 0.6;
+    private double _depthStrength = 40;
+    private double _depthMaxRadius = 14;
+    private bool _depthHighPrecision;
+    private DepthMap? _depthMap;
+    private bool _depthMapStale;
+    private bool _depthComputing;
+    private DepthEstimator? _depthEstimator;
+
     /// <summary>0..100、0 = オフ。アバターのシルエットをオフセット/ぼかし/着色して
     /// 複製する(ImageAdjustment.ApplyDropShadow 参照)。アバター読み込み時のみ効果が
     /// あるので、RenderCompositePreview のアバター無し分岐ではスキップされる。</summary>
@@ -2727,6 +2749,7 @@ public partial class ControlPanelWindow : Window
             BlankCanvasR2: _blankCanvasR2, BlankCanvasG2: _blankCanvasG2, BlankCanvasB2: _blankCanvasB2,
             BlankCanvasGradientEnabled: _blankCanvasGradientEnabled, BlankCanvasGradientDirection: _blankCanvasGradientDirection, IsBlankCanvasActive: _isBlankCanvasActive),
         CaptureMaskSnapshot(),
+        new CompositeDepthBlur(_depthBlurEnabled, _depthFocus, _depthStrength, _depthMaxRadius, _depthHighPrecision),
         _photoPixelBuffer);
 
     private void ApplyCompositeSnapshot(object? snapshot)
@@ -2776,6 +2799,11 @@ public partial class ControlPanelWindow : Window
         _skinWbR = s.Finish.SkinWbR;
         _skinWbG = s.Finish.SkinWbG;
         _skinWbB = s.Finish.SkinWbB;
+        _depthBlurEnabled = s.DepthBlur.DepthBlurEnabled;
+        _depthFocus = s.DepthBlur.DepthFocus;
+        _depthStrength = s.DepthBlur.DepthStrength;
+        _depthMaxRadius = s.DepthBlur.DepthMaxRadius;
+        _depthHighPrecision = s.DepthBlur.DepthHighPrecision;
         _dropShadowAmount = s.DropShadow.DropShadowAmount;
         _dropShadowDirection = s.DropShadow.DropShadowDirection;
         _dropShadowDistance = s.DropShadow.DropShadowDistance;
@@ -2827,6 +2855,7 @@ public partial class ControlPanelWindow : Window
         ApplyMaskSnapshot(s.Masks);
         RefreshPhotoLookUI();
         RefreshFinishUI();
+        RefreshDepthBlurUi();
         RefreshCompositePlacementUI();
         ScheduleCompositeRender();
     }
@@ -4043,6 +4072,7 @@ public partial class ControlPanelWindow : Window
                         : BlendMasked(RunNoAvatar, photoAdjustments, snap.Finish.ToneGradientAmount, snap.Finish.LightLeakAmount,
                             maskPlanNoAvatar, new int[maskPlanNoAvatar.Count],
                             maskCropNoAvatar.Left, maskCropNoAvatar.Top, maskCropNoAvatar.Width, maskCropNoAvatar.Height, photoOnlyScale);
+                    result = ApplyDepthBlurToComposite(result, photoOnlyScale);
                     result = ApplyInFrontOfAvatarDecals(result, frontDecalsNoAvatar, photoOnlyScale);
                     return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, snap.CanvasCrop.CanvasAspectRatio, snap.CanvasCrop.CanvasCropOffsetX, snap.CanvasCrop.CanvasCropOffsetY, snap.CanvasCrop.CanvasCropWidthPercent, snap.CanvasCrop.CanvasCropHeightPercent);
                 });
@@ -4200,6 +4230,7 @@ public partial class ControlPanelWindow : Window
                     ? RunAvatar(fullPhotoAdjustments, fullSnap.Finish.ToneGradientAmount, fullSnap.Finish.LightLeakAmount, 0)
                     : BlendMasked(RunAvatar, fullPhotoAdjustments, fullSnap.Finish.ToneGradientAmount, fullSnap.Finish.LightLeakAmount,
                         maskPlan, variantIndexPerGroup, maskCrop.Left, maskCrop.Top, maskCrop.Width, maskCrop.Height, previewScale);
+                result = ApplyDepthBlurToComposite(result, previewScale);
                 result = ApplyInFrontOfAvatarDecals(result, frontDecals, previewScale);
                 return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, fullSnap.CanvasCrop.CanvasAspectRatio, fullSnap.CanvasCrop.CanvasCropOffsetX, fullSnap.CanvasCrop.CanvasCropOffsetY, fullSnap.CanvasCrop.CanvasCropWidthPercent, fullSnap.CanvasCrop.CanvasCropHeightPercent);
             });
@@ -4852,6 +4883,9 @@ public partial class ControlPanelWindow : Window
     {
         if (CompositePanel.Visibility != Visibility.Visible) return;
         MarkProjectDirty(); // レタッチ中の編集はほぼ全てここを通る → 自動保存を予約
+        // 合成に影響する変更で深度マップは古くなる(被写界深度の焦点/強さ変更は
+        // _suppressDepthStale で除外 ── 合成自体は変わらないため)。
+        if (!_suppressDepthStale) MarkDepthMapStale();
 
         var elapsed = DateTime.UtcNow - _lastCompositeRender;
         if (elapsed >= CompositeRenderThrottle)
@@ -5354,7 +5388,14 @@ public partial class ControlPanelWindow : Window
         _dropShadowBlur = 10;
         _dropShadowColorB = _dropShadowColorG = _dropShadowColorR = 0;
         _dropShadowBlendMode = ImageAdjustment.DropShadowBlendMode.Multiply;
+        _depthBlurEnabled = false;
+        _depthShowMap = false;
+        _depthFocus = 0.6;
+        _depthStrength = 40;
+        _depthMaxRadius = 14;
+        _depthHighPrecision = false;
         RefreshFinishUI();
+        RefreshDepthBlurUi();
         ScheduleCompositeRender();
         _undo.CommitChange();
     }
@@ -6493,7 +6534,7 @@ public partial class ControlPanelWindow : Window
     //      そのピクセルをサンプルして押した行に適用する。サンプル元はアプリ内の
     //      プレビュー画像のみ(画面全体ではない)── OS の画面キャプチャ権限が不要。 ----
 
-    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2, ShapeDecal, SkinWb }
+    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2, ShapeDecal, SkinWb, DepthFocus }
 
     private ColorPickTarget _colorPickTarget = ColorPickTarget.None;
 
@@ -6548,6 +6589,22 @@ public partial class ControlPanelWindow : Window
         HideColorPickMagnifier();
 
         if (!TryImagePixelFromScreen(e.GetPosition(PreviewBorder), out var bmp, out var px, out var py)) return;
+
+        // 被写界深度のフォーカス選択は色ではなく深度マップの値を拾う。
+        if (target == ColorPickTarget.DepthFocus)
+        {
+            if (_depthMap is { } dm && bmp.PixelWidth > 0 && bmp.PixelHeight > 0)
+            {
+                double u = Math.Clamp(px / (double)bmp.PixelWidth, 0, 1);
+                double v = Math.Clamp(py / (double)bmp.PixelHeight, 0, 1);
+                int dx = Math.Clamp((int)(u * dm.Width), 0, dm.Width - 1);
+                int dy = Math.Clamp((int)(v * dm.Height), 0, dm.Height - 1);
+                SetDepthFocus(dm.Data[dy * dm.Width + dx]);
+                RefreshDepthBlurUi();
+            }
+            return;
+        }
+
         if (!TryGetPixelColor(bmp, px, py, out var r, out var g, out var b)) return;
 
         _undo.BeginChange(); // スポイトでの色確定を1 Undo ステップに(全ターゲット共通)

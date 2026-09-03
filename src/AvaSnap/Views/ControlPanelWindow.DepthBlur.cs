@@ -1,0 +1,281 @@
+using System.Globalization;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using AvaSnap.Services;
+
+namespace AvaSnap.Views;
+
+// ---- 被写界深度(深度依存ぼかし): Depth Anything V2 Small で合成結果から相対深度を
+//      推定し、ピント面から外れた画素をピラミッド補間でぼかす。深度マップは合成の
+//      スナップショットなので「深度を計算」ボタンで明示的に更新し、合成に影響する
+//      変更で「再計算が必要」を表示する(自動再計算はしない)。深度マップは .avasnap
+//      には保存せず、有効なプロジェクトを開いた直後に1回だけ計算する。 ----
+public partial class ControlPanelWindow
+{
+    /// <summary>合成に影響する変更が入ったら、キャッシュ済み深度マップを「古い」印にする。</summary>
+    private void MarkDepthMapStale()
+    {
+        if (_depthMap is null || _depthMapStale) return;
+        _depthMapStale = true;
+        RefreshDepthBlurUi();
+    }
+
+    /// <summary>レンダーされた合成 <paramref name="composite"/> に、キャッシュ済み深度で
+    /// 被写界深度ぼかしを適用する(レンダー用 Task スレッドから呼ばれる)。無効/未計算なら素通し。</summary>
+    private WriteableBitmap ApplyDepthBlurToComposite(WriteableBitmap composite, double renderScale)
+    {
+        // 計算中は素の合成を推定入力にしたいのでぼかしを挟まない。
+        if (!_depthBlurEnabled || _depthComputing || _depthMap is not { } dm) return composite;
+
+        int w = composite.PixelWidth, h = composite.PixelHeight;
+        if (w <= 0 || h <= 0) return composite;
+
+        if (_depthShowMap)
+            return DepthMapVisualization(dm, w, h);
+
+        if (_depthStrength <= 0 || _depthMaxRadius <= 0) return composite;
+
+        int stride = w * 4;
+        var pixels = new byte[stride * h];
+        composite.CopyPixels(pixels, stride, 0);
+
+        double radius = Math.Max(1, _depthMaxRadius * Math.Clamp(renderScale, 0.05, 1.0));
+        if (!GpuDepthBlur.TryApply(pixels, stride, w, h, dm, _depthFocus, _depthStrength, radius))
+            return composite;
+
+        var result = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+        result.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+        result.Freeze();
+        return result;
+    }
+
+    private static WriteableBitmap DepthMapVisualization(DepthMap dm, int w, int h)
+    {
+        var gray = new byte[dm.Width * dm.Height];
+        for (int i = 0; i < gray.Length; i++) gray[i] = (byte)Math.Clamp(dm.Data[i] * 255f, 0, 255);
+        var small = BitmapSource.Create(dm.Width, dm.Height, 96, 96, PixelFormats.Gray8, null, gray, dm.Width);
+        var scaled = new TransformedBitmap(small, new ScaleTransform(w / (double)dm.Width, h / (double)dm.Height));
+        var bgra = new FormatConvertedBitmap(scaled, PixelFormats.Bgra32, null, 0);
+        var wb = new WriteableBitmap(bgra);
+        wb.Freeze();
+        return wb;
+    }
+
+    /// <summary>現在の合成結果から深度マップを計算してキャッシュする。計算用のレンダーは
+    /// 深度ぼかしを一時的に切って(素の合成を推定入力にするため)行う。</summary>
+    public async Task ComputeDepthMapAsync()
+    {
+        if (_depthComputing || _photoPixelBuffer is null) return;
+        _depthComputing = true;
+        RefreshDepthBlurUi();
+        try
+        {
+            _depthEstimator ??= new DepthEstimator();
+            if (!_depthEstimator.TryInitialize(out var err))
+            {
+                if (!DepthModel.IsAvailable())
+                {
+                    ShowCompositeSaveStatus("深度モデルをダウンロードしています…", success: true);
+                    bool ok = await DepthModel.DownloadAsync(null);
+                    if (!ok || !_depthEstimator.TryInitialize(out err))
+                    {
+                        ShowCompositeSaveStatus("深度モデルを取得できませんでした。", success: false);
+                        return;
+                    }
+                }
+                else
+                {
+                    ShowCompositeSaveStatus(err ?? "深度エンジンを初期化できませんでした。", success: false);
+                    return;
+                }
+            }
+
+            // _depthComputing の間 ApplyDepthBlurToComposite はぼかしを挟まないので
+            // _lastComposite は素の合成になる。
+            await RenderCompositePreview();
+            var source = _lastComposite;
+
+            if (source is not { PixelWidth: > 0, PixelHeight: > 0 })
+            {
+                ShowCompositeSaveStatus("合成結果を取得できませんでした。", success: false);
+                return;
+            }
+
+            int w = source.PixelWidth, h = source.PixelHeight;
+            var pixels = new byte[w * 4 * h];
+            source.CopyPixels(pixels, w * 4, 0);
+            bool hp = _depthHighPrecision;
+
+            var map = await Task.Run(() => _depthEstimator!.Estimate(pixels, w, h, hp));
+            if (map is null)
+            {
+                ShowCompositeSaveStatus("深度の推定に失敗しました。", success: false);
+                return;
+            }
+
+            _depthMap = map;
+            _depthMapStale = false;
+            ShowCompositeSaveStatus($"深度を計算しました({(_depthEstimator!.UsingGpu ? "GPU" : "CPU")})。", success: true);
+            DepthRerender(); // 合成は変えていないので stale にしない
+        }
+        finally
+        {
+            _depthComputing = false;
+            RefreshDepthBlurUi();
+        }
+    }
+
+    private void DisposeDepthEstimator()
+    {
+        _depthEstimator?.Dispose();
+        _depthEstimator = null;
+        _depthMap = null;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        DisposeDepthEstimator();
+        base.OnClosed(e);
+    }
+
+    // ---- UI ----
+
+    private bool _suppressDepthStale;
+    private bool _depthShowMap;
+
+    /// <summary>被写界深度カードのボタン文言・状態表示・スライダー値を同期する。</summary>
+    private void RefreshDepthBlurUi()
+    {
+        _suppressEventsDepth++;
+        DepthBlurEnableButtonText.Text = _depthBlurEnabled ? "オン" : "オフ";
+        DepthBlurBody.IsEnabled = _depthBlurEnabled;
+        DepthBlurBody.Opacity = _depthBlurEnabled ? 1.0 : 0.5;
+        DepthComputeButton.IsEnabled = !_depthComputing && _photoPixelBuffer is not null;
+        DepthHighPrecisionButtonText.Text = _depthHighPrecision ? "高精度: オン" : "高精度: オフ";
+        DepthShowMapButtonText.Text = _depthShowMap ? "深度マップを表示: オン" : "深度マップを表示: オフ";
+
+        DepthStatusText.Text = _depthComputing ? "計算中…"
+            : _depthMap is null ? "未計算"
+            : _depthMapStale ? "再計算が必要(合成が変わりました)"
+            : "計算済み";
+
+        DepthFocusSlider.Value = _depthFocus * 100;
+        DepthFocusBox.Text = (_depthFocus * 100).ToString("F0", CultureInfo.InvariantCulture);
+        DepthStrengthSlider.Value = _depthStrength;
+        DepthStrengthBox.Text = _depthStrength.ToString("F0", CultureInfo.InvariantCulture);
+        DepthRadiusSlider.Value = _depthMaxRadius;
+        DepthRadiusBox.Text = _depthMaxRadius.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+    }
+
+    private void DepthBlurEnableButton_Click(object sender, RoutedEventArgs e)
+    {
+        _depthBlurEnabled = !_depthBlurEnabled;
+        RefreshDepthBlurUi();
+        if (_depthBlurEnabled && _depthMap is null && _photoPixelBuffer is not null)
+        {
+            _ = ComputeDepthMapAsync();
+            return;
+        }
+        DepthRerender();
+    }
+
+    private void DepthComputeButton_Click(object sender, RoutedEventArgs e) => _ = ComputeDepthMapAsync();
+
+    private void DepthFocusPickButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.DepthFocus);
+
+    private void DepthHighPrecisionButton_Click(object sender, RoutedEventArgs e)
+    {
+        _depthHighPrecision = !_depthHighPrecision;
+        if (_depthMap is not null) _depthMapStale = true; // 精度変更は再計算が要る
+        RefreshDepthBlurUi();
+    }
+
+    private void DepthShowMapButton_Click(object sender, RoutedEventArgs e)
+    {
+        _depthShowMap = !_depthShowMap;
+        RefreshDepthBlurUi();
+        DepthRerender();
+    }
+
+    private void DepthFocusSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        double rounded = Math.Round(DepthFocusSlider.Value);
+        _suppressEventsDepth++;
+        DepthFocusBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        SetDepthFocus(rounded / 100.0);
+    }
+
+    private void DepthFocusBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(DepthFocusBox.Text, out var v)) return;
+        SetDepthFocus(Math.Clamp(v, 0, 100) / 100.0);
+    }
+
+    private void SetDepthFocus(double focus01)
+    {
+        if (Math.Abs(focus01 - _depthFocus) < 1e-6) return;
+        _depthFocus = Math.Clamp(focus01, 0, 1);
+        DepthRerender();
+    }
+
+    private void DepthStrengthSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        double rounded = Math.Round(DepthStrengthSlider.Value);
+        _suppressEventsDepth++;
+        DepthStrengthBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        if (rounded == _depthStrength) return;
+        _depthStrength = rounded;
+        DepthRerender();
+    }
+
+    private void DepthStrengthBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(DepthStrengthBox.Text, out var v) || v < 0) return;
+        _depthStrength = v;
+        _suppressEventsDepth++;
+        DepthStrengthSlider.Value = Math.Clamp(v, 0, 100);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        DepthRerender();
+    }
+
+    private void DepthRadiusSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        double rounded = Math.Round(DepthRadiusSlider.Value);
+        _suppressEventsDepth++;
+        DepthRadiusBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        if (rounded == _depthMaxRadius) return;
+        _depthMaxRadius = rounded;
+        DepthRerender();
+    }
+
+    private void DepthRadiusBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(DepthRadiusBox.Text, out var v) || v < 1) return;
+        _depthMaxRadius = v;
+        _suppressEventsDepth++;
+        DepthRadiusSlider.Value = Math.Clamp(v, 2, 30);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        DepthRerender();
+    }
+
+    /// <summary>被写界深度パラメータだけの変更で再レンダー。合成自体は変わらないので
+    /// 深度マップを「古い」にはしない。</summary>
+    private void DepthRerender()
+    {
+        _suppressDepthStale = true;
+        try { ScheduleCompositeRender(); }
+        finally { _suppressDepthStale = false; }
+    }
+}

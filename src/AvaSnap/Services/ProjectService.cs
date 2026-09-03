@@ -36,6 +36,7 @@ public sealed class ProjectDto
     public CompositeCanvasCrop? CanvasCrop { get; set; }
     public CompositePlacement? Placement { get; set; }
     public CompositeMasks? Masks { get; set; }
+    public CompositeDepthBlur? DepthBlur { get; set; }
     public List<DecalDto> Decals { get; set; } = new();
 
     // ---- 保存設定 ----

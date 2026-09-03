@@ -317,6 +317,10 @@ public partial class ControlPanelWindow
         ClearMasks();
 
         if (_pristineComposite is { } d) ApplyCompositeSnapshot(d with { PhotoBuffer = null });
+        _depthMap = null;
+        _depthMapStale = false;
+        _depthShowMap = false;
+        RefreshDepthBlurUi();
         _compositePlacementInitialized = false;
         ClearCompositeSaveStatus();
         _undo.Clear();
@@ -348,6 +352,7 @@ public partial class ControlPanelWindow
             CanvasCrop = s.CanvasCrop,
             Placement = s.Placement,
             Masks = s.Masks,
+            DepthBlur = s.DepthBlur,
             SplitCount = _splitCount,
             SplitGapPx = _splitGapPx,
         };
@@ -435,6 +440,7 @@ public partial class ControlPanelWindow
             RebuildDecalArray(dto.Decals),
             dto.BlankCanvas ?? cur.BlankCanvas,
             dto.Masks ?? emptyMasks,
+            dto.DepthBlur ?? cur.DepthBlur,
             _photoPixelBuffer);
         ApplyCompositeSnapshot(cs);
 

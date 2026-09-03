@@ -4156,6 +4156,88 @@
                                 </StackPanel>
                             </Grid>
 
+                            <!-- 被写界深度(深度依存ぼかし): Depth Anything V2 Small で合成結果から
+                                 深度を推定し、ピント面から外れた画素をぼかす。深度は「深度を計算」で
+                                 明示的に更新(自動再計算はしない)。深度マップは .avasnap に保存しない。 -->
+                            <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,14,0,10" />
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="被写界深度" Style="{StaticResource SectionHeader}" FontSize="13"
+                                           Margin="0" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" x:Name="DepthBlurEnableButton" Style="{StaticResource SecondaryPillButton}"
+                                        FontSize="12" Padding="12,4" Click="DepthBlurEnableButton_Click">
+                                    <TextBlock x:Name="DepthBlurEnableButtonText" Text="オフ" />
+                                </Button>
+                            </Grid>
+                            <StackPanel x:Name="DepthBlurBody">
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" x:Name="DepthComputeButton" Style="{StaticResource SecondaryPillButton}"
+                                            FontSize="12" Padding="12,5" Click="DepthComputeButton_Click">
+                                        <TextBlock Text="深度を計算" />
+                                    </Button>
+                                    <Button Grid.Column="1" x:Name="DepthFocusPickButton" Style="{StaticResource SecondaryPillButton}"
+                                            FontSize="12" Padding="12,5" Margin="8,0,0,0" Click="DepthFocusPickButton_Click">
+                                        <TextBlock Text="フォーカス位置を選択" />
+                                    </Button>
+                                    <TextBlock Grid.Column="2" x:Name="DepthStatusText" VerticalAlignment="Center" Margin="10,0,0,0"
+                                               FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="未計算" TextWrapping="Wrap" />
+                                </Grid>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="ピント" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="ピントを合わせる深度(小さいほど奥、大きいほど手前)" />
+                                    <Slider Grid.Column="1" x:Name="DepthFocusSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                            ValueChanged="DepthFocusSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DepthFocusBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DepthFocusBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="強さ" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="ピントから外れた画素をどれだけ強くぼかすか" />
+                                    <Slider Grid.Column="1" x:Name="DepthStrengthSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                            ValueChanged="DepthStrengthSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DepthStrengthBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DepthStrengthBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="116" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="最大半径" Style="{StaticResource SliderRowLabel}" Width="116"
+                                               ToolTip="最も奥/手前でのぼかしの大きさ" />
+                                    <Slider Grid.Column="1" x:Name="DepthRadiusSlider" Margin="8,0,0,0" Minimum="2" Maximum="30" VerticalAlignment="Center"
+                                            ValueChanged="DepthRadiusSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DepthRadiusBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DepthRadiusBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                    <Button x:Name="DepthHighPrecisionButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
+                                            Padding="10,4" Click="DepthHighPrecisionButton_Click">
+                                        <TextBlock x:Name="DepthHighPrecisionButtonText" Text="高精度: オフ" />
+                                    </Button>
+                                    <Button x:Name="DepthShowMapButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
+                                            Padding="10,4" Margin="8,0,0,0" Click="DepthShowMapButton_Click">
+                                        <TextBlock x:Name="DepthShowMapButtonText" Text="深度マップを表示: オフ" />
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+
                             <Button Style="{StaticResource SecondaryPillButton}"
                                     HorizontalAlignment="Left" Margin="0,10,0,0" Click="ResetFinishButton_Click">
                                         <StackPanel Orientation="Horizontal">
