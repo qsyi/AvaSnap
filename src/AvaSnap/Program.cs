@@ -8,8 +8,12 @@ namespace AvaSnap;
 internal static class Program
 {
     [STAThread]
-    private static void Main(string[] args)
+    private static int Main(string[] args)
     {
+        // 診断: 深度推定だけを走らせて深度マップ PNG を書き出す(UI 無し)。
+        if (args.Length >= 3 && args[0] == "--depth-test")
+            return DepthDiagnostic.Run(args[1], args[2]);
+
         // WPF やアプリ状態に触れる前に必ず実行する。Velopack の初回起動/更新/
         // アンインストール呼び出し(ショートカット作成等)を処理し、その場合は
         // ウィンドウを開かず即プロセス終了する。Velopack インストール経由でなく
@@ -26,12 +30,13 @@ internal static class Program
         // 多重起動を1つに束ねる。2つ目以降は開きたい .avasnap を既存インスタンスへ
         // 渡して即終了する(ダブルクリック起動が毎回新プロセスになるのを防ぐ)。
         if (!SingleInstance.TryAcquire(args))
-            return;
+            return 0;
 
         var app = new App();
         app.InitializeComponent();
         app.Run();
 
         SingleInstance.Release();
+        return 0;
     }
 }

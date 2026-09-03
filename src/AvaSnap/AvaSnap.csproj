@@ -67,6 +67,11 @@
   <ItemGroup>
     <PackageReference Include="ComputeSharp" Version="3.2.0" />
     <PackageReference Include="Velopack" Version="1.2.0" />
+    <!-- 深度依存ぼかし(被写界深度)用の Depth Anything V2 Small 推論。DirectML EP で
+         既存要件の DX12 GPU 上で走る。ネイティブ onnxruntime.dll / DirectML.dll は
+         win-x64 self-contained publish に含まれる。モデル(.onnx)は同梱せず初回DL
+         (Services/DepthModel.cs)。ライセンス: ORT/DirectML=MIT、モデル=Apache-2.0。 -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
   </ItemGroup>
 
 </Project>
