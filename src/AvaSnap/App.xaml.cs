@@ -70,10 +70,9 @@ public partial class App : Application
 
         if (saved is not null)
         {
-            if (!string.IsNullOrEmpty(saved.ImagePath) && File.Exists(saved.ImagePath))
-            {
-                _state.ImagePath = saved.ImagePath;
-            }
+            // アバター画像は起動時に復元しない ── 背景写真と同じく、起動は常に
+            // 空の新規プロジェクトから始める(位置合わせモードも空)。前回使った
+            // アバターは下の RecentAvatarPaths のサムネイルからワンクリックで戻せる。
             _state.Width = saved.Width > 0 ? saved.Width : _state.Width;
             _state.Height = saved.Height > 0 ? saved.Height : _state.Height;
             _state.RotationDegrees = saved.RotationDegrees;
@@ -95,11 +94,6 @@ public partial class App : Application
 
         _overlayWindow = new OverlayWindow(_state, _undoManager, _oscListener);
         _overlayWindow.Show();
-
-        if (!string.IsNullOrEmpty(_state.ImagePath) && File.Exists(_state.ImagePath))
-        {
-            _overlayWindow.LoadImage(_state.ImagePath);
-        }
 
         // VRChat が既に起動していれば即アタッチして、最初から Z 順で追従させる
         // (Reset ごとにも再アタッチ)。
@@ -134,7 +128,16 @@ public partial class App : Application
         // 読み取り/監視を始めて安全(上の _unityCameraGuide 生成箇所のコメント参照)。
         _unityCameraGuide.Start();
 
-        if (saved?.RecentAvatarPaths is { } recentAvatars)
+        // 直近アバターのサムネイル履歴。旧バージョンの設定は RecentAvatarPaths を
+        // 持たず ImagePath だけのことがあるので、その場合は前回のアバターを先頭に補う
+        // (自動読み込みはしないが、ワンクリックで戻せるようにするため)。
+        var recentAvatars = new List<string>((IEnumerable<string>?)saved?.RecentAvatarPaths ?? Array.Empty<string>());
+        if (!string.IsNullOrEmpty(saved?.ImagePath) && File.Exists(saved.ImagePath)
+            && !recentAvatars.Any(p => string.Equals(p, saved.ImagePath, StringComparison.OrdinalIgnoreCase)))
+        {
+            recentAvatars.Insert(0, saved.ImagePath);
+        }
+        if (recentAvatars.Count > 0)
         {
             _controlPanelWindow.SetRecentAvatarPaths(recentAvatars);
         }
