@@ -31,7 +31,8 @@ public sealed record CompositePhotoLook(
     double PhotoBlurAmount);
 
 /// <summary>仕上げ(フィニッシュ)カードの効果量: グレイン/ビネット/ソフト/シャープ/
-/// フェード/グロー/色収差/カラーブリード/走査線/明瞭度/ライトリーク/トーングラデ。</summary>
+/// フェード/グロー/色収差/カラーブリード/走査線/明瞭度/ライトリーク/トーングラデ/
+/// 肌色ホワイトバランス。</summary>
 public sealed record CompositeFinish(
     double GrainAmount, double VignetteAmount,
     double SoftnessAmount, double SharpnessAmount,
@@ -41,7 +42,8 @@ public sealed record CompositeFinish(
     byte LightLeakColorB, byte LightLeakColorG, byte LightLeakColorR,
     double ToneGradientAmount, double ToneGradientRotation,
     byte ToneGradientLightR, byte ToneGradientLightG, byte ToneGradientLightB,
-    byte ToneGradientDarkR, byte ToneGradientDarkG, byte ToneGradientDarkB);
+    byte ToneGradientDarkR, byte ToneGradientDarkG, byte ToneGradientDarkB,
+    double SkinWbAmount = 0, byte SkinWbR = 255, byte SkinWbG = 255, byte SkinWbB = 255);
 
 /// <summary>ドロップシャドウの量/向き/距離/ぼかし/色/ブレンドモード。</summary>
 public sealed record CompositeDropShadow(
@@ -1021,6 +1023,7 @@ public partial class ControlPanelWindow : Window
         (s => (s.Finish.LightLeakAmount, s.Finish.LightLeakAngle, s.Finish.LightLeakDistance, s.Finish.LightLeakColorB, s.Finish.LightLeakColorG, s.Finish.LightLeakColorR), LightLeakSlider),
         (s => s.Finish.ToneGradientAmount, ToneGradientSlider),
         (s => s.Finish.ToneGradientRotation, ToneGradientDirectionSlider),
+        (s => (s.Finish.SkinWbAmount, s.Finish.SkinWbR, s.Finish.SkinWbG, s.Finish.SkinWbB), SkinWbSlider),
         (s => s.DropShadow.DropShadowAmount, DropShadowSlider),
         (s => s.DropShadow.DropShadowDirection, DropShadowDirectionSlider),
         (s => s.DropShadow.DropShadowDistance, DropShadowDistanceSlider),
@@ -2189,6 +2192,12 @@ public partial class ControlPanelWindow : Window
     private double _toneGradientLightHue, _toneGradientLightSat;
     private double _toneGradientDarkHue, _toneGradientDarkSat;
 
+    /// <summary>肌色ホワイトバランス: 0..100、0 = オフ。スポイトで拾った肌色
+    /// (_skinWbR/G/B、既定は白 = 無変化)を白の基準にして、合成全体(アバター +
+    /// 背景)を除算で補正する。GpuSkinWhiteBalance / GpuCompositeChain の stage 3 参照。</summary>
+    private double _skinWbAmount;
+    private byte _skinWbR = 255, _skinWbG = 255, _skinWbB = 255;
+
     /// <summary>0..100、0 = オフ。アバターのシルエットをオフセット/ぼかし/着色して
     /// 複製する(ImageAdjustment.ApplyDropShadow 参照)。アバター読み込み時のみ効果が
     /// あるので、RenderCompositePreview のアバター無し分岐ではスキップされる。</summary>
@@ -2654,7 +2663,8 @@ public partial class ControlPanelWindow : Window
                     toneGradientAmount: 50, toneGradientRotation: 0,
                     dropShadowAmount: 50, dropShadowDirection: 0, dropShadowDistance: 5, dropShadowBlur: 3,
                     dropShadowColorB: 0, dropShadowColorG: 0, dropShadowColorR: 0, dropShadowScale: 1.0,
-                    dropShadowTone: true, dropShadowDotSize: 4, dropShadowBlendMode: ImageAdjustment.DropShadowBlendMode.Normal);
+                    dropShadowTone: true, dropShadowDotSize: 4, dropShadowBlendMode: ImageAdjustment.DropShadowBlendMode.Normal,
+                    skinWbAmount: 40, skinWbR: 210, skinWbG: 180, skinWbB: 160);
 
                 var edgeBlurPixels = (byte[])overlayPixels.Clone();
                 GpuAvatarEdgeBlur.TryApply(edgeBlurPixels, stride, w, h, edgeBlurRadius: 5);
@@ -2699,7 +2709,8 @@ public partial class ControlPanelWindow : Window
             LightLeakColorB: _lightLeakColorB, LightLeakColorG: _lightLeakColorG, LightLeakColorR: _lightLeakColorR,
             ToneGradientAmount: _toneGradientAmount, ToneGradientRotation: _toneGradientRotation,
             ToneGradientLightR: _toneGradientLightR, ToneGradientLightG: _toneGradientLightG, ToneGradientLightB: _toneGradientLightB,
-            ToneGradientDarkR: _toneGradientDarkR, ToneGradientDarkG: _toneGradientDarkG, ToneGradientDarkB: _toneGradientDarkB),
+            ToneGradientDarkR: _toneGradientDarkR, ToneGradientDarkG: _toneGradientDarkG, ToneGradientDarkB: _toneGradientDarkB,
+            SkinWbAmount: _skinWbAmount, SkinWbR: _skinWbR, SkinWbG: _skinWbG, SkinWbB: _skinWbB),
         new CompositeDropShadow(
             DropShadowAmount: _dropShadowAmount, DropShadowDirection: _dropShadowDirection, DropShadowDistance: _dropShadowDistance, DropShadowBlur: _dropShadowBlur,
             DropShadowColorB: _dropShadowColorB, DropShadowColorG: _dropShadowColorG, DropShadowColorR: _dropShadowColorR,
@@ -2761,6 +2772,10 @@ public partial class ControlPanelWindow : Window
         _toneGradientDarkR = s.Finish.ToneGradientDarkR;
         _toneGradientDarkG = s.Finish.ToneGradientDarkG;
         _toneGradientDarkB = s.Finish.ToneGradientDarkB;
+        _skinWbAmount = s.Finish.SkinWbAmount;
+        _skinWbR = s.Finish.SkinWbR;
+        _skinWbG = s.Finish.SkinWbG;
+        _skinWbB = s.Finish.SkinWbB;
         _dropShadowAmount = s.DropShadow.DropShadowAmount;
         _dropShadowDirection = s.DropShadow.DropShadowDirection;
         _dropShadowDistance = s.DropShadow.DropShadowDistance;
@@ -4020,7 +4035,8 @@ public partial class ControlPanelWindow : Window
                             lightLeakColorB: snap.Finish.LightLeakColorB, lightLeakColorG: snap.Finish.LightLeakColorG, lightLeakColorR: snap.Finish.LightLeakColorR,
                             toneGradientAmount: toneAmt, toneGradientRotation: snap.Finish.ToneGradientRotation,
                             toneGradientLightR: snap.Finish.ToneGradientLightR, toneGradientLightG: snap.Finish.ToneGradientLightG, toneGradientLightB: snap.Finish.ToneGradientLightB,
-                            toneGradientDarkR: snap.Finish.ToneGradientDarkR, toneGradientDarkG: snap.Finish.ToneGradientDarkG, toneGradientDarkB: snap.Finish.ToneGradientDarkB);
+                            toneGradientDarkR: snap.Finish.ToneGradientDarkR, toneGradientDarkG: snap.Finish.ToneGradientDarkG, toneGradientDarkB: snap.Finish.ToneGradientDarkB,
+                            skinWbAmount: snap.Finish.SkinWbAmount, skinWbR: snap.Finish.SkinWbR, skinWbG: snap.Finish.SkinWbG, skinWbB: snap.Finish.SkinWbB);
 
                     var result = maskPlanNoAvatar.Count == 0
                         ? RunNoAvatar(photoAdjustments, snap.Finish.ToneGradientAmount, snap.Finish.LightLeakAmount, 0)
@@ -4176,7 +4192,9 @@ public partial class ControlPanelWindow : Window
                         fullSnap.DropShadow.DropShadowAmount, fullSnap.DropShadow.DropShadowDirection, fullSnap.DropShadow.DropShadowDistance, fullSnap.DropShadow.DropShadowBlur,
                         fullSnap.DropShadow.DropShadowColorB, fullSnap.DropShadow.DropShadowColorG, fullSnap.DropShadow.DropShadowColorR, previewScale,
                         // トーン風(ハーフトーン)UIは削除済み: 常時オフのプレーンな影のみ。
-                        false, 8, fullSnap.DropShadow.DropShadowBlendMode);
+                        false, 8, fullSnap.DropShadow.DropShadowBlendMode,
+                        skinWbAmount: fullSnap.Finish.SkinWbAmount, skinWbR: fullSnap.Finish.SkinWbR,
+                        skinWbG: fullSnap.Finish.SkinWbG, skinWbB: fullSnap.Finish.SkinWbB);
 
                 var result = maskPlan.Count == 0
                     ? RunAvatar(fullPhotoAdjustments, fullSnap.Finish.ToneGradientAmount, fullSnap.Finish.LightLeakAmount, 0)
@@ -5290,6 +5308,10 @@ public partial class ControlPanelWindow : Window
         ToneGradientLightHexBox.Text = ToHexColor(_toneGradientLightR, _toneGradientLightG, _toneGradientLightB);
         ToneGradientDarkSwatch.Background = new SolidColorBrush(Color.FromRgb(_toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB));
         ToneGradientDarkHexBox.Text = ToHexColor(_toneGradientDarkR, _toneGradientDarkG, _toneGradientDarkB);
+        SkinWbBox.Text = _skinWbAmount.ToString("F0", CultureInfo.InvariantCulture);
+        SkinWbSlider.Value = _skinWbAmount;
+        SkinWbSwatch.Background = new SolidColorBrush(Color.FromRgb(_skinWbR, _skinWbG, _skinWbB));
+        SkinWbHexBox.Text = ToHexColor(_skinWbR, _skinWbG, _skinWbB);
         DropShadowBox.Text = _dropShadowAmount.ToString("F0", CultureInfo.InvariantCulture);
         DropShadowSlider.Value = _dropShadowAmount;
         DropShadowDirectionBox.Text = _dropShadowDirection.ToString("F0", CultureInfo.InvariantCulture);
@@ -5324,6 +5346,8 @@ public partial class ControlPanelWindow : Window
         _toneGradientRotation = 180;
         _toneGradientLightR = _toneGradientLightG = _toneGradientLightB = 255;
         _toneGradientDarkR = _toneGradientDarkG = _toneGradientDarkB = 0;
+        _skinWbAmount = 0;
+        _skinWbR = _skinWbG = _skinWbB = 255;
         _dropShadowAmount = 0;
         _dropShadowDirection = 0;
         _dropShadowDistance = 100;
@@ -5770,6 +5794,53 @@ public partial class ControlPanelWindow : Window
         _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _toneGradientAmount) return;
         _toneGradientAmount = rounded;
+        ScheduleCompositeRender();
+    }
+
+    // ---- 肌色ホワイトバランス: スポイトで拾った肌色が白になるよう合成全体を除算補正。
+    //      色行は スポイト + スウォッチ + HEX のみ(色ホイールポップアップは無し)。 ----
+
+    private void SkinWbBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParse(SkinWbBox.Text, out var v) || v < 0) return;
+        _skinWbAmount = v;
+        _suppressEventsDepth++;
+        SkinWbSlider.Value = v;
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        ScheduleCompositeRender();
+    }
+
+    private void SkinWbSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents) return;
+        double rounded = Math.Round(SkinWbSlider.Value);
+        _suppressEventsDepth++;
+        SkinWbBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        if (rounded == _skinWbAmount) return;
+        _skinWbAmount = rounded;
+        ScheduleCompositeRender();
+    }
+
+    private void SkinWbEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.SkinWb);
+
+    private void SkinWbHexBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents) return;
+        if (!TryParseHexColor(SkinWbHexBox.Text, out var r, out var g, out var b)) return;
+        SetSkinWb(r, g, b);
+    }
+
+    private void SetSkinWb(byte r, byte g, byte b)
+    {
+        _skinWbR = r;
+        _skinWbG = g;
+        _skinWbB = b;
+        _suppressEventsDepth++;
+        SkinWbSwatch.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
+        SkinWbHexBox.Text = ToHexColor(r, g, b);
+        _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         ScheduleCompositeRender();
     }
 
@@ -6422,7 +6493,7 @@ public partial class ControlPanelWindow : Window
     //      そのピクセルをサンプルして押した行に適用する。サンプル元はアプリ内の
     //      プレビュー画像のみ(画面全体ではない)── OS の画面キャプチャ権限が不要。 ----
 
-    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2, ShapeDecal }
+    private enum ColorPickTarget { None, DropShadow, LightLeak, AvatarTint, PhotoTint, ToneGradientLight, ToneGradientDark, BlankCanvas, BlankCanvas2, ShapeDecal, SkinWb }
 
     private ColorPickTarget _colorPickTarget = ColorPickTarget.None;
 
@@ -6491,6 +6562,7 @@ public partial class ControlPanelWindow : Window
             case ColorPickTarget.BlankCanvas: SetBlankCanvasColor(r, g, b); break;
             case ColorPickTarget.BlankCanvas2: SetBlankCanvasColor2(r, g, b); break;
             case ColorPickTarget.ShapeDecal: SetShapeDecalColor(r, g, b); break;
+            case ColorPickTarget.SkinWb: SetSkinWb(r, g, b); break;
         }
         _undo.CommitChange();
     }

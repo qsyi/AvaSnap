@@ -813,7 +813,8 @@ public static class ImageAdjustment
         byte toneGradientDarkR = 0, byte toneGradientDarkG = 0, byte toneGradientDarkB = 0,
         double dropShadowAmount = 0, double dropShadowDirection = 0, double dropShadowDistance = 0, double dropShadowBlur = 0,
         byte dropShadowColorB = 0, byte dropShadowColorG = 0, byte dropShadowColorR = 0, double dropShadowScale = 1.0,
-        bool dropShadowTone = false, double dropShadowDotSize = 8, DropShadowBlendMode dropShadowBlendMode = DropShadowBlendMode.Multiply)
+        bool dropShadowTone = false, double dropShadowDotSize = 8, DropShadowBlendMode dropShadowBlendMode = DropShadowBlendMode.Multiply,
+        double skinWbAmount = 0, byte skinWbR = 255, byte skinWbG = 255, byte skinWbB = 255)
     {
         // 下のエフェクト連鎖(色調整・写真ぼかし・ドロップシャドウ・アバターブレンド・
         // 仕上げ各種・トーングラデ・色収差/カラーブリード・走査線・ビネット・グレイン)は
@@ -836,6 +837,7 @@ public static class ImageAdjustment
             fadeAmount,
             glowAmount, glowScale,
             lightLeakAmount, lightLeakAngle, lightLeakDistance, lightLeakColorB, lightLeakColorG, lightLeakColorR,
+            skinWbAmount, skinWbR, skinWbG, skinWbB,
             toneGradientAmount, toneGradientRotation,
             toneGradientLightR, toneGradientLightG, toneGradientLightB,
             toneGradientDarkR, toneGradientDarkG, toneGradientDarkB,

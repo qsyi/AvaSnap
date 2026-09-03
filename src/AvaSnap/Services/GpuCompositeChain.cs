@@ -39,6 +39,7 @@ public static class GpuCompositeChain
         double GlowAmount, double GlowScale,
         double LightLeakAmount, double LightLeakAngle, double LightLeakDistance,
         byte LightLeakColorB, byte LightLeakColorG, byte LightLeakColorR,
+        double SkinWbAmount, byte SkinWbR, byte SkinWbG, byte SkinWbB,
         double ToneGradientAmount, double ToneGradientRotation,
         byte ToneGradientLightR, byte ToneGradientLightG, byte ToneGradientLightB,
         byte ToneGradientDarkR, byte ToneGradientDarkG, byte ToneGradientDarkB,
@@ -83,7 +84,9 @@ public static class GpuCompositeChain
             || prev.GlowAmount != cur.GlowAmount || prev.GlowScale != cur.GlowScale
             || prev.LightLeakAmount != cur.LightLeakAmount || prev.LightLeakAngle != cur.LightLeakAngle
             || prev.LightLeakDistance != cur.LightLeakDistance || prev.LightLeakColorB != cur.LightLeakColorB
-            || prev.LightLeakColorG != cur.LightLeakColorG || prev.LightLeakColorR != cur.LightLeakColorR)
+            || prev.LightLeakColorG != cur.LightLeakColorG || prev.LightLeakColorR != cur.LightLeakColorR
+            || prev.SkinWbAmount != cur.SkinWbAmount || prev.SkinWbR != cur.SkinWbR
+            || prev.SkinWbG != cur.SkinWbG || prev.SkinWbB != cur.SkinWbB)
         {
             return 3;
         }
@@ -139,6 +142,7 @@ public static class GpuCompositeChain
         double glowAmount, double glowScale,
         double lightLeakAmount, double lightLeakAngle, double lightLeakDistance,
         byte lightLeakColorB, byte lightLeakColorG, byte lightLeakColorR,
+        double skinWbAmount, byte skinWbR, byte skinWbG, byte skinWbB,
         double toneGradientAmount, double toneGradientRotation,
         byte toneGradientLightR, byte toneGradientLightG, byte toneGradientLightB,
         byte toneGradientDarkR, byte toneGradientDarkG, byte toneGradientDarkB,
@@ -167,6 +171,7 @@ public static class GpuCompositeChain
             clarityAmount, clarityScale, fadeAmount,
             glowAmount, glowScale,
             lightLeakAmount, lightLeakAngle, lightLeakDistance, lightLeakColorB, lightLeakColorG, lightLeakColorR,
+            skinWbAmount, skinWbR, skinWbG, skinWbB,
             toneGradientAmount, toneGradientRotation,
             toneGradientLightR, toneGradientLightG, toneGradientLightB,
             toneGradientDarkR, toneGradientDarkG, toneGradientDarkB,
@@ -219,6 +224,7 @@ public static class GpuCompositeChain
                     softnessAmount, sharpnessAmount, finishDetailScale, clarityAmount, clarityScale, fadeAmount,
                     glowAmount, glowScale, lightLeakAmount, lightLeakAngle, lightLeakDistance,
                     lightLeakColorB, lightLeakColorG, lightLeakColorR,
+                    skinWbAmount, skinWbR, skinWbG, skinWbB,
                     toneGradientAmount, toneGradientRotation,
                     toneGradientLightR, toneGradientLightG, toneGradientLightB,
                     toneGradientDarkR, toneGradientDarkG, toneGradientDarkB,
@@ -256,6 +262,7 @@ public static class GpuCompositeChain
         double glowAmount, double glowScale,
         double lightLeakAmount, double lightLeakAngle, double lightLeakDistance,
         byte lightLeakColorB, byte lightLeakColorG, byte lightLeakColorR,
+        double skinWbAmount, byte skinWbR, byte skinWbG, byte skinWbB,
         double toneGradientAmount, double toneGradientRotation,
         byte toneGradientLightR, byte toneGradientLightG, byte toneGradientLightB,
         byte toneGradientDarkR, byte toneGradientDarkG, byte toneGradientDarkB,
@@ -282,6 +289,13 @@ public static class GpuCompositeChain
                     overlayPixels, overlayStride, overlayWidth, overlayHeight, left, top);
 
             case 3:
+                // 肌色ホワイトバランス(除算)を仕上げ効果の前に。アバター合成後なので
+                // アバターと背景の両方に効く「全体エフェクト」。
+                if (skinWbAmount > 0 && !GpuSkinWhiteBalance.ApplyToTexture(main, device, photoWidth, photoHeight,
+                        skinWbAmount, skinWbR, skinWbG, skinWbB))
+                {
+                    return false;
+                }
                 // GpuFinishingEffects.TryRunPreToneGradient と同じグループ分け。
                 return GpuFinishingEffects.ApplyToTexture(main, device, photoWidth, photoHeight,
                     softnessAmount, sharpnessAmount, finishDetailScale,

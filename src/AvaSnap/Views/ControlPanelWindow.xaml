@@ -4108,6 +4108,52 @@
                                                  TextChanged="LightLeakDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
 
+                                    <!-- 肌色ホワイトバランス: スポイトで拾った肌色を白の基準にして、
+                                         合成全体(アバター + 背景)を除算で補正する全体エフェクト。
+                                         GpuSkinWhiteBalance / GpuCompositeChain stage 3。 -->
+                                    <Grid Margin="0,6,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Grid.ColumnSpan="3" Text="肌色ホワイトバランス" Style="{StaticResource SliderRowLabel}"
+                                                   TextTrimming="None"
+                                                   ToolTip="スポイトで肌の色を拾うと、その色が白になるように合成全体を除算で補正します" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="・肌の色" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="白の基準にする色。スポイトでアバターの肌を拾ってください" Opacity="0.7" />
+                                        <Border Grid.Column="1" x:Name="SkinWbSwatch" CornerRadius="5" MinHeight="24"
+                                                Background="#FFFFFFFF" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                        <Button Grid.Column="2" x:Name="SkinWbEyedropperButton" Style="{StaticResource RotateIconButton}"
+                                                Margin="6,0,0,0" Click="SkinWbEyedropperButton_Click" ToolTip="プレビューから肌の色を拾う">
+                                            <ContentPresenter Content="{StaticResource EyedropperIcon}" />
+                                        </Button>
+                                        <TextBox Grid.Column="3" x:Name="SkinWbHexBox" Style="{StaticResource SliderRowBox}" Width="100"
+                                                 Margin="6,0,0,0" TextChanged="SkinWbHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
+                                                   ToolTip="補正の強さ(0で無効、100で拾った色がちょうど白)" Opacity="0.7" />
+                                        <Slider Grid.Column="1" x:Name="SkinWbSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="SkinWbSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="SkinWbBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="SkinWbBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                    </Grid>
+
                                 </StackPanel>
                             </Grid>
 
