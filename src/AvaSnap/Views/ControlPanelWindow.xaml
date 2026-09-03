@@ -116,9 +116,11 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <!-- CornerRadius は大きめ固定値。Border は各辺の半分までしか丸めないので
-                             どの高さでも常に「ピル(スタジアム)」形の端になる。 -->
-                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="1000">
+                        <!-- 固定 24px。このスタイルのボタンは最も背の高いもの(base の
+                             Padding 20,10 + FontSize 15)でも高さ ~41px なので、24 は
+                             常に「高さの半分以上」= 端が完全なピル形にクランプされる。
+                             大きいボタンの見た目は 1000 のときと同じで、値は固定。 -->
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="24">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Margin="{TemplateBinding Padding}" />
                         </Border>
