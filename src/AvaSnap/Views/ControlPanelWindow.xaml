@@ -116,10 +116,10 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <!-- CornerRadius は大きめ固定値。Border は各辺の半分までしか丸めないので
-                             どの高さでも常に「ピル(スタジアム)」形になる(小さいボタンで
-                             丸みが鋭く見えていた対策)。 -->
-                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="1000">
+                        <!-- CornerRadius は固定 px。小さいボタンでも大きいボタンでも角の
+                             見た目(弧の半径)を揃える ── 高さ半分を超える値にすると
+                             小さいボタンが楕円/レンズ状になって別物に見えるため。 -->
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="10">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Margin="{TemplateBinding Padding}" />
                         </Border>
