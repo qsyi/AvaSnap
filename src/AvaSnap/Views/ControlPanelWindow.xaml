@@ -4108,8 +4108,8 @@
                                                  TextChanged="LightLeakDirectionBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
 
-                                    <!-- 肌色ホワイトバランス: スポイトで拾った肌色を白の基準にして、
-                                         合成全体(アバター + 背景)を除算で補正する全体エフェクト。
+                                    <!-- 肌色補正: スポイトで拾った肌色を白の基準にして、合成全体
+                                         (アバター + 背景)を除算で補正する全体エフェクト。
                                          GpuSkinWhiteBalance / GpuCompositeChain stage 3。 -->
                                     <Grid Margin="0,6,0,4">
                                         <Grid.ColumnDefinitions>
@@ -4117,18 +4117,17 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Grid.ColumnSpan="3" Text="肌色ホワイトバランス" Style="{StaticResource SliderRowLabel}"
-                                                   TextTrimming="None"
+                                        <TextBlock Grid.Column="0" Text="肌色補正" Style="{StaticResource SliderRowLabel}" Width="116"
                                                    ToolTip="スポイトで肌の色を拾うと、その色が白になるように合成全体を除算で補正します" />
                                     </Grid>
                                     <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="140" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="・肌の色" Style="{StaticResource SliderRowLabel}" Width="116"
+                                        <TextBlock Grid.Column="0" Text="補正したい肌の色" Style="{StaticResource SliderRowLabel}" Width="140"
                                                    ToolTip="白の基準にする色。スポイトでアバターの肌を拾ってください" Opacity="0.7" />
                                         <Border Grid.Column="1" x:Name="SkinWbSwatch" CornerRadius="5" MinHeight="24"
                                                 Background="#FFFFFFFF" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
@@ -4141,11 +4140,11 @@
                                     </Grid>
                                     <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="140" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
+                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="140"
                                                    ToolTip="補正の強さ(0で無効、100で拾った色がちょうど白)" Opacity="0.7" />
                                         <Slider Grid.Column="1" x:Name="SkinWbSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
                                                 ValueChanged="SkinWbSlider_ValueChanged"
