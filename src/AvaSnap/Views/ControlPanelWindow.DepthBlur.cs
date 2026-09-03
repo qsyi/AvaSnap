@@ -156,10 +156,20 @@ public partial class ControlPanelWindow
         DepthHighPrecisionButtonText.Text = _depthHighPrecision ? "高精度: オン" : "高精度: オフ";
         DepthShowMapButtonText.Text = _depthShowMap ? "深度マップを表示: オン" : "深度マップを表示: オフ";
 
-        DepthStatusText.Text = _depthComputing ? "計算中…"
-            : _depthMap is null ? "未計算"
-            : _depthMapStale ? "再計算が必要(合成が変わりました)"
-            : "計算済み";
+        if (_depthMapStale && !_depthComputing && _depthMap is not null)
+        {
+            DepthStatusText.Text = "⚠ 再計算が必要(合成が変わりました)";
+            DepthStatusText.Foreground = (Brush)FindResource("AccentDarkBrush");
+            DepthStatusText.FontWeight = FontWeights.SemiBold;
+        }
+        else
+        {
+            DepthStatusText.Text = _depthComputing ? "計算中…"
+                : _depthMap is null ? "未計算"
+                : "計算済み";
+            DepthStatusText.Foreground = (Brush)FindResource("TextSecondaryBrush");
+            DepthStatusText.FontWeight = FontWeights.Normal;
+        }
 
         DepthFocusSlider.Value = _depthFocus * 100;
         DepthFocusBox.Text = (_depthFocus * 100).ToString("F0", CultureInfo.InvariantCulture);

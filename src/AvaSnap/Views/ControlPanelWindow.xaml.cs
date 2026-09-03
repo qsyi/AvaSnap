@@ -2212,7 +2212,7 @@ public partial class ControlPanelWindow : Window
     /// GpuDepthBlur 参照。</summary>
     private bool _depthBlurEnabled;
     private double _depthFocus = 0.6;
-    private double _depthStrength = 40;
+    private double _depthStrength = 20;
     private double _depthMaxRadius = 14;
     private bool _depthHighPrecision;
     private DepthMap? _depthMap;
@@ -5391,7 +5391,7 @@ public partial class ControlPanelWindow : Window
         _depthBlurEnabled = false;
         _depthShowMap = false;
         _depthFocus = 0.6;
-        _depthStrength = 40;
+        _depthStrength = 20;
         _depthMaxRadius = 14;
         _depthHighPrecision = false;
         RefreshFinishUI();
