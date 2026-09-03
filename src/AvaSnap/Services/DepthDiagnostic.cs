@@ -41,11 +41,12 @@ public static class DepthDiagnostic
             sw.Stop();
             if (depth is null) { Console.Error.WriteLine("推定に失敗しました。"); return 4; }
 
-            Console.WriteLine($"OK  {w}x{h}  GPU={est.UsingGpu}  {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"OK  {w}x{h} -> depth {depth.Width}x{depth.Height}  GPU={est.UsingGpu}  {sw.ElapsedMilliseconds} ms");
 
-            var gray = new byte[w * h];
-            for (int i = 0; i < gray.Length; i++) gray[i] = (byte)Math.Clamp(depth[i] * 255f, 0, 255);
-            var img = BitmapSource.Create(w, h, 96, 96, PixelFormats.Gray8, null, gray, w);
+            var gray = new byte[depth.Width * depth.Height];
+            for (int i = 0; i < gray.Length; i++) gray[i] = (byte)Math.Clamp(depth.Data[i] * 255f, 0, 255);
+            var small = BitmapSource.Create(depth.Width, depth.Height, 96, 96, PixelFormats.Gray8, null, gray, depth.Width);
+            var img = new TransformedBitmap(small, new ScaleTransform(w / (double)depth.Width, h / (double)depth.Height));
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(img));
             using var fs = File.Create(Path.GetFullPath(outPath));

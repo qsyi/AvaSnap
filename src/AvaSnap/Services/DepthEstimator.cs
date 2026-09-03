@@ -8,14 +8,18 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace AvaSnap.Services;
 
+/// <summary>相対深度マップ。<see cref="Data"/> は行優先・長さ Width*Height、値 0..1
+/// (1 = 最も手前)。モデル出力解像度そのまま(数百px)で返し、拡大は利用側(GPU)に任せる
+/// ── 深度は低周波なので粗くて足りるうえ、4K/8K のフルサイズ float 配列を避けられる。</summary>
+public sealed record DepthMap(float[] Data, int Width, int Height);
+
 /// <summary>Depth Anything V2 Small(fp16 ONNX)による単眼深度推定。合成結果(背景 +
 /// アバター)を入力に、被写界深度ぼかし用の相対深度マップを返す。ONNX Runtime +
 /// DirectML EP で、アプリが既に要求している DX12 GPU 上で走る(EP 生成に失敗したら
 /// CPU にフォールバック)。モデルの入出力は float32(重みのみ fp16、内部で Cast)。
 /// 前処理は preprocessor_config.json に合わせる: 1/255 → ImageNet 正規化、
 /// アスペクト維持で 14 の倍数へリサイズ(既定 518、高精度 1036)、NCHW。
-/// 出力(逆深度・大きいほど手前)は min-max 正規化し、8bit グレーとして元解像度へ
-/// 拡大してから float 0..1 で返す(1 = 最も手前)。</summary>
+/// 出力(逆深度・大きいほど手前)は min-max 正規化して 0..1 で返す(1 = 最も手前)。</summary>
 public sealed class DepthEstimator : IDisposable
 {
     private static readonly float[] Mean = { 0.485f, 0.456f, 0.406f };
@@ -73,8 +77,8 @@ public sealed class DepthEstimator : IDisposable
     }
 
     /// <summary>合成 BGRA(stride = <paramref name="width"/> * 4)から相対深度マップを推定する。
-    /// 戻りは長さ width*height、値 0..1(1 = 最も手前)。失敗時は null。</summary>
-    public float[]? Estimate(byte[] bgra, int width, int height, bool highPrecision)
+    /// 戻りはモデル出力解像度の <see cref="DepthMap"/>(0..1、1 = 最も手前)。失敗時は null。</summary>
+    public DepthMap? Estimate(byte[] bgra, int width, int height, bool highPrecision)
     {
         if (_session is null && !TryInitialize(out _)) return null;
         if (_session is null) return null;
@@ -120,28 +124,12 @@ public sealed class DepthEstimator : IDisposable
             float range = max - min;
             if (range < 1e-6f) range = 1f;
 
-            // 8bit グレーへ正規化 → WPF の縮小フィルタで元解像度へ拡大 → float 0..1
-            var gray = new byte[ow * oh];
-            for (int k = 0; k < gray.Length && k < flat.Length; k++)
-                gray[k] = (byte)Math.Clamp((flat[k] - min) / range * 255f, 0, 255);
+            int n = Math.Min(flat.Length, ow * oh);
+            var data = new float[ow * oh];
+            for (int k = 0; k < n; k++)
+                data[k] = Math.Clamp((flat[k] - min) / range, 0f, 1f);
 
-            var depthSmall = BitmapSource.Create(ow, oh, 96, 96, PixelFormats.Gray8, null, gray, ow);
-            var depthFull = new TransformedBitmap(depthSmall, new ScaleTransform(width / (double)ow, height / (double)oh));
-            int dw = depthFull.PixelWidth, dh = depthFull.PixelHeight;
-            var depthBytes = new byte[dw * dh];
-            depthFull.CopyPixels(depthBytes, dw, 0);
-
-            var result = new float[width * height];
-            for (int y = 0; y < height; y++)
-            {
-                int sy = Math.Min(y, dh - 1);
-                for (int x = 0; x < width; x++)
-                {
-                    int sx = Math.Min(x, dw - 1);
-                    result[y * width + x] = depthBytes[sy * dw + sx] / 255f;
-                }
-            }
-            return result;
+            return new DepthMap(data, ow, oh);
         }
         catch (Exception ex) when (ex is OnnxRuntimeException or InvalidOperationException or OverflowException or ArgumentException)
         {
