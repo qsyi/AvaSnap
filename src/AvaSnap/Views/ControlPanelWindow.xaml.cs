@@ -1242,6 +1242,10 @@ public partial class ControlPanelWindow : Window
         // 以前の「アバターなしで進める」選択を上書きする。
         _compositeSkipAvatar = false;
         RefreshSkipAvatarUI();
+        // 背景がまだ無ければ、アバター単体でもすぐ編集を始められるよう
+        // 自動で「背景なしで作成」にする(LoadPhotoForComposite側の
+        // 自動アバターなし化と対になる挙動)。
+        if (_photoPixelBuffer is null) ActivateBlankCanvas();
         ScheduleCompositeRender();
         AddRecentAvatarPath(path);
     }
@@ -2958,6 +2962,13 @@ public partial class ControlPanelWindow : Window
         _photoVibrance = _photoTemperature = _photoTint = _photoHue = 0;
         _photoHighlights = _photoShadows = _photoWhites = _photoBlacks = 0;
         RefreshPhotoLookUI();
+        // アバターがまだ無ければ、背景単体でもすぐ編集を始められるよう
+        // 自動で「アバターなし」にする(LoadImageFile側の自動背景なし化と対になる挙動)。
+        if (_overlayWindow.OriginalPixelBuffer is null)
+        {
+            _compositeSkipAvatar = true;
+            RefreshSkipAvatarUI();
+        }
         ClearCompositeSaveStatus();
         ShowComposite();
     }
@@ -3350,7 +3361,11 @@ public partial class ControlPanelWindow : Window
     /// にリセットして作り直す(「作成」は毎回まっさらな状態からやり直す
     /// 操作として扱う)。作成後、下の色/グラデーションUIが現れ、以後は
     /// そこを触るたびにRegenerateBlankCanvasが同じ解像度のまま塗り直す。</summary>
-    private void CreateBlankCanvasButton_Click(object sender, RoutedEventArgs e)
+    private void CreateBlankCanvasButton_Click(object sender, RoutedEventArgs e) => ActivateBlankCanvas();
+
+    /// <summary>「背景なしで作成」の実処理(ボタンからも、アバター単体読み込み時の
+    /// 自動切り替えからも呼ばれる)。</summary>
+    private void ActivateBlankCanvas()
     {
         var (width, height) = GetDefaultBlankCanvasSize();
 
