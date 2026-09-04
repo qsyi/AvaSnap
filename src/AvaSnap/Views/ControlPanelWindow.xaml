@@ -4233,7 +4233,7 @@
                                 <WrapPanel Margin="0,4,0,0">
                                     <Button x:Name="DepthHighPrecisionButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
                                             Padding="10,4" Margin="0,0,8,6" Click="DepthHighPrecisionButton_Click">
-                                        <TextBlock x:Name="DepthHighPrecisionButtonText" Text="高精度: オフ" />
+                                        <TextBlock x:Name="DepthHighPrecisionButtonText" Text="高精度: オン" />
                                     </Button>
                                     <Button x:Name="DepthShowMapButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
                                             Padding="10,4" Margin="0,0,8,6" Click="DepthShowMapButton_Click">

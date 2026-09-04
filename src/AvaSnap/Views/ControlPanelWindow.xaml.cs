@@ -2214,7 +2214,7 @@ public partial class ControlPanelWindow : Window
     private double _depthFocus = 0.6;
     private double _depthStrength = 20;
     private double _depthMaxRadius = 14;
-    private bool _depthHighPrecision;
+    private bool _depthHighPrecision = true; // 既定オン ── 低精度より深度エッジが明確に良い
     private DepthMap? _depthMap;
     private bool _depthMapStale;
     private bool _depthComputing;
@@ -5409,7 +5409,7 @@ public partial class ControlPanelWindow : Window
         _depthFocus = 0.6;
         _depthStrength = 20;
         _depthMaxRadius = 14;
-        _depthHighPrecision = false;
+        _depthHighPrecision = true;
         RefreshFinishUI();
         RefreshDepthBlurUi();
         ScheduleCompositeRender();
