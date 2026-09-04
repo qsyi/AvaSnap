@@ -113,14 +113,14 @@
             <Setter Property="Padding" Value="20,10" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
+            <!-- 小さいボタンでも角の弧が下の CornerRadius(18)より小さくクランプされない
+                 高さを保証する。これで大きいボタン(元から ~40px、18px 角)と、小さい
+                 ボタンの角の見た目が一致する ── 大きいボタンの見た目は変わらない。 -->
+            <Setter Property="MinHeight" Value="38" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <!-- 固定 24px。このスタイルのボタンは最も背の高いもの(base の
-                             Padding 20,10 + FontSize 15)でも高さ ~41px なので、24 は
-                             常に「高さの半分以上」= 端が完全なピル形にクランプされる。
-                             大きいボタンの見た目は 1000 のときと同じで、値は固定。 -->
-                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="24">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="18">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Margin="{TemplateBinding Padding}" />
                         </Border>
