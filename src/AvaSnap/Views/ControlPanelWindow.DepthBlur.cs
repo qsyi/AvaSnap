@@ -71,16 +71,16 @@ public partial class ControlPanelWindow
 
         if (_depthShowMap) return DepthMapVisualization(dm, w, h);
 
-        bool focusRange = _depthShowFocusRange || _colorPickTarget == ColorPickTarget.DepthFocus;
-        if (!focusRange) return composite;
+        if (_colorPickTarget != ColorPickTarget.DepthFocus) return composite;
 
-        return FocusRangeHighlight(composite, dm, _depthFocusPreview ?? _depthFocus, _depthStrength);
+        return FocusAssistOverlay(composite, dm, _depthFocusPreview ?? _depthFocus, _depthStrength);
     }
 
-    /// <summary>ピント面と「同じような深度」の画素はそのまま、外れた画素は暗くして、
-    /// どこがピント内かひと目で分かるようにする。バンド幅は強さから導く(強いほど狭い)。
-    /// 表示は縮小コピーで十分(オーバーレイ用)。</summary>
-    private static WriteableBitmap FocusRangeHighlight(WriteableBitmap src, DepthMap dm, double focus, double strength)
+    /// <summary>フォーカス選択の補助表示: 実際のボケ量(CoC = |深度 − ピント| × 傾き、
+    /// ぼかしシェーダと同じ slope = 強さ/20)に比例して連続的に暗くする ── バンドの
+    /// しきい値が無いので境界線が出ず、見た目がそのままボケの効き方になる。
+    /// 深度マップは拡大由来のジャギを消すため軽くぼかしてから使う。表示専用・縮小コピー。</summary>
+    private static WriteableBitmap FocusAssistOverlay(WriteableBitmap src, DepthMap dm, double focus, double strength)
     {
         const int cap = 1400;
         BitmapSource s = src;
@@ -93,7 +93,10 @@ public partial class ControlPanelWindow
         var px = new byte[stride * h];
         s.CopyPixels(px, stride, 0);
 
-        double band = Math.Clamp(3.0 / Math.Max(strength, 1.0), 0.05, 0.5);
+        float[] depth = BlurDepthMap(dm);
+        double slope = Math.Max(strength, 1.0) / 20.0;
+        const double minBright = 0.28; // 最もボケる所の明るさ
+
         for (int y = 0; y < h; y++)
         {
             double fv = h <= 1 ? 0 : (double)y / (h - 1) * (dm.Height - 1);
@@ -104,23 +107,48 @@ public partial class ControlPanelWindow
                 double fu = w <= 1 ? 0 : (double)x / (w - 1) * (dm.Width - 1);
                 int x0 = (int)fu, x1 = Math.Min(x0 + 1, dm.Width - 1);
                 double tx = fu - x0;
-                double top = dm.Data[y0 * dm.Width + x0] + (dm.Data[y0 * dm.Width + x1] - dm.Data[y0 * dm.Width + x0]) * tx;
-                double bot = dm.Data[y1 * dm.Width + x0] + (dm.Data[y1 * dm.Width + x1] - dm.Data[y1 * dm.Width + x0]) * tx;
+                double top = depth[y0 * dm.Width + x0] + (depth[y0 * dm.Width + x1] - depth[y0 * dm.Width + x0]) * tx;
+                double bot = depth[y1 * dm.Width + x0] + (depth[y1 * dm.Width + x1] - depth[y1 * dm.Width + x0]) * tx;
                 double d = top + (bot - top) * ty;
 
-                if (Math.Abs(d - focus) > band)
-                {
-                    int i = y * stride + x * 4;
-                    px[i] = (byte)(px[i] * 0.32);
-                    px[i + 1] = (byte)(px[i + 1] * 0.32);
-                    px[i + 2] = (byte)(px[i + 2] * 0.32);
-                }
+                double coc = Math.Clamp(Math.Abs(d - focus) * slope, 0, 1);
+                double bright = 1.0 - (1.0 - minBright) * coc;
+                int i = y * stride + x * 4;
+                px[i] = (byte)(px[i] * bright);
+                px[i + 1] = (byte)(px[i + 1] * bright);
+                px[i + 2] = (byte)(px[i + 2] * bright);
             }
         }
         var wb = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
         wb.WritePixels(new Int32Rect(0, 0, w, h), px, stride, 0);
         wb.Freeze();
         return wb;
+    }
+
+    /// <summary>低解像の深度マップを 3x3 ボックスで2回ぼかす(拡大時の段差軽減)。</summary>
+    private static float[] BlurDepthMap(DepthMap dm)
+    {
+        int w = dm.Width, h = dm.Height;
+        var a = (float[])dm.Data.Clone();
+        var b = new float[a.Length];
+        for (int pass = 0; pass < 2; pass++)
+        {
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                float sum = 0; int n = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int xx = x + dx, yy = y + dy;
+                    if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+                    sum += a[yy * w + xx]; n++;
+                }
+                b[y * w + x] = sum / n;
+            }
+            (a, b) = (b, a);
+        }
+        return a;
     }
 
     /// <summary>フル再合成せず、<see cref="_lastComposite"/> に表示オーバーレイだけ
@@ -212,7 +240,6 @@ public partial class ControlPanelWindow
 
     private bool _suppressDepthStale;
     private bool _depthShowMap;
-    private bool _depthShowFocusRange;
     /// <summary>フォーカス選択モード中、カーソル下の深度(ライブのハイライト基準)。null で未ホバー。</summary>
     private double? _depthFocusPreview;
 
@@ -226,7 +253,6 @@ public partial class ControlPanelWindow
         DepthComputeButton.IsEnabled = !_depthComputing && _photoPixelBuffer is not null;
         DepthHighPrecisionButtonText.Text = _depthHighPrecision ? "高精度: オン" : "高精度: オフ";
         DepthShowMapButtonText.Text = _depthShowMap ? "深度マップを表示: オン" : "深度マップを表示: オフ";
-        DepthShowFocusRangeButtonText.Text = _depthShowFocusRange ? "ピント範囲を表示: オン" : "ピント範囲を表示: オフ";
 
         if (_depthMapStale && !_depthComputing && _depthMap is not null)
         {
@@ -278,17 +304,8 @@ public partial class ControlPanelWindow
     private void DepthShowMapButton_Click(object sender, RoutedEventArgs e)
     {
         _depthShowMap = !_depthShowMap;
-        if (_depthShowMap) _depthShowFocusRange = false;
         RefreshDepthBlurUi();
         DepthRerender();
-    }
-
-    private void DepthShowFocusRangeButton_Click(object sender, RoutedEventArgs e)
-    {
-        _depthShowFocusRange = !_depthShowFocusRange;
-        if (_depthShowFocusRange) _depthShowMap = false;
-        RefreshDepthBlurUi();
-        RefreshDepthOverlayOnly();
     }
 
     private void DepthFocusSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

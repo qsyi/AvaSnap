@@ -4235,11 +4235,6 @@
                                             Padding="10,4" Margin="0,0,8,6" Click="DepthHighPrecisionButton_Click">
                                         <TextBlock x:Name="DepthHighPrecisionButtonText" Text="高精度: オフ" />
                                     </Button>
-                                    <Button x:Name="DepthShowFocusRangeButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
-                                            Padding="10,4" Margin="0,0,8,6" Click="DepthShowFocusRangeButton_Click"
-                                            ToolTip="ピント面と同じような深度の範囲を強調表示します">
-                                        <TextBlock x:Name="DepthShowFocusRangeButtonText" Text="ピント範囲を表示: オフ" />
-                                    </Button>
                                     <Button x:Name="DepthShowMapButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
                                             Padding="10,4" Margin="0,0,8,6" Click="DepthShowMapButton_Click">
                                         <TextBlock x:Name="DepthShowMapButtonText" Text="深度マップを表示: オフ" />

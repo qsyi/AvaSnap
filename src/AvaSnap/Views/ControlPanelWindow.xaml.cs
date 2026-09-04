@@ -5405,7 +5405,6 @@ public partial class ControlPanelWindow : Window
         _dropShadowBlendMode = ImageAdjustment.DropShadowBlendMode.Multiply;
         _depthBlurEnabled = false;
         _depthShowMap = false;
-        _depthShowFocusRange = false;
         _depthFocusPreview = null;
         _depthFocus = 0.6;
         _depthStrength = 20;

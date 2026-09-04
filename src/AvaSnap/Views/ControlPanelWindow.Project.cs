@@ -139,6 +139,11 @@ public partial class ControlPanelWindow
         UpdateProjectNameUi();
         ShowComposite();
         _projectDirty = false; // 開いた直後は未変更(ShowComposite のレンダーで付いた分を消す)
+
+        // 深度マップは保存されないので、被写界深度が有効なプロジェクトを開いたら
+        // 1回だけ自動計算する(手動で「深度を計算」を押さなくてもぼかしが出る)。
+        if (_depthBlurEnabled && _depthMap is null && _photoPixelBuffer is not null)
+            _ = ComputeDepthMapAsync();
     }
 
     private void NewProjectButton_Click(object sender, RoutedEventArgs e) => StartNewProject();
@@ -320,7 +325,6 @@ public partial class ControlPanelWindow
         _depthMap = null;
         _depthMapStale = false;
         _depthShowMap = false;
-        _depthShowFocusRange = false;
         _depthFocusPreview = null;
         RefreshDepthBlurUi();
         _compositePlacementInitialized = false;
