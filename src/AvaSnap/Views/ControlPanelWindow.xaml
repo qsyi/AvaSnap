@@ -4230,16 +4230,21 @@
                                     <TextBox Grid.Column="2" x:Name="DepthRadiusBox" Style="{StaticResource SliderRowBox}"
                                              TextChanged="DepthRadiusBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
-                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <WrapPanel Margin="0,4,0,0">
                                     <Button x:Name="DepthHighPrecisionButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
-                                            Padding="10,4" Click="DepthHighPrecisionButton_Click">
+                                            Padding="10,4" Margin="0,0,8,6" Click="DepthHighPrecisionButton_Click">
                                         <TextBlock x:Name="DepthHighPrecisionButtonText" Text="高精度: オフ" />
                                     </Button>
+                                    <Button x:Name="DepthShowFocusRangeButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
+                                            Padding="10,4" Margin="0,0,8,6" Click="DepthShowFocusRangeButton_Click"
+                                            ToolTip="ピント面と同じような深度の範囲を強調表示します">
+                                        <TextBlock x:Name="DepthShowFocusRangeButtonText" Text="ピント範囲を表示: オフ" />
+                                    </Button>
                                     <Button x:Name="DepthShowMapButton" Style="{StaticResource SecondaryPillButton}" FontSize="12"
-                                            Padding="10,4" Margin="8,0,0,0" Click="DepthShowMapButton_Click">
+                                            Padding="10,4" Margin="0,0,8,6" Click="DepthShowMapButton_Click">
                                         <TextBlock x:Name="DepthShowMapButtonText" Text="深度マップを表示: オフ" />
                                     </Button>
-                                </StackPanel>
+                                </WrapPanel>
                             </StackPanel>
 
                             <Button Style="{StaticResource SecondaryPillButton}"

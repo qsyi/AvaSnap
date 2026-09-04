@@ -32,9 +32,6 @@ public partial class ControlPanelWindow
         int w = composite.PixelWidth, h = composite.PixelHeight;
         if (w <= 0 || h <= 0) return composite;
 
-        if (_depthShowMap)
-            return DepthMapVisualization(dm, w, h);
-
         if (_depthStrength <= 0 || _depthMaxRadius <= 0) return composite;
 
         int stride = w * 4;
@@ -61,6 +58,77 @@ public partial class ControlPanelWindow
         var wb = new WriteableBitmap(bgra);
         wb.Freeze();
         return wb;
+    }
+
+    /// <summary>表示専用オーバーレイ(保存には乗らない): 深度マップ表示、または
+    /// ピント範囲ハイライト。<see cref="_depthFocusPreview"/> がある間(フォーカス選択中の
+    /// カーソル位置)はその深度を基準にする。</summary>
+    private WriteableBitmap ApplyDepthDisplayOverlay(WriteableBitmap composite)
+    {
+        if (!_depthBlurEnabled || _depthComputing || _depthMap is not { } dm) return composite;
+        int w = composite.PixelWidth, h = composite.PixelHeight;
+        if (w <= 0 || h <= 0) return composite;
+
+        if (_depthShowMap) return DepthMapVisualization(dm, w, h);
+
+        bool focusRange = _depthShowFocusRange || _colorPickTarget == ColorPickTarget.DepthFocus;
+        if (!focusRange) return composite;
+
+        return FocusRangeHighlight(composite, dm, _depthFocusPreview ?? _depthFocus, _depthStrength);
+    }
+
+    /// <summary>ピント面と「同じような深度」の画素はそのまま、外れた画素は暗くして、
+    /// どこがピント内かひと目で分かるようにする。バンド幅は強さから導く(強いほど狭い)。
+    /// 表示は縮小コピーで十分(オーバーレイ用)。</summary>
+    private static WriteableBitmap FocusRangeHighlight(WriteableBitmap src, DepthMap dm, double focus, double strength)
+    {
+        const int cap = 1400;
+        BitmapSource s = src;
+        if (Math.Max(src.PixelWidth, src.PixelHeight) > cap)
+        {
+            double k = cap / (double)Math.Max(src.PixelWidth, src.PixelHeight);
+            s = new TransformedBitmap(src, new ScaleTransform(k, k));
+        }
+        int w = s.PixelWidth, h = s.PixelHeight, stride = w * 4;
+        var px = new byte[stride * h];
+        s.CopyPixels(px, stride, 0);
+
+        double band = Math.Clamp(3.0 / Math.Max(strength, 1.0), 0.05, 0.5);
+        for (int y = 0; y < h; y++)
+        {
+            double fv = h <= 1 ? 0 : (double)y / (h - 1) * (dm.Height - 1);
+            int y0 = (int)fv, y1 = Math.Min(y0 + 1, dm.Height - 1);
+            double ty = fv - y0;
+            for (int x = 0; x < w; x++)
+            {
+                double fu = w <= 1 ? 0 : (double)x / (w - 1) * (dm.Width - 1);
+                int x0 = (int)fu, x1 = Math.Min(x0 + 1, dm.Width - 1);
+                double tx = fu - x0;
+                double top = dm.Data[y0 * dm.Width + x0] + (dm.Data[y0 * dm.Width + x1] - dm.Data[y0 * dm.Width + x0]) * tx;
+                double bot = dm.Data[y1 * dm.Width + x0] + (dm.Data[y1 * dm.Width + x1] - dm.Data[y1 * dm.Width + x0]) * tx;
+                double d = top + (bot - top) * ty;
+
+                if (Math.Abs(d - focus) > band)
+                {
+                    int i = y * stride + x * 4;
+                    px[i] = (byte)(px[i] * 0.32);
+                    px[i + 1] = (byte)(px[i + 1] * 0.32);
+                    px[i + 2] = (byte)(px[i + 2] * 0.32);
+                }
+            }
+        }
+        var wb = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+        wb.WritePixels(new Int32Rect(0, 0, w, h), px, stride, 0);
+        wb.Freeze();
+        return wb;
+    }
+
+    /// <summary>フル再合成せず、<see cref="_lastComposite"/> に表示オーバーレイだけ
+    /// かけ直してプレビューへ反映する(フォーカス選択中のカーソル追従用)。</summary>
+    private void RefreshDepthOverlayOnly()
+    {
+        if (_lastComposite is not { } clean) { ScheduleCompositeRender(); return; }
+        UpdateComparisonPreview(ApplyDepthDisplayOverlay(clean), _lastBeforeComposite);
     }
 
     /// <summary>現在の合成結果から深度マップを計算してキャッシュする。計算用のレンダーは
@@ -144,6 +212,9 @@ public partial class ControlPanelWindow
 
     private bool _suppressDepthStale;
     private bool _depthShowMap;
+    private bool _depthShowFocusRange;
+    /// <summary>フォーカス選択モード中、カーソル下の深度(ライブのハイライト基準)。null で未ホバー。</summary>
+    private double? _depthFocusPreview;
 
     /// <summary>被写界深度カードのボタン文言・状態表示・スライダー値を同期する。</summary>
     private void RefreshDepthBlurUi()
@@ -155,6 +226,7 @@ public partial class ControlPanelWindow
         DepthComputeButton.IsEnabled = !_depthComputing && _photoPixelBuffer is not null;
         DepthHighPrecisionButtonText.Text = _depthHighPrecision ? "高精度: オン" : "高精度: オフ";
         DepthShowMapButtonText.Text = _depthShowMap ? "深度マップを表示: オン" : "深度マップを表示: オフ";
+        DepthShowFocusRangeButtonText.Text = _depthShowFocusRange ? "ピント範囲を表示: オン" : "ピント範囲を表示: オフ";
 
         if (_depthMapStale && !_depthComputing && _depthMap is not null)
         {
@@ -206,8 +278,17 @@ public partial class ControlPanelWindow
     private void DepthShowMapButton_Click(object sender, RoutedEventArgs e)
     {
         _depthShowMap = !_depthShowMap;
+        if (_depthShowMap) _depthShowFocusRange = false;
         RefreshDepthBlurUi();
         DepthRerender();
+    }
+
+    private void DepthShowFocusRangeButton_Click(object sender, RoutedEventArgs e)
+    {
+        _depthShowFocusRange = !_depthShowFocusRange;
+        if (_depthShowFocusRange) _depthShowMap = false;
+        RefreshDepthBlurUi();
+        RefreshDepthOverlayOnly();
     }
 
     private void DepthFocusSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

@@ -4089,10 +4089,10 @@ public partial class ControlPanelWindow : Window
             WriteableBitmap? before = _beforeAfterSplit > 0 ? ComputeBeforeComposite() : null;
             if (!dragging)
             {
-                _lastComposite = after;
+                _lastComposite = after; // 保存に使うのは表示オーバーレイなしの合成
                 _lastBeforeComposite = before;
             }
-            UpdateComparisonPreview(after, before);
+            UpdateComparisonPreview(ApplyDepthDisplayOverlay(after), before);
             SaveCompositeButton.IsEnabled = true;
             MatchAvatarToPhotoButton.IsEnabled = false;
             MatchPhotoToAvatarButton.IsEnabled = false;
@@ -4248,10 +4248,10 @@ public partial class ControlPanelWindow : Window
         // CompareSlider_ValueChanged が 0 から動いた初回に遅延構築する)。
         WriteableBitmap? beforeComposite = _beforeAfterSplit > 0 ? ComputeBeforeComposite() : null;
 
-        UpdateComparisonPreview(afterComposite, beforeComposite);
+        UpdateComparisonPreview(ApplyDepthDisplayOverlay(afterComposite), beforeComposite);
         if (!dragging)
         {
-            _lastComposite = afterComposite;
+            _lastComposite = afterComposite; // 保存に使うのは表示オーバーレイなしの合成
             _lastBeforeComposite = beforeComposite;
         }
         SaveCompositeButton.IsEnabled = true;
@@ -4778,6 +4778,7 @@ public partial class ControlPanelWindow : Window
         if (_colorPickTarget != ColorPickTarget.None)
         {
             UpdateColorPickMagnifier(e.GetPosition(PreviewBorder));
+            if (_colorPickTarget == ColorPickTarget.DepthFocus) UpdateDepthFocusHover(e.GetPosition(PreviewBorder));
             return;
         }
 
@@ -4810,6 +4811,20 @@ public partial class ControlPanelWindow : Window
     private void PreviewImage_MouseLeave(object sender, MouseEventArgs e)
     {
         if (_colorPickTarget != ColorPickTarget.None) HideColorPickMagnifier();
+        if (_depthFocusPreview is not null) { _depthFocusPreview = null; RefreshDepthOverlayOnly(); }
+    }
+
+    /// <summary>フォーカス選択中、カーソル下の深度を基準にピント範囲ハイライトをライブ更新する。</summary>
+    private void UpdateDepthFocusHover(Point screen)
+    {
+        if (_depthMap is not { } dm) return;
+        if (!TryImagePixelFromScreen(screen, out var bmp, out var px, out var py) || bmp.PixelWidth <= 0) return;
+        int dx = Math.Clamp((int)((double)px / bmp.PixelWidth * dm.Width), 0, dm.Width - 1);
+        int dy = Math.Clamp((int)((double)py / bmp.PixelHeight * dm.Height), 0, dm.Height - 1);
+        double hovered = dm.Data[dy * dm.Width + dx];
+        if (_depthFocusPreview is { } prev && Math.Abs(prev - hovered) < 0.003) return;
+        _depthFocusPreview = hovered;
+        RefreshDepthOverlayOnly();
     }
 
     private void PreviewImage_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -5390,6 +5405,8 @@ public partial class ControlPanelWindow : Window
         _dropShadowBlendMode = ImageAdjustment.DropShadowBlendMode.Multiply;
         _depthBlurEnabled = false;
         _depthShowMap = false;
+        _depthShowFocusRange = false;
+        _depthFocusPreview = null;
         _depthFocus = 0.6;
         _depthStrength = 20;
         _depthMaxRadius = 14;
@@ -6545,6 +6562,13 @@ public partial class ControlPanelWindow : Window
         _colorPickTarget = _colorPickTarget == target ? ColorPickTarget.None : target;
         PreviewImage.Cursor = _colorPickTarget == ColorPickTarget.None ? Cursors.SizeAll : Cursors.Cross;
         if (_colorPickTarget == ColorPickTarget.None) HideColorPickMagnifier();
+
+        // フォーカス選択のアーム/解除で、ピント範囲ハイライトを出す/引っ込める。
+        if (target == ColorPickTarget.DepthFocus || _depthFocusPreview is not null)
+        {
+            _depthFocusPreview = null;
+            RefreshDepthOverlayOnly();
+        }
     }
 
     private void DropShadowEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.DropShadow);
@@ -6599,6 +6623,7 @@ public partial class ControlPanelWindow : Window
                 double v = Math.Clamp(py / (double)bmp.PixelHeight, 0, 1);
                 int dx = Math.Clamp((int)(u * dm.Width), 0, dm.Width - 1);
                 int dy = Math.Clamp((int)(v * dm.Height), 0, dm.Height - 1);
+                _depthFocusPreview = null;
                 SetDepthFocus(dm.Data[dy * dm.Width + dx]);
                 RefreshDepthBlurUi();
             }

@@ -320,6 +320,8 @@ public partial class ControlPanelWindow
         _depthMap = null;
         _depthMapStale = false;
         _depthShowMap = false;
+        _depthShowFocusRange = false;
+        _depthFocusPreview = null;
         RefreshDepthBlurUi();
         _compositePlacementInitialized = false;
         ClearCompositeSaveStatus();
