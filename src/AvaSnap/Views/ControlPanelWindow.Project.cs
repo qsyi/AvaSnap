@@ -491,6 +491,8 @@ public partial class ControlPanelWindow
                     var bmp = new BitmapImage();
                     bmp.BeginInit();
                     bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    // プロジェクト保存後にデカール元画像を更新していても最新を読む。
+                    bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
                     bmp.UriSource = new Uri(d.SourcePath);
                     bmp.EndInit();
                     bmp.Freeze();

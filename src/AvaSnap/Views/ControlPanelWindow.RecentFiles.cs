@@ -137,19 +137,27 @@ public partial class ControlPanelWindow
 
     private static BitmapImage? GetOrDecodeThumbnail(string path)
     {
-        if (ThumbnailCache.TryGetValue(path, out var cached)) return cached;
+        // ファイルを外部で更新したら別キー扱いにして新しいサムネを作る
+        // (更新時刻が取れなければパスのみをキーにする)。
+        string key = path;
+        try { key = path + "|" + File.GetLastWriteTimeUtc(path).Ticks; }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+
+        if (ThumbnailCache.TryGetValue(key, out var cached)) return cached;
         try
         {
             var thumb = new BitmapImage();
             thumb.BeginInit();
             thumb.CacheOption = BitmapCacheOption.OnLoad;
+            thumb.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
             thumb.DecodePixelWidth = RecentThumbnailSize * 2;
             thumb.UriSource = new Uri(path);
             thumb.EndInit();
             thumb.Freeze();
 
-            ThumbnailCache[path] = thumb;
-            ThumbnailCacheOrder.Enqueue(path);
+            ThumbnailCache[key] = thumb;
+            ThumbnailCacheOrder.Enqueue(key);
             if (ThumbnailCacheOrder.Count > MaxThumbnailCacheEntries)
             {
                 ThumbnailCache.Remove(ThumbnailCacheOrder.Dequeue());

@@ -35,6 +35,7 @@ public partial class ScreenshotToastWindow : Window
             var thumb = new BitmapImage();
             thumb.BeginInit();
             thumb.CacheOption = BitmapCacheOption.OnLoad;
+            thumb.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
             thumb.DecodePixelWidth = 144;
             thumb.UriSource = new Uri(path);
             thumb.EndInit();

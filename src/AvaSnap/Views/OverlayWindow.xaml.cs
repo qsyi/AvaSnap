@@ -145,6 +145,9 @@ public partial class OverlayWindow : Window
         var bitmap = new BitmapImage();
         bitmap.BeginInit();
         bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        // 同じパスのファイルを外部で更新してから読み込み直したとき、WPF の
+        // URI 別デコードキャッシュが前回の中身を返さないようにする。
+        bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
         bitmap.UriSource = new Uri(path);
         bitmap.EndInit();
         bitmap.Freeze();
