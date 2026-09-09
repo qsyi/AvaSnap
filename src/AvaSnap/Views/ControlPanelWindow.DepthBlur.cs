@@ -316,7 +316,13 @@ public partial class ControlPanelWindow
         DepthHighPrecisionButtonText.Text = _depthHighPrecision ? "高精度: オン" : "高精度: オフ";
         DepthShowMapButtonText.Text = _depthShowMap ? "深度マップを表示: オン" : "深度マップを表示: オフ";
 
-        if (_depthMapStale && !_depthComputing && _depthMap is not null)
+        if (_colorPickTarget == ColorPickTarget.DepthFocus)
+        {
+            DepthStatusText.Text = "プレビューでピントを合わせたい場所をクリックしてください（Esc で中止）";
+            DepthStatusText.Foreground = (Brush)FindResource("AccentDarkBrush");
+            DepthStatusText.FontWeight = FontWeights.SemiBold;
+        }
+        else if (_depthMapStale && !_depthComputing && _depthMap is not null)
         {
             DepthStatusText.Text = "⚠ 再計算が必要(合成が変わりました)";
             DepthStatusText.Foreground = (Brush)FindResource("AccentDarkBrush");
