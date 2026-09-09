@@ -2830,6 +2830,11 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="ドロップシャドウ" Style="{StaticResource SliderRowLabel}" Width="116"
                                                ToolTip="アバター画像の影を複製し、向き・幅・ぼかし・色を指定して重ねます" />
+                                    <Slider Grid.Column="1" x:Name="DropShadowSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                            ValueChanged="DropShadowSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                    <TextBox Grid.Column="2" x:Name="DropShadowBox" Style="{StaticResource SliderRowBox}"
+                                             TextChanged="DropShadowBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                 </Grid>
 
                                 <!-- ・色: a long horizontal swatch bar (matches a slider's own
@@ -2954,24 +2959,9 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <!-- ・強さ/幅/ぼかし: a "・" prefix marks them as ドロップシャドウの
-                                     own sub-settings rather than independent top-level effects (a
-                                     drawn tree-view connector line was tried and reverted: too
-                                     fragile to align correctly without exact pixel heights). -->
-                                <Grid Margin="0,0,0,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="116" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
-                                               ToolTip="影の濃さ" Opacity="0.7" />
-                                    <Slider Grid.Column="1" x:Name="DropShadowSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                            ValueChanged="DropShadowSlider_ValueChanged"
-                                            PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                    <TextBox Grid.Column="2" x:Name="DropShadowBox" Style="{StaticResource SliderRowBox}"
-                                             TextChanged="DropShadowBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                </Grid>
+                                <!-- ・幅/ぼかし: a "・" prefix marks them as ドロップシャドウの
+                                     own sub-settings rather than independent top-level effects.
+                                     ・強さ は見出し行(「ドロップシャドウ」の横)へ移動した。 -->
                                 <!-- ・方向: control column holds the dial, value column holds
                                      the degree readout, same slot the numeric TextBox occupies
                                      on a slider row. -->
@@ -3778,37 +3768,29 @@
                                          ラベル+ダイヤル+スライダーの巨大行を置き換えたもの。 -->
                                     <!-- 他行と同じ3列 Grid で包む(素の TextBlock ではない)ので、
                                          このラベルが上の行と同じ Column0 に入る。 -->
+                                    <!-- 見出し行に「・強さ」スライダーを同居させる。自動判定ボタンは
+                                         右端(4列目)へ。 -->
                                     <Grid Margin="0,6,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="116" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="グラデーション" Style="{StaticResource SliderRowLabel}" Width="116"
                                                    ToolTip="写真の中の明るい色と暗い色を抽出し、画面の上から下へグラデーションとして重ねます" />
-                                        <!-- Re-runs the same weighted whole-image bright/dark
-                                             extraction ・明色/・暗色 used to always run automatically
-                                             every render, now a one-shot action instead (see
-                                             GpuToneGradient.TryDetectColors); overwrites whatever
-                                             manual colors are currently set. -->
-                                        <Button Grid.Column="2" x:Name="ToneGradientAutoDetectButton" Style="{StaticResource SecondaryPillButton}"
-                                                Padding="8,4" Click="ToneGradientAutoDetectButton_Click" ToolTip="写真から明色/暗色を自動で判定し直します">
-                                            <TextBlock Text="自動判定" FontSize="12" />
-                                        </Button>
-                                    </Grid>
-                                    <Grid Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
-                                                   ToolTip="グラデーションの強さ" Opacity="0.7" />
                                         <Slider Grid.Column="1" x:Name="ToneGradientSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
                                                 ValueChanged="ToneGradientSlider_ValueChanged"
                                                 PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
                                         <TextBox Grid.Column="2" x:Name="ToneGradientBox" Style="{StaticResource SliderRowBox}"
                                                  TextChanged="ToneGradientBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
+                                        <!-- Re-runs the same weighted whole-image bright/dark
+                                             extraction ・明色/・暗色 (see GpuToneGradient.TryDetectColors);
+                                             overwrites whatever manual colors are currently set. -->
+                                        <Button Grid.Column="3" x:Name="ToneGradientAutoDetectButton" Style="{StaticResource SecondaryPillButton}"
+                                                Padding="8,4" Margin="6,0,0,0" Click="ToneGradientAutoDetectButton_Click" ToolTip="写真から明色/暗色を自動で判定し直します">
+                                            <TextBlock Text="自動判定" FontSize="12" />
+                                        </Button>
                                     </Grid>
                                     <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
@@ -4013,6 +3995,11 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="ライトリーク" Style="{StaticResource SliderRowLabel}" Width="116"
                                                    ToolTip="光が差し込む向きと強さを指定します" />
+                                        <Slider Grid.Column="1" x:Name="LightLeakSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="LightLeakSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="LightLeakBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="LightLeakBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
                                     <!-- ・色: a long horizontal swatch bar (matches a slider's own
                                          width) instead of a small square icon, with a hex code
@@ -4113,20 +4100,6 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="116"
-                                                   ToolTip="光の強さ" Opacity="0.7" />
-                                        <Slider Grid.Column="1" x:Name="LightLeakSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="LightLeakSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="LightLeakBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="LightLeakBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="116" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="・方向" Style="{StaticResource SliderRowLabel}" Width="116"
                                                    ToolTip="光の向き(度)" Opacity="0.7" />
                                         <!-- The dial used to also control _lightLeakDistance (how far
@@ -4153,6 +4126,11 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="肌色補正" Style="{StaticResource SliderRowLabel}" Width="116"
                                                    ToolTip="スポイトで肌の色を拾うと、その色が白になるように合成全体を除算で補正します" />
+                                        <Slider Grid.Column="1" x:Name="SkinWbSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                ValueChanged="SkinWbSlider_ValueChanged"
+                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
+                                        <TextBox Grid.Column="2" x:Name="SkinWbBox" Style="{StaticResource SliderRowBox}"
+                                                 TextChanged="SkinWbBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
                                     <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
@@ -4171,20 +4149,6 @@
                                         </Button>
                                         <TextBox Grid.Column="3" x:Name="SkinWbHexBox" Style="{StaticResource SliderRowBox}" Width="100"
                                                  Margin="6,0,0,0" TextChanged="SkinWbHexBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
-                                    </Grid>
-                                    <Grid Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="140" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="・強さ" Style="{StaticResource SliderRowLabel}" Width="140"
-                                                   ToolTip="補正の強さ(0で無効、100で拾った色がちょうど白)" Opacity="0.7" />
-                                        <Slider Grid.Column="1" x:Name="SkinWbSlider" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                                ValueChanged="SkinWbSlider_ValueChanged"
-                                                PreviewMouseLeftButtonDown="PhotoColorSliderMouseDown" PreviewMouseLeftButtonUp="PhotoColorSliderMouseUp" />
-                                        <TextBox Grid.Column="2" x:Name="SkinWbBox" Style="{StaticResource SliderRowBox}"
-                                                 TextChanged="SkinWbBox_TextChanged" GotFocus="Field_GotFocus" LostFocus="Field_LostFocus" />
                                     </Grid>
 
                                 </StackPanel>
