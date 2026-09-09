@@ -1319,6 +1319,8 @@
                 </Button>
                 <Button Content="ライセンス" Style="{StaticResource BackButton}" FontSize="13"
                         HorizontalAlignment="Left" Click="LicenseButton_Click" />
+                <Button Content="使い方" Style="{StaticResource BackButton}" FontSize="13"
+                        HorizontalAlignment="Left" Click="OpenWelcomeGuideButton_Click" />
 
                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,10,0,10" />
                 <!-- ユーザー提供のGoogleフォームへの外部リンク。ブラウザで
@@ -1370,6 +1372,9 @@
                     <Button Content="レタッチモードへ" Style="{StaticResource NavSegmentButtonLast}" Click="CompositeModeButton_Click" />
                 </StackPanel>
             </Border>
+            <Button Grid.Row="0" Content="使い方" Style="{StaticResource BackButton}" FontSize="12"
+                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,14,16,8"
+                    Click="OpenAlignGuideButton_Click" />
 
             <!-- 3状態: (1)OSC 未検知/ポート競合 → OSC 有効化ヒント + 手順ボタン、
                  (2)OSC は動作中だがカメラ未オープン → 「カメラを開いて」、
@@ -1705,6 +1710,8 @@
                 <TextBlock x:Name="ProjectNameText" Text="" VerticalAlignment="Center" Margin="10,0,0,0"
                            FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                            TextTrimming="CharacterEllipsis" MaxWidth="240" />
+                <Button Content="使い方" Style="{StaticResource BackButton}" FontSize="12"
+                        VerticalAlignment="Center" Margin="10,0,0,0" Click="OpenRetouchTourButton_Click" />
             </StackPanel>
 
                 <!-- プレビュー -->
@@ -1983,6 +1990,29 @@
                                 </Viewbox>
                             </Border>
                         </Grid>
+                    </Border>
+
+                    <!-- 空状態(アバター・背景とも未読み込みで「なし」も未選択)のときだけ
+                         プレビュー中央に出す案内。何か読み込む/「なし」を選ぶと消える
+                         (RefreshEmptyPreviewHint)。IsHitTestVisible=False で操作を妨げない。 -->
+                    <StackPanel x:Name="EmptyPreviewHint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                IsHitTestVisible="False" Visibility="Collapsed" MaxWidth="360">
+                        <TextBlock Text="画像を読み込んでください" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="右上のボタン、またはこのエリアに画像をドラッグ" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
+                                   TextAlignment="Center" HorizontalAlignment="Center" Margin="0,6,0,0" />
+                    </StackPanel>
+
+                    <!-- サブモード(切り抜き/アバター配置/デカール編集/マスク編集)中に
+                         プレビュー上端へ出す帯。どのモードかと確定/キャンセルの場所を示す
+                         (RefreshSubModeBanner)。IsHitTestVisible=False で操作を妨げない。 -->
+                    <Border x:Name="SubModeBanner" VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                            Background="{DynamicResource PrimaryBrush}" IsHitTestVisible="False"
+                            Visibility="Collapsed" Padding="12,6" Margin="0">
+                        <TextBlock x:Name="SubModeBannerText" Text="" Foreground="White" FontSize="12.5"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center"
+                                   TextWrapping="Wrap" />
                     </Border>
 
                     <!-- 確定/キャンセル bar for 切り抜きモード/アバター配置モード: a
@@ -4176,6 +4206,10 @@
                                     <TextBlock x:Name="DepthBlurEnableButtonText" Text="オフ" />
                                 </Button>
                             </Grid>
+                            <!-- モデル未取得のあいだだけ出す事前告知(オン/オフ問わず)。 -->
+                            <TextBlock x:Name="DepthModelNoticeText" Text="初回のみ深度モデル（約47MB）をダウンロードします"
+                                       FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap" Margin="0,0,0,6" Visibility="Collapsed" />
                             <StackPanel x:Name="DepthBlurBody">
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
@@ -4273,7 +4307,7 @@
                                  画像デカールと同じ配置モードに乗り、角=アス比固定の
                                  拡縮 / 辺=その軸だけ変更、で編集する。下の図形プロパティ
                                  (色/太さ)も参照。 -->
-                            <Button HorizontalAlignment="Left" Margin="0,0,0,8"
+                            <Button x:Name="AddRectangleFrameDecalButton" HorizontalAlignment="Left" Margin="0,0,0,8"
                                     Style="{StaticResource SecondaryPillButton}" FontSize="13" Padding="14,6"
                                     Click="AddRectangleFrameDecal_Click" ToolTip="写真の縁取り用の枠線を追加">
                                 <StackPanel Orientation="Horizontal">
@@ -4772,6 +4806,150 @@
                                    FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,3" />
                         <TextBlock Text="・OSCの出力ポートを変更している場合は既定（9001）に戻してください" FontSize="12"
                                    Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 初回ガイド(ウェルカム): 初回起動時にホームで1回だけ降りてくる。
+             Unity連携ガイドと同じスライドイン + スクリム。VRChat側の準備と2モードの説明。
+             ControlPanelWindow.Guides.cs。 -->
+        <Grid x:Name="WelcomeGuideOverlay" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed">
+            <Border Background="#88000000" MouseLeftButtonDown="WelcomeGuideScrim_MouseLeftButtonDown" />
+            <Border x:Name="WelcomeGuidePanel" Style="{StaticResource Card}"
+                    VerticalAlignment="Top" HorizontalAlignment="Center" MaxWidth="540"
+                    Margin="16,16,16,0" Padding="18"
+                    TextElement.Foreground="{DynamicResource TextPrimaryBrush}"
+                    RenderTransformOrigin="0.5,0">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="WelcomeGuideTransform" Y="-500" />
+                </Border.RenderTransform>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="AvaSnapへようこそ" Style="{StaticResource SectionHeader}"
+                                   Margin="0" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="&#10005;" Style="{StaticResource BackButton}"
+                                Padding="8,4" Click="CloseWelcomeGuideButton_Click" />
+                    </Grid>
+
+                    <TextBlock Text="VRChatのカメラ写真にアバター画像を合成して、色調整やエフェクトで仕上げるツールです。"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextWrapping="Wrap" Margin="0,12,0,0" />
+
+                    <TextBlock Text="① VRChat側の準備" FontWeight="SemiBold" FontSize="13" Margin="0,16,0,4"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="VRChatで撮影した写真は自動で読み込まれます。保存先はこちら:"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,4" />
+                    <TextBlock x:Name="WelcomeWatchFolderText" Text="" FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="変更…" Style="{StaticResource SecondaryPillButton}" FontSize="12"
+                                Padding="12,5" Margin="0,0,8,0" Click="ChangeWatchFolderButton_Click" />
+                        <Button Content="自動検出に戻す" Style="{StaticResource BackButton}" FontSize="12"
+                                Click="ResetWatchFolderButton_Click" />
+                    </StackPanel>
+                    <TextBlock Text="構図合わせ（位置合わせモード）を使うには、VRChatでOSCを有効にしてください。手順は位置合わせモード内から開けます。"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+
+                    <TextBlock Text="② 2つのモード" FontWeight="SemiBold" FontSize="13" Margin="0,16,0,4"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="・位置合わせモード: アバター画像をVRChatのカメラ枠に重ねて構図を決める"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,3" />
+                    <TextBlock Text="・レタッチモード: 撮った写真とアバター画像を合成して仕上げる"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+
+                    <Button Content="閉じる" Style="{StaticResource PillButton}" FontSize="13"
+                            HorizontalAlignment="Right" Margin="0,16,0,0" Click="CloseWelcomeGuideButton_Click" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 初回ガイド(位置合わせモード): 初回入り時に1回だけ。ControlPanelWindow.Guides.cs。 -->
+        <Grid x:Name="AlignGuideOverlay" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed">
+            <Border Background="#88000000" MouseLeftButtonDown="AlignGuideScrim_MouseLeftButtonDown" />
+            <Border x:Name="AlignGuidePanel" Style="{StaticResource Card}"
+                    VerticalAlignment="Top" HorizontalAlignment="Center" MaxWidth="520"
+                    Margin="16,16,16,0" Padding="18"
+                    TextElement.Foreground="{DynamicResource TextPrimaryBrush}"
+                    RenderTransformOrigin="0.5,0">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="AlignGuideTransform" Y="-500" />
+                </Border.RenderTransform>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="位置合わせモードの使い方" Style="{StaticResource SectionHeader}"
+                                   Margin="0" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="&#10005;" Style="{StaticResource BackButton}"
+                                Padding="8,4" Click="CloseAlignGuideButton_Click" />
+                    </Grid>
+
+                    <TextBlock Text="アバター画像をVRChatのカメラ枠に合わせて置き、その構図のままVRChatのカメラで撮影します。"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,12,0,10" />
+
+                    <TextBlock Text="1. 「アバター画像を読み込む」で画像を読み込む" FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,4" />
+                    <TextBlock Text="2. Shiftキーを押している間だけ、プレビュー上でオーバーレイを操作できます（ドラッグ＝移動、四隅ハンドル＝サイズ、回転ハンドル＝回転）。離すとクリックはVRChatに通ります"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,4" />
+                    <TextBlock Text="3. FOVガイドで画角の枠線を表示できます。UnityのカメラからFOV・傾きを取り込むこともできます（「Unity連携はこちらから」）"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock Text="OSCが検知されないときは、上部のバナーから有効化手順を開けます。"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+
+                    <Button Content="閉じる" Style="{StaticResource PillButton}" FontSize="13"
+                            HorizontalAlignment="Right" Margin="0,16,0,0" Click="CloseAlignGuideButton_Click" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 初回ガイド(レタッチモード): コーチマーク型の順送りツアー。対象UIをハイライトし
+             隣にカードを出す。常時「スキップ」。ControlPanelWindow.RetouchTour.cs。 -->
+        <Grid x:Name="RetouchTourOverlay" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed">
+            <!-- ハイライト矩形の周囲を覆う4枚のディム(穴あき)。サイズ/位置はコード。 -->
+            <Border x:Name="TourDimTop" Background="#99000000" VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                    MouseLeftButtonDown="TourDim_MouseLeftButtonDown" />
+            <Border x:Name="TourDimBottom" Background="#99000000" VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
+                    MouseLeftButtonDown="TourDim_MouseLeftButtonDown" />
+            <Border x:Name="TourDimLeft" Background="#99000000" HorizontalAlignment="Left"
+                    MouseLeftButtonDown="TourDim_MouseLeftButtonDown" />
+            <Border x:Name="TourDimRight" Background="#99000000" HorizontalAlignment="Right"
+                    MouseLeftButtonDown="TourDim_MouseLeftButtonDown" />
+
+            <Border x:Name="TourHighlightRing" BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="3"
+                    CornerRadius="6" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    IsHitTestVisible="False" Visibility="Collapsed" />
+
+            <Border x:Name="TourCard" Style="{StaticResource Card}" Padding="14" MaxWidth="340"
+                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                    TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="TourProgressText" Grid.Column="0" Text="" FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                        <Button x:Name="TourSkipButton" Grid.Column="1" Content="スキップ" Style="{StaticResource BackButton}"
+                                Padding="6,3" FontSize="11" Click="TourSkipButton_Click" />
+                    </Grid>
+                    <TextBlock x:Name="TourTitleText" Text="" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TourBodyText" Text="" FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="TourBackButton" Content="戻る" Style="{StaticResource SecondaryPillButton}"
+                                FontSize="12" Padding="12,5" Margin="0,0,8,0" Click="TourBackButton_Click" />
+                        <Button x:Name="TourNextButton" Content="次へ" Style="{StaticResource PillButton}"
+                                FontSize="12" Padding="14,5" Click="TourNextButton_Click" />
                     </StackPanel>
                 </StackPanel>
             </Border>

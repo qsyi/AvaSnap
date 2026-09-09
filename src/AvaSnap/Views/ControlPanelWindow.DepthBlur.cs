@@ -9,17 +9,61 @@ namespace AvaSnap.Views;
 
 // ---- 被写界深度(深度依存ぼかし): Depth Anything V2 Small で合成結果から相対深度を
 //      推定し、ピント面から外れた画素をピラミッド補間でぼかす。深度マップは合成の
-//      スナップショットなので「深度を計算」ボタンで明示的に更新し、合成に影響する
-//      変更で「再計算が必要」を表示する(自動再計算はしない)。深度マップは .avasnap
-//      には保存せず、有効なプロジェクトを開いた直後に1回だけ計算する。 ----
+//      スナップショット。一度計算した後は、合成に影響する変更が入ると操作が
+//      落ち着いた頃に自動で再計算する(ScheduleDepthAutoRecompute)。「深度を計算」
+//      ボタンは即時実行の手動トリガーとして残す。初回の計算(とモデルDL)は手動/
+//      有効化時のみ。深度マップは .avasnap には保存せず、有効なプロジェクトを
+//      開いた直後に1回だけ計算する。 ----
 public partial class ControlPanelWindow
 {
-    /// <summary>合成に影響する変更が入ったら、キャッシュ済み深度マップを「古い」印にする。</summary>
+    /// <summary>合成が変わるたびに増える世代番号。推定の実行中に更に合成が変わったかを
+    /// 判定して、取りこぼしを防ぐのに使う(<see cref="ComputeDepthMapAsync"/>)。</summary>
+    private int _depthStaleGeneration;
+    private System.Windows.Threading.DispatcherTimer? _depthAutoRecomputeTimer;
+    private static readonly TimeSpan DepthAutoRecomputeDelay = TimeSpan.FromMilliseconds(1200);
+
+    /// <summary>合成に影響する変更が入ったら、キャッシュ済み深度マップを「古い」印にし、
+    /// 自動再計算を(遅延で)予約する。</summary>
     private void MarkDepthMapStale()
     {
-        if (_depthMap is null || _depthMapStale) return;
+        _depthStaleGeneration++;
+        if (_depthMap is null || _depthMapStale)
+        {
+            ScheduleDepthAutoRecompute(); // 既に stale でも、落ち着いたら拾えるよう予約を延長
+            return;
+        }
         _depthMapStale = true;
         RefreshDepthBlurUi();
+        ScheduleDepthAutoRecompute();
+    }
+
+    /// <summary>深度マップが古くなったとき、操作が落ち着いた頃に自動で再計算する。
+    /// 変更のたびにタイマーをリセットし、ドラッグ中・計算中は先送りする。初回計算前
+    /// (<see cref="_depthMap"/> が null)や無効時は何もしない ── 初回のモデルDLを
+    /// 勝手に走らせない。</summary>
+    private void ScheduleDepthAutoRecompute()
+    {
+        if (!_depthBlurEnabled || _depthMap is null) return;
+        _depthAutoRecomputeTimer ??= new System.Windows.Threading.DispatcherTimer();
+        _depthAutoRecomputeTimer.Interval = DepthAutoRecomputeDelay;
+        _depthAutoRecomputeTimer.Stop();
+        _depthAutoRecomputeTimer.Tick -= OnDepthAutoRecomputeTick;
+        _depthAutoRecomputeTimer.Tick += OnDepthAutoRecomputeTick;
+        _depthAutoRecomputeTimer.Start();
+    }
+
+    private void OnDepthAutoRecomputeTick(object? sender, EventArgs e)
+    {
+        // まだ操作中なら次の窓へ先送り。
+        if (_isCompositeDragging || _depthComputing)
+        {
+            _depthAutoRecomputeTimer?.Stop();
+            _depthAutoRecomputeTimer?.Start();
+            return;
+        }
+        _depthAutoRecomputeTimer?.Stop();
+        if (_depthMapStale && _depthBlurEnabled && _depthMap is not null)
+            _ = ComputeDepthMapAsync(auto: true);
     }
 
     /// <summary>レンダーされた合成 <paramref name="composite"/> に、キャッシュ済み深度で
@@ -160,8 +204,10 @@ public partial class ControlPanelWindow
     }
 
     /// <summary>現在の合成結果から深度マップを計算してキャッシュする。計算用のレンダーは
-    /// 深度ぼかしを一時的に切って(素の合成を推定入力にするため)行う。</summary>
-    public async Task ComputeDepthMapAsync()
+    /// 深度ぼかしを一時的に切って(素の合成を推定入力にするため)行う。
+    /// <paramref name="auto"/> が true のときは成功時の通知トーストを出さない
+    /// (編集中に繰り返し走るため)。</summary>
+    public async Task ComputeDepthMapAsync(bool auto = false)
     {
         if (_depthComputing || _photoPixelBuffer is null) return;
         _depthComputing = true;
@@ -173,8 +219,10 @@ public partial class ControlPanelWindow
             {
                 if (!DepthModel.IsAvailable())
                 {
-                    ShowCompositeSaveStatus("深度モデルをダウンロードしています…", success: true);
-                    bool ok = await DepthModel.DownloadAsync(null);
+                    ShowCompositeSaveStatus("深度モデルをダウンロード中… 0%", success: true);
+                    var progress = new Progress<double>(p =>
+                        ShowCompositeSaveStatus($"深度モデルをダウンロード中… {p * 100:F0}%", success: true));
+                    bool ok = await DepthModel.DownloadAsync(progress);
                     if (!ok || !_depthEstimator.TryInitialize(out err))
                     {
                         ShowCompositeSaveStatus("深度モデルを取得できませんでした。", success: false);
@@ -204,6 +252,8 @@ public partial class ControlPanelWindow
             source.CopyPixels(pixels, w * 4, 0);
             bool hp = _depthHighPrecision;
 
+            // ここで撮った合成に対する推定。以降に合成が変わったら結果は古い。
+            int genAtCapture = _depthStaleGeneration;
             var map = await Task.Run(() => _depthEstimator!.Estimate(pixels, w, h, hp));
             if (map is null)
             {
@@ -212,8 +262,18 @@ public partial class ControlPanelWindow
             }
 
             _depthMap = map;
-            _depthMapStale = false;
-            ShowCompositeSaveStatus($"深度を計算しました({(_depthEstimator!.UsingGpu ? "GPU" : "CPU")})。", success: true);
+            if (_depthStaleGeneration == genAtCapture)
+            {
+                _depthMapStale = false;
+            }
+            else
+            {
+                // 推定中に合成が変わった ── 古いままにして、落ち着いたら再計算。
+                _depthMapStale = true;
+                ScheduleDepthAutoRecompute();
+            }
+            if (!auto)
+                ShowCompositeSaveStatus($"深度を計算しました({(_depthEstimator!.UsingGpu ? "GPU" : "CPU")})。", success: true);
             DepthRerender(); // 合成は変えていないので stale にしない
         }
         finally
@@ -251,6 +311,8 @@ public partial class ControlPanelWindow
         DepthBlurBody.IsEnabled = _depthBlurEnabled;
         DepthBlurBody.Opacity = _depthBlurEnabled ? 1.0 : 0.5;
         DepthComputeButton.IsEnabled = !_depthComputing && _photoPixelBuffer is not null;
+        DepthModelNoticeText.Visibility = (!_depthComputing && !DepthModel.IsAvailable())
+            ? Visibility.Visible : Visibility.Collapsed;
         DepthHighPrecisionButtonText.Text = _depthHighPrecision ? "高精度: オン" : "高精度: オフ";
         DepthShowMapButtonText.Text = _depthShowMap ? "深度マップを表示: オン" : "深度マップを表示: オフ";
 

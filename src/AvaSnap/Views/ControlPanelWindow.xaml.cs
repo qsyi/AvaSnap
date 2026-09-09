@@ -193,6 +193,10 @@ public partial class ControlPanelWindow : Window
         InitProjectAutoSave(); // 起動時は常に新規プロジェクト(空)から
 
         ShowHome();
+
+        // 初回起動ならウェルカムガイドを1回だけ。窓が表示され描画が落ち着いてから出す。
+        if (!SettingsService.HasSeenGuide(GuideKind.Welcome))
+            Dispatcher.InvokeAsync(ShowWelcomeGuide, DispatcherPriority.ApplicationIdle);
     }
 
     /// <summary>コントロールパネルを VRChat 窓の owned window にする
@@ -294,6 +298,9 @@ public partial class ControlPanelWindow : Window
         // ShowHome/EnterCompact の抑制を解除し、VRChat の現在のカメラ状態へ再同期する。
         _overlayWindow.SetManuallyHidden(false);
         RefreshAlignBanner();
+
+        if (!SettingsService.HasSeenGuide(GuideKind.Align))
+            Dispatcher.InvokeAsync(ShowAlignGuide, DispatcherPriority.ApplicationIdle);
     });
 
     private void ShowComposite()
@@ -337,6 +344,9 @@ public partial class ControlPanelWindow : Window
         {
             UpdateLinkedRowStyles();
             FinishMatchRender();
+            RefreshEmptyPreviewHint();
+            if (!SettingsService.HasSeenGuide(GuideKind.Retouch))
+                Dispatcher.InvokeAsync(() => StartRetouchTour(), DispatcherPriority.ApplicationIdle);
         }, DispatcherPriority.ApplicationIdle);
     }
 
@@ -1521,13 +1531,15 @@ public partial class ControlPanelWindow : Window
         ScheduleCompositeRender();
     }
 
-    // ---- 境界ぼかし: 今は他スライダー同様ドラッグ中もライブプレビューする。
-    //      GpuAvatarEdgeBlur で GPU 実行なので離すまで固める旧処理は不要。 ----
+    // ---- 境界ぼかし: 再フェザー(JFA+ボックスブラー)が重いので、ドラッグ中は
+    //      直前のぼかし結果を据え置き、離した時に最終半径で1回だけ焼き直す
+    //      (OverlayWindow.SetEdgeBlurDragging)。色だけはドラッグ中も追従する。 ----
 
     private void EdgeBlurSliderMouseDown(object sender, MouseButtonEventArgs e)
     {
         Field_MouseDown(sender, e);
         _isCompositeDragging = true;
+        _overlayWindow.SetEdgeBlurDragging(true);
         _overlayWindow.SetColorDragging(true);
     }
 
@@ -1535,6 +1547,7 @@ public partial class ControlPanelWindow : Window
     {
         Field_MouseUp(sender, e);
         _isCompositeDragging = false;
+        _overlayWindow.SetEdgeBlurDragging(false); // 最終半径で1回だけ焼き直す
         _overlayWindow.SetColorDragging(false);
         ScheduleCompositeRender();
     }
@@ -3638,6 +3651,7 @@ public partial class ControlPanelWindow : Window
         CompositeCardsScrollViewer.IsEnabled = !hardLocked;
         SliderLockNotice.Visibility = hardLocked ? Visibility.Visible : Visibility.Collapsed;
         PreviewModeConfirmBar.Visibility = anyMode ? Visibility.Visible : Visibility.Collapsed;
+        RefreshSubModeBanner();
     }
 
     /// <summary>各モードのトグルが OFF→ON した瞬間のスナップショット。
@@ -3864,6 +3878,7 @@ public partial class ControlPanelWindow : Window
         CompositeSkipAvatarButtonText.Text = _compositeSkipAvatar ? "アバターなしで進行中" : "アバターなしにする";
         AvatarLookCard.IsEnabled = !_compositeSkipAvatar;
         BlankCanvasButton.IsEnabled = !_compositeSkipAvatar;
+        RefreshEmptyPreviewHint();
     }
 
     /// <summary>アバターなし/背景なし 排他のもう半分 ── <see cref="_isBlankCanvasActive"/>
@@ -3874,6 +3889,7 @@ public partial class ControlPanelWindow : Window
     {
         PhotoLookCard.IsEnabled = !_isBlankCanvasActive;
         CompositeSkipAvatarButton.IsEnabled = !_compositeSkipAvatar && !_isBlankCanvasActive;
+        RefreshEmptyPreviewHint();
     }
 
     /// <summary>Undo/Redo で <see cref="ApplyCompositeSnapshot"/> が背景なし
@@ -7129,9 +7145,11 @@ public partial class ControlPanelWindow : Window
 
     private void RefreshWatchFolderText()
     {
-        WatchFolderText.Text = _screenshotWatcher.IsUsingManualFolder
+        string text = _screenshotWatcher.IsUsingManualFolder
             ? $"（手動指定）{_screenshotWatcher.ActiveFolder}"
             : $"（自動検出）{_screenshotWatcher.ActiveFolder}";
+        WatchFolderText.Text = text;
+        WelcomeWatchFolderText.Text = text; // ウェルカムガイド内の同じ表示
     }
 
     private void ChangeWatchFolderButton_Click(object sender, RoutedEventArgs e)

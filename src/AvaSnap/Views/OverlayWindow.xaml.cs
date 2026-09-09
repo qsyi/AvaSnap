@@ -129,6 +129,12 @@ public partial class OverlayWindow : Window
     private ImageAdjustment.PixelBuffer? _blurredPixelBuffer;
     private double? _blurredAtRadius;
 
+    /// <summary>境界ぼかしスライダーをドラッグ中は true。この間は半径が変わっても
+    /// GPU での再フェザーを走らせず、直前の <see cref="_blurredPixelBuffer"/> を流用する
+    /// (色だけ毎tick再適用)。離した時に <see cref="SetEdgeBlurDragging"/> が最終半径で
+    /// 1回だけ焼き直す。</summary>
+    private bool _edgeBlurDragging;
+
     /// <summary>読み込み中のアバター画像を破棄する(新規プロジェクトなど)。
     /// 位置合わせモードも空になる ── アバターはモード間で共有される1枚なので。</summary>
     public void ClearImage()
@@ -204,6 +210,16 @@ public partial class OverlayWindow : Window
         ApplyImageAdjustments();
     }
 
+    /// <summary>境界ぼかしスライダーのドラッグ開始/終了。ドラッグ中は再フェザーを
+    /// 止め、離した時に最終半径で1回だけ焼き直す(<see cref="_edgeBlurDragging"/>)。</summary>
+    public void SetEdgeBlurDragging(bool dragging)
+    {
+        _edgeBlurDragging = dragging;
+        // 離した瞬間: ここで ApplyImageAdjustments を呼ぶと _blurredAtRadius が最終値と
+        // 食い違っているので通常経路で1回だけ焼き直される。
+        if (!dragging) ApplyImageAdjustments();
+    }
+
     private void OnAdjustmentPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         // PropertyName が null は OverlayState の「複数変わった」慣習。どれかが調整
@@ -243,11 +259,15 @@ public partial class OverlayWindow : Window
     {
         if (_originalPixelBuffer is null) return;
 
-        if (_blurredPixelBuffer is null || _blurredAtRadius != _state.EdgeBlurRadius)
+        // ドラッグ中で既にぼかし済みバッファがあるなら再フェザーしない(半径違いのまま
+        // 色だけ再適用)。キャッシュ未作成の初回だけは普通に1回作る。
+        bool skipRebuild = _edgeBlurDragging && _blurredPixelBuffer is not null;
+        if (!skipRebuild && (_blurredPixelBuffer is null || _blurredAtRadius != _state.EdgeBlurRadius))
         {
             _blurredPixelBuffer = ImageAdjustment.BlurPng(_originalPixelBuffer, _state.EdgeBlurRadius);
             _blurredAtRadius = _state.EdgeBlurRadius;
         }
+        if (_blurredPixelBuffer is null) return;
         ImageAdjustment.PixelBuffer blurredSource = _blurredPixelBuffer;
 
         var adjustments = new ImageAdjustment.ColorAdjustments(
@@ -276,7 +296,9 @@ public partial class OverlayWindow : Window
         get
         {
             if (_originalPixelBuffer is null) return null;
-            if (_blurredPixelBuffer is null || _blurredAtRadius != _state.EdgeBlurRadius)
+            // ドラッグ中は ApplyImageAdjustments と同じく据え置き(あれば流用)。
+            bool skipRebuild = _edgeBlurDragging && _blurredPixelBuffer is not null;
+            if (!skipRebuild && (_blurredPixelBuffer is null || _blurredAtRadius != _state.EdgeBlurRadius))
             {
                 _blurredPixelBuffer = ImageAdjustment.BlurPng(_originalPixelBuffer, _state.EdgeBlurRadius);
                 _blurredAtRadius = _state.EdgeBlurRadius;
