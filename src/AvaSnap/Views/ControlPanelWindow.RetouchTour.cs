@@ -83,6 +83,7 @@ public partial class ControlPanelWindow
     /// <summary>直近で位置決めに使った対象矩形。変化が無ければ再配置しない(LayoutUpdated
     /// は高頻度なので)。</summary>
     private Rect _lastTourRect = Rect.Empty;
+    private double _lastCardH = -1;
 
     private void Tour_LayoutUpdated(object? sender, EventArgs e)
     {
@@ -104,8 +105,29 @@ public partial class ControlPanelWindow
 
         FrameworkElement? target = null;
         try { target = step.Target(); } catch { /* 未実現なら中央フォールバック */ }
-        try { target?.BringIntoView(); } catch { }
-        PositionTour(); // LayoutUpdated を待たず即1回(見えている間の初期表示用)
+        try
+        {
+            if (target is { } t) CenterTargetInScroller(t);
+            PositionTour(); // まず1回(スクロール反映前の暫定描画)
+        }
+        catch { /* レイアウト途中の一時例外は握りつぶす(LayoutUpdated で置き直る) */ }
+        Dispatcher.InvokeAsync(PositionTour, DispatcherPriority.Loaded); // スクロール後のレイアウトで置き直す
+    }
+
+    /// <summary>ハイライト対象がコントロール列のスクロールビューの縦中央に来るように
+    /// スクロールする(端に貼り付くと見づらい)。</summary>
+    private void CenterTargetInScroller(FrameworkElement target)
+    {
+        var sv = CompositeCardsScrollViewer;
+        try
+        {
+            var p = target.TransformToVisual(sv).Transform(new Point(0, 0));
+            double targetCenter = p.Y + target.ActualHeight / 2;
+            double delta = targetCenter - sv.ViewportHeight / 2;
+            double newOffset = Math.Clamp(sv.VerticalOffset + delta, 0, sv.ScrollableHeight);
+            sv.ScrollToVerticalOffset(newOffset);
+        }
+        catch { }
     }
 
     private void PositionTour()
@@ -120,13 +142,16 @@ public partial class ControlPanelWindow
         try
         {
             var t = steps[_tourIndex].Target();
-            if (t is { IsVisible: true, ActualWidth: > 0, ActualHeight: > 0 })
+            // IsVisible は使わない(スクロール外/未実現でも tree にあれば座標は取れる)。
+            // tree に繋がっていなければ TransformToVisual が投げるので catch で拾う。
+            if (t is { ActualWidth: > 0, ActualHeight: > 0 })
             {
                 var r = t.TransformToVisual(RetouchTourOverlay)
                          .TransformBounds(new Rect(0, 0, t.ActualWidth, t.ActualHeight));
-                // 画面内に少しでも入っているときだけハイライト対象にする。
-                if (r.Right > 0 && r.Bottom > 0 && r.Left < ow && r.Top < oh)
-                    targetRect = Rect.Intersect(r, new Rect(0, 0, ow, oh));
+                // 画面内に十分入っているときだけハイライト対象にする(スクロール反映前は弾く)。
+                var vis = Rect.Intersect(r, new Rect(0, 0, ow, oh));
+                if (vis.Width >= r.Width * 0.5 && vis.Height >= r.Height * 0.5)
+                    targetRect = vis;
             }
         }
         catch { }
@@ -144,15 +169,15 @@ public partial class ControlPanelWindow
             TourHighlightRing.Visibility = Visibility.Collapsed;
             TourCard.HorizontalAlignment = HorizontalAlignment.Left;
             TourCard.VerticalAlignment = VerticalAlignment.Top;
-            TourCard.Measure(new Size(ow, oh));
-            double cw0 = TourCard.DesiredSize.Width, ch0 = TourCard.DesiredSize.Height;
+            double cw0 = CardW(), ch0 = CardH();
             TourCard.Margin = new Thickness(Math.Max(0, (ow - cw0) / 2), Math.Max(0, (oh - ch0) / 2), 0, 0);
             return;
         }
 
-        // 前回と同じ位置なら何もしない(LayoutUpdated は高頻度)。
-        if (RectsClose(rect, _lastTourRect)) return;
+        // 前回と同じ位置・同じカード高さなら何もしない(LayoutUpdated は高頻度)。
+        if (RectsClose(rect, _lastTourRect) && Math.Abs(CardH() - _lastCardH) < 2) return;
         _lastTourRect = rect;
+        _lastCardH = CardH();
 
         const double pad = 4;
         double hx = Math.Max(0, rect.X - pad), hy = Math.Max(0, rect.Y - pad);
@@ -170,35 +195,34 @@ public partial class ControlPanelWindow
         TourHighlightRing.Width = hw;
         TourHighlightRing.Height = hh;
 
-        // カード位置。対象が画面右寄りなら左隣、左寄りなら右隣、それ以外は下(入らなければ上)。
+        // カードはプレビュー領域(左の空きスペース)に固定横位置で置き、縦だけ
+        // ハイライトの中央に合わせる。ハイライトは常に縦中央付近へスクロール済みなので
+        // これで「対象の高さの隣」に見え、コントロールを覆わない。
+        // ※ LayoutUpdated 中に Measure() を呼ぶと DesiredSize が不安定なので、
+        //   確定済みの ActualWidth/Height を使う(未確定時は既定値でフォールバック)。
         TourCard.HorizontalAlignment = HorizontalAlignment.Left;
         TourCard.VerticalAlignment = VerticalAlignment.Top;
-        TourCard.Measure(new Size(ow, oh));
-        double cw = TourCard.DesiredSize.Width, ch = TourCard.DesiredSize.Height;
-        const double gap = 14;
-        double targetCx = rect.X + rect.Width / 2;
+        double cw = CardW(), ch = CardH();
 
-        double cx, cy;
-        if (targetCx > ow * 0.55 && rect.X - gap - cw >= 8)
+        // プレビュー領域の矩形(取れなければ画面左 ~55% を使う)。
+        Rect area = new(0, 0, ow * 0.55, oh);
+        try
         {
-            cx = rect.X - gap - cw;                    // 右寄りの対象 → 左隣
-            cy = rect.Y;
+            var pv = PreviewHost.TransformToVisual(RetouchTourOverlay)
+                                .TransformBounds(new Rect(0, 0, PreviewHost.ActualWidth, PreviewHost.ActualHeight));
+            if (pv.Width > 100 && pv.Height > 100) area = pv;
         }
-        else if (targetCx < ow * 0.45 && rect.Right + gap + cw <= ow - 8)
-        {
-            cx = rect.Right + gap;                     // 左寄りの対象 → 右隣
-            cy = rect.Y;
-        }
-        else
-        {
-            cx = targetCx - cw / 2;                    // 中央付近 → 下、入らなければ上
-            cy = hy + hh + gap;
-            if (cy + ch > oh) cy = hy - gap - ch;
-        }
+        catch { }
+
+        double cx = area.X + (area.Width - cw) / 2;
+        double cy = rect.Y + rect.Height / 2 - ch / 2;   // ハイライトの縦中央
         cx = Math.Clamp(cx, 8, Math.Max(8, ow - cw - 8));
         cy = Math.Clamp(cy, 8, Math.Max(8, oh - ch - 8));
         TourCard.Margin = new Thickness(cx, cy, 0, 0);
     }
+
+    private double CardW() => TourCard.ActualWidth > 20 ? TourCard.ActualWidth : 340;
+    private double CardH() => TourCard.ActualHeight > 20 ? TourCard.ActualHeight : 150;
 
     private static bool RectsClose(Rect a, Rect b) =>
         Math.Abs(a.X - b.X) < 1 && Math.Abs(a.Y - b.Y) < 1
