@@ -195,16 +195,16 @@ public partial class ControlPanelWindow
         TourHighlightRing.Width = hw;
         TourHighlightRing.Height = hh;
 
-        // カードはプレビュー領域(左の空きスペース)に固定横位置で置き、縦だけ
-        // ハイライトの中央に合わせる。ハイライトは常に縦中央付近へスクロール済みなので
-        // これで「対象の高さの隣」に見え、コントロールを覆わない。
+        // カードはハイライトのすぐ左隣(プレビュー領域側)に置く。縦はハイライトの
+        // 中央に合わせる。ハイライトは縦中央付近へスクロール済みなので、対象の真横に
+        // 出る形になり、コントロールを覆わない。
         // ※ LayoutUpdated 中に Measure() を呼ぶと DesiredSize が不安定なので、
         //   確定済みの ActualWidth/Height を使う(未確定時は既定値でフォールバック)。
         TourCard.HorizontalAlignment = HorizontalAlignment.Left;
         TourCard.VerticalAlignment = VerticalAlignment.Top;
         double cw = CardW(), ch = CardH();
 
-        // プレビュー領域の矩形(取れなければ画面左 ~55% を使う)。
+        // プレビュー領域の矩形(取れなければ画面左 ~55% を使う)。左端の下限に使う。
         Rect area = new(0, 0, ow * 0.55, oh);
         try
         {
@@ -214,7 +214,15 @@ public partial class ControlPanelWindow
         }
         catch { }
 
-        double cx = area.X + (area.Width - cw) / 2;
+        const double gap = 16;
+        double leftMin = Math.Max(8, area.X + 8);
+        // まず対象の左隣。入らなければ対象の右隣、それも無理なら画面内へクランプ。
+        double cx = rect.X - gap - cw;
+        if (cx < leftMin)
+        {
+            double right = rect.Right + gap;
+            cx = right + cw <= ow - 8 ? right : leftMin;
+        }
         double cy = rect.Y + rect.Height / 2 - ch / 2;   // ハイライトの縦中央
         cx = Math.Clamp(cx, 8, Math.Max(8, ow - cw - 8));
         cy = Math.Clamp(cy, 8, Math.Max(8, oh - ch - 8));
