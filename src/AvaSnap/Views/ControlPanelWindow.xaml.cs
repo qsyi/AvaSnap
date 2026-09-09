@@ -5869,10 +5869,12 @@ public partial class ControlPanelWindow : Window
     {
         if (_suppressEvents) return;
         if (!TryParse(ToneGradientBox.Text, out var v) || v < 0) return;
+        double prev = _toneGradientAmount;
         _toneGradientAmount = v;
         _suppressEventsDepth++;
         ToneGradientSlider.Value = v;
         _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
+        MaybeAutoDetectToneGradientOnTurnOn(prev, v);
         ScheduleCompositeRender();
     }
 
@@ -5884,7 +5886,9 @@ public partial class ControlPanelWindow : Window
         ToneGradientBox.Text = rounded.ToString("F0", CultureInfo.InvariantCulture);
         _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
         if (rounded == _toneGradientAmount) return;
+        double prev = _toneGradientAmount;
         _toneGradientAmount = rounded;
+        MaybeAutoDetectToneGradientOnTurnOn(prev, rounded);
         ScheduleCompositeRender();
     }
 
@@ -6566,7 +6570,9 @@ public partial class ControlPanelWindow : Window
     /// <summary>以前は毎レンダー自動で行っていた重み付き全画像抽出
     /// (GpuToneGradient 参照)を、現在の手動 明色/暗色 を上書きする一発アクションとして
     /// 実行する。現在の写真バッファに対して走る ── 未読み込みなら何もしない。</summary>
-    private void ToneGradientAutoDetectButton_Click(object sender, RoutedEventArgs e)
+    private void ToneGradientAutoDetectButton_Click(object sender, RoutedEventArgs e) => AutoDetectToneGradientColors();
+
+    private void AutoDetectToneGradientColors()
     {
         if (_photoPixelBuffer is not { } photo) return;
         if (!GpuToneGradient.TryDetectColors(photo.Pixels, photo.Stride, photo.Width, photo.Height,
@@ -6578,6 +6584,19 @@ public partial class ControlPanelWindow : Window
         SetToneGradientLightColor(lightR, lightG, lightB);
         SetToneGradientDarkColor(darkR, darkG, darkB);
         _undo.CommitChange();
+    }
+
+    /// <summary>トーングラデーションの明色/暗色が初期値(白/黒)のままか。true のときだけ
+    /// 強さを 0 → オンにした瞬間に自動判定する(手動で選んだ色は上書きしない)。</summary>
+    private bool ToneGradientColorsAreDefault() =>
+        _toneGradientLightR == 255 && _toneGradientLightG == 255 && _toneGradientLightB == 255 &&
+        _toneGradientDarkR == 0 && _toneGradientDarkG == 0 && _toneGradientDarkB == 0;
+
+    /// <summary>強さが 0 から 1 以上へ変わったら、色が初期値なら自動判定を1回走らせる。</summary>
+    private void MaybeAutoDetectToneGradientOnTurnOn(double previousAmount, double newAmount)
+    {
+        if (previousAmount < 1 && newAmount >= 1 && ToneGradientColorsAreDefault())
+            AutoDetectToneGradientColors();
     }
 
     // ---- スポイト: 色行のピペットボタンを押してからプレビュー上をクリックすると

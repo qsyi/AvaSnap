@@ -4186,8 +4186,9 @@
                                         <TextBlock Text="深度を計算" />
                                     </Button>
                                     <Button Grid.Column="1" x:Name="DepthFocusPickButton" Style="{StaticResource SecondaryPillButton}"
-                                            FontSize="12" Padding="12,5" Margin="8,0,0,0" Click="DepthFocusPickButton_Click">
-                                        <TextBlock Text="フォーカス位置を選択" />
+                                            FontSize="12" Padding="12,5" Margin="8,0,0,0" Click="DepthFocusPickButton_Click"
+                                            ToolTip="押してからプレビュー上でピントを合わせたい場所をクリックします">
+                                        <TextBlock Text="ピント自動補正" />
                                     </Button>
                                     <TextBlock Grid.Column="2" x:Name="DepthStatusText" VerticalAlignment="Center" Margin="10,0,0,0"
                                                FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Text="未計算" TextWrapping="Wrap" />
