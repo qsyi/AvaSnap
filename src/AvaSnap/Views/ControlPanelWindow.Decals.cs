@@ -917,6 +917,12 @@ public partial class ControlPanelWindow
         return cloned;
     }
 
+    /// <summary>背後デカールが無ければ通常通りGPU側でぼかしていい
+    /// (snap.PhotoBlurAmountをそのまま渡す)。ある場合はApplyBehindAvatarDecals
+    /// 側で既にCPU側でぼかし済みなので、GPU側には0を渡して二重ぼかしを防ぐ。</summary>
+    private static double EffectivePhotoBlurAmount(double photoBlurAmount, List<DecalRenderEntry> behind) =>
+        behind.Count > 0 ? 0 : photoBlurAmount;
+
     private static WriteableBitmap ApplyInFrontOfAvatarDecals(WriteableBitmap composite, List<DecalRenderEntry> front, double scale)
     {
         if (front.Count == 0) return composite;
