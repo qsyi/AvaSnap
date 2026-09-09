@@ -3648,8 +3648,23 @@ public partial class ControlPanelWindow : Window
         // カード列は生かしたまま確定バーだけ出す(ロック通知は出さない)。
         bool hardLocked = PreviewShowsUncropped;
         bool anyMode = hardLocked || _isDecalPlacementModeActive || _isMaskEditModeActive;
-        CompositeCardsScrollViewer.IsEnabled = !hardLocked;
-        SliderLockNotice.Visibility = hardLocked ? Visibility.Visible : Visibility.Collapsed;
+        // 被写界深度のピント指定中は、まずプレビューをクリックしてほしいのでカード列を止める。
+        bool depthFocusPicking = _colorPickTarget == ColorPickTarget.DepthFocus;
+        CompositeCardsScrollViewer.IsEnabled = !hardLocked && !depthFocusPicking;
+        if (hardLocked)
+        {
+            SliderLockNoticeText.Text = "切り抜きモード・アバター配置モード中はスライダーを変更できません";
+            SliderLockNotice.Visibility = Visibility.Visible;
+        }
+        else if (depthFocusPicking)
+        {
+            SliderLockNoticeText.Text = "プレビューでピントを合わせたい場所をクリックしてください（Esc で中止）";
+            SliderLockNotice.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            SliderLockNotice.Visibility = Visibility.Collapsed;
+        }
         PreviewModeConfirmBar.Visibility = anyMode ? Visibility.Visible : Visibility.Collapsed;
         RefreshSubModeBanner();
     }
@@ -6621,6 +6636,8 @@ public partial class ControlPanelWindow : Window
             _depthFocusPreview = null;
             RefreshDepthOverlayOnly();
         }
+        // ピント指定中はカード列をグレーアウト + 案内表示(RefreshSliderLockState)。
+        RefreshSliderLockState();
     }
 
     private void DropShadowEyedropperButton_Click(object sender, RoutedEventArgs e) => BeginColorPick(ColorPickTarget.DropShadow);
@@ -6663,6 +6680,7 @@ public partial class ControlPanelWindow : Window
         _colorPickTarget = ColorPickTarget.None;
         PreviewImage.Cursor = Cursors.SizeAll;
         HideColorPickMagnifier();
+        if (target == ColorPickTarget.DepthFocus) RefreshSliderLockState(); // グレーアウト解除
 
         if (!TryImagePixelFromScreen(e.GetPosition(PreviewBorder), out var bmp, out var px, out var py)) return;
 

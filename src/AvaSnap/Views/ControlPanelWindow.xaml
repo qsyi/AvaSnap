@@ -4532,7 +4532,7 @@
                         HorizontalAlignment="Stretch" VerticalAlignment="Top" Margin="16,14,16,0"
                         Background="{DynamicResource PrimaryTintBrush}" BorderBrush="{DynamicResource PrimaryBrush}"
                         BorderThickness="1" CornerRadius="8" Padding="10,7" Visibility="Collapsed" IsHitTestVisible="False">
-                    <TextBlock Text="切り抜きモード・アバター配置モード中はスライダーを変更できません" FontSize="12"
+                    <TextBlock x:Name="SliderLockNoticeText" Text="切り抜きモード・アバター配置モード中はスライダーを変更できません" FontSize="12"
                                Foreground="{DynamicResource PrimaryBrush}" TextWrapping="Wrap" HorizontalAlignment="Center" />
                 </Border>
         </Grid>
