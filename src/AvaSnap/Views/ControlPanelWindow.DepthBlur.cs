@@ -340,16 +340,28 @@ public partial class ControlPanelWindow
         _suppressEventsDepth = Math.Max(0, _suppressEventsDepth - 1);
     }
 
-    private void DepthBlurEnableButton_Click(object sender, RoutedEventArgs e)
+    private async void DepthBlurEnableButton_Click(object sender, RoutedEventArgs e)
     {
         _depthBlurEnabled = !_depthBlurEnabled;
         RefreshDepthBlurUi();
-        if (_depthBlurEnabled && _depthMap is null && _photoPixelBuffer is not null)
+
+        if (!_depthBlurEnabled)
         {
-            _ = ComputeDepthMapAsync();
+            if (_colorPickTarget == ColorPickTarget.DepthFocus)
+                BeginColorPick(ColorPickTarget.DepthFocus); // 同じ対象で呼ぶと解除される
+            DepthRerender();
             return;
         }
-        DepthRerender();
+
+        if (_depthMap is null && _photoPixelBuffer is not null)
+            await ComputeDepthMapAsync();
+        else
+            DepthRerender();
+
+        // オンにした直後、続けてピント位置を指定できるよう自動でピック待ちにする
+        // (「ピント自動補正」を押したのと同じ状態)。深度が用意できたときだけ。
+        if (_depthBlurEnabled && _depthMap is not null && _colorPickTarget != ColorPickTarget.DepthFocus)
+            BeginColorPick(ColorPickTarget.DepthFocus);
     }
 
     private void DepthComputeButton_Click(object sender, RoutedEventArgs e) => _ = ComputeDepthMapAsync();

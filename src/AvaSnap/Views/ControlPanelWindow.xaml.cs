@@ -6816,9 +6816,13 @@ public partial class ControlPanelWindow : Window
         int cropH = Math.Min(MagnifierSourcePixels, bmp.PixelHeight);
         _colorPickMagnifierImage.Source = new CroppedBitmap(bmp, new Int32Rect(cropX, cropY, cropW, cropH));
 
-        _colorPickMagnifierHexText.Text = TryGetPixelColor(bmp, px, py, out var r, out var g, out var b)
-            ? ToHexColor(r, g, b)
-            : "#------";
+        // 深度フォーカスのピック中は色ではなく深度を拾うので、HEX の代わりに操作説明を出す。
+        _colorPickMagnifierHexText.Text =
+            _colorPickTarget == ColorPickTarget.DepthFocus
+                ? "クリックでここにピントを合わせる"
+                : TryGetPixelColor(bmp, px, py, out var r, out var g, out var b)
+                    ? ToHexColor(r, g, b)
+                    : "#------";
 
         _colorPickMagnifierRoot.Visibility = Visibility.Visible;
         double height = _colorPickMagnifierRoot.ActualHeight > 0 ? _colorPickMagnifierRoot.ActualHeight : MagnifierEstimatedHeight;
