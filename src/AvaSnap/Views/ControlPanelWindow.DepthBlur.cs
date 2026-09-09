@@ -66,30 +66,23 @@ public partial class ControlPanelWindow
             _ = ComputeDepthMapAsync(auto: true);
     }
 
-    /// <summary>レンダーされた合成 <paramref name="composite"/> に、キャッシュ済み深度で
-    /// 被写界深度ぼかしを適用する(レンダー用 Task スレッドから呼ばれる)。無効/未計算なら素通し。</summary>
-    private WriteableBitmap ApplyDepthBlurToComposite(WriteableBitmap composite, double renderScale)
+    /// <summary>被写界深度ぼかしを背景の写真バッファにだけ先にかける(レンダー用 Task
+    /// スレッドから呼ばれる)。デカールとアバターはこのあと重ねるのでボケない ──
+    /// 「被写界深度は背景だけにかかる」動作になる。無効/計算中/未計算なら素通し。</summary>
+    private ImageAdjustment.PixelBuffer ApplyDepthBlurToPhotoBuffer(ImageAdjustment.PixelBuffer buf, double renderScale)
     {
         // 計算中は素の合成を推定入力にしたいのでぼかしを挟まない。
-        if (!_depthBlurEnabled || _depthComputing || _depthMap is not { } dm) return composite;
+        if (!_depthBlurEnabled || _depthComputing || _depthMap is not { } dm) return buf;
+        if (_depthStrength <= 0 || _depthMaxRadius <= 0) return buf;
+        int w = buf.Width, h = buf.Height;
+        if (w <= 0 || h <= 0) return buf;
 
-        int w = composite.PixelWidth, h = composite.PixelHeight;
-        if (w <= 0 || h <= 0) return composite;
-
-        if (_depthStrength <= 0 || _depthMaxRadius <= 0) return composite;
-
-        int stride = w * 4;
-        var pixels = new byte[stride * h];
-        composite.CopyPixels(pixels, stride, 0);
-
+        var pixels = (byte[])buf.Pixels.Clone();
         double radius = Math.Max(1, _depthMaxRadius * Math.Clamp(renderScale, 0.05, 1.0));
-        if (!GpuDepthBlur.TryApply(pixels, stride, w, h, dm, _depthFocus, _depthStrength, radius))
-            return composite;
+        if (!GpuDepthBlur.TryApply(pixels, buf.Stride, w, h, dm, _depthFocus, _depthStrength, radius))
+            return buf;
 
-        var result = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
-        result.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-        result.Freeze();
-        return result;
+        return buf with { Pixels = pixels };
     }
 
     private static WriteableBitmap DepthMapVisualization(DepthMap dm, int w, int h)
@@ -236,7 +229,7 @@ public partial class ControlPanelWindow
                 }
             }
 
-            // _depthComputing の間 ApplyDepthBlurToComposite はぼかしを挟まないので
+            // _depthComputing の間 ApplyDepthBlurToPhotoBuffer はぼかしを挟まないので
             // _lastComposite は素の合成になる。
             await RenderCompositePreview();
             var source = _lastComposite;
