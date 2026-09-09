@@ -4075,10 +4075,9 @@ public partial class ControlPanelWindow : Window
             var snap = CaptureCompositeSnapshot();
             var behindDecalsNoAvatar = CaptureBehindAvatarDecals(photoOnlyScale, dragging);
             var frontDecalsNoAvatar = CaptureInFrontOfAvatarDecals(photoOnlyScale, dragging);
-            // 被写界深度は背景だけ(デカールが乗る前)にかける。
-            renderPhotoBuffer = ApplyDepthBlurToPhotoBuffer(renderPhotoBuffer, photoOnlyScale);
-            renderPhotoBuffer = ApplyBehindAvatarDecals(renderPhotoBuffer, behindDecalsNoAvatar, photoOnlyScale, snap.PhotoLook.PhotoBlurAmount, photoOnlyScale);
-            double effectivePhotoBlurAmountNoAvatar = EffectivePhotoBlurAmount(snap.PhotoLook.PhotoBlurAmount, behindDecalsNoAvatar);
+            // デカールは背景ぼかし/被写界深度のあとに重ねてボケないようにするので、
+            // ここではバッファに焼かず、GPU 側の背景ぼかしは通常どおりかける。
+            double effectivePhotoBlurAmountNoAvatar = snap.PhotoLook.PhotoBlurAmount;
             var maskPlanNoAvatar = BuildMaskPlan();
             var maskCropNoAvatar = GetCanvasCropRect(photoBuffer.Width, photoBuffer.Height);
 
@@ -4112,6 +4111,9 @@ public partial class ControlPanelWindow : Window
                         : BlendMasked(RunNoAvatar, photoAdjustments, snap.Finish.ToneGradientAmount, snap.Finish.LightLeakAmount,
                             maskPlanNoAvatar, new int[maskPlanNoAvatar.Count],
                             maskCropNoAvatar.Left, maskCropNoAvatar.Top, maskCropNoAvatar.Width, maskCropNoAvatar.Height, photoOnlyScale);
+                    // 被写界深度は背景にかけ、そのあとデカールを重ねる(デカールはボケない)。
+                    result = ApplyDepthBlurToComposite(result, photoOnlyScale);
+                    result = ApplyInFrontOfAvatarDecals(result, behindDecalsNoAvatar, photoOnlyScale);
                     result = ApplyInFrontOfAvatarDecals(result, frontDecalsNoAvatar, photoOnlyScale);
                     return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, snap.CanvasCrop.CanvasAspectRatio, snap.CanvasCrop.CanvasCropOffsetX, snap.CanvasCrop.CanvasCropOffsetY, snap.CanvasCrop.CanvasCropWidthPercent, snap.CanvasCrop.CanvasCropHeightPercent);
                 });
@@ -4198,10 +4200,9 @@ public partial class ControlPanelWindow : Window
 
         var fullPhotoAdjustments = PhotoAdjustments;
         var fullSnap = CaptureCompositeSnapshot();
-        // 被写界深度は背景だけ(デカール/アバターが乗る前)にかける。
-        scaledPhotoBuffer = ApplyDepthBlurToPhotoBuffer(scaledPhotoBuffer, previewScale);
-        scaledPhotoBuffer = ApplyBehindAvatarDecals(scaledPhotoBuffer, behindDecals, previewScale, fullSnap.PhotoLook.PhotoBlurAmount, previewScale);
-        double effectivePhotoBlurAmount = EffectivePhotoBlurAmount(fullSnap.PhotoLook.PhotoBlurAmount, behindDecals);
+        // デカールは背景ぼかし/被写界深度/アバターのあとに重ねる(ボケない・アバターの後ろ)。
+        // ここではバッファに焼かず、GPU 側の背景ぼかしは通常どおりかける。
+        double effectivePhotoBlurAmount = fullSnap.PhotoLook.PhotoBlurAmount;
         var maskPlan = BuildMaskPlan();
         var maskCrop = GetCanvasCropRect(photoBuffer.Width, photoBuffer.Height);
 
@@ -4267,11 +4268,25 @@ public partial class ControlPanelWindow : Window
                         skinWbAmount: fullSnap.Finish.SkinWbAmount, skinWbR: fullSnap.Finish.SkinWbR,
                         skinWbG: fullSnap.Finish.SkinWbG, skinWbB: fullSnap.Finish.SkinWbB);
 
-                var result = maskPlan.Count == 0
+                var composite = maskPlan.Count == 0
                     ? RunAvatar(fullPhotoAdjustments, fullSnap.Finish.ToneGradientAmount, fullSnap.Finish.LightLeakAmount, 0)
                     : BlendMasked(RunAvatar, fullPhotoAdjustments, fullSnap.Finish.ToneGradientAmount, fullSnap.Finish.LightLeakAmount,
                         maskPlan, variantIndexPerGroup, maskCrop.Left, maskCrop.Top, maskCrop.Width, maskCrop.Height, previewScale);
-                result = ApplyInFrontOfAvatarDecals(result, frontDecals, previewScale);
+
+                // 被写界深度は「背景 + アバター」にかける。そのうえで、アバターの後ろの
+                // デカールをシャープなまま重ね、ぼかし済みアバターをアルファで戻す
+                // (= デカールはボケない / アバターはボケる / デカールはアバターの後ろ)。
+                var blurred = ApplyDepthBlurToComposite(composite, previewScale);
+                WriteableBitmap afterBehind;
+                if (behindDecals.Count > 0)
+                {
+                    var withBehind = ApplyInFrontOfAvatarDecals(blurred, behindDecals, previewScale);
+                    afterBehind = RestoreAvatarOverDecals(withBehind, blurred,
+                        overlayVariantArr[0], overlayStride, overlayWidth, overlayHeight, overlayLeft, overlayTop);
+                }
+                else afterBehind = blurred;
+
+                var result = ApplyInFrontOfAvatarDecals(afterBehind, frontDecals, previewScale);
                 return cropAdjusting ? result : ImageAdjustment.CropToAspect(result, fullSnap.CanvasCrop.CanvasAspectRatio, fullSnap.CanvasCrop.CanvasCropOffsetX, fullSnap.CanvasCrop.CanvasCropOffsetY, fullSnap.CanvasCrop.CanvasCropWidthPercent, fullSnap.CanvasCrop.CanvasCropHeightPercent);
             });
         }

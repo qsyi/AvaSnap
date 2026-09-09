@@ -66,23 +66,80 @@ public partial class ControlPanelWindow
             _ = ComputeDepthMapAsync(auto: true);
     }
 
-    /// <summary>被写界深度ぼかしを背景の写真バッファにだけ先にかける(レンダー用 Task
-    /// スレッドから呼ばれる)。デカールとアバターはこのあと重ねるのでボケない ──
-    /// 「被写界深度は背景だけにかかる」動作になる。無効/計算中/未計算なら素通し。</summary>
-    private ImageAdjustment.PixelBuffer ApplyDepthBlurToPhotoBuffer(ImageAdjustment.PixelBuffer buf, double renderScale)
+    /// <summary>レンダーされた合成 <paramref name="composite"/>(背景 + アバター + 仕上げ)に
+    /// キャッシュ済み深度で被写界深度ぼかしを適用する(レンダー用 Task スレッドから呼ばれる)。
+    /// デカールはこの前後で別に重ねるのでボケない。無効/計算中/未計算なら素通し。</summary>
+    private WriteableBitmap ApplyDepthBlurToComposite(WriteableBitmap composite, double renderScale)
     {
         // 計算中は素の合成を推定入力にしたいのでぼかしを挟まない。
-        if (!_depthBlurEnabled || _depthComputing || _depthMap is not { } dm) return buf;
-        if (_depthStrength <= 0 || _depthMaxRadius <= 0) return buf;
-        int w = buf.Width, h = buf.Height;
-        if (w <= 0 || h <= 0) return buf;
+        if (!_depthBlurEnabled || _depthComputing || _depthMap is not { } dm) return composite;
 
-        var pixels = (byte[])buf.Pixels.Clone();
+        int w = composite.PixelWidth, h = composite.PixelHeight;
+        if (w <= 0 || h <= 0) return composite;
+        if (_depthStrength <= 0 || _depthMaxRadius <= 0) return composite;
+
+        int stride = w * 4;
+        var pixels = new byte[stride * h];
+        composite.CopyPixels(pixels, stride, 0);
+
         double radius = Math.Max(1, _depthMaxRadius * Math.Clamp(renderScale, 0.05, 1.0));
-        if (!GpuDepthBlur.TryApply(pixels, buf.Stride, w, h, dm, _depthFocus, _depthStrength, radius))
-            return buf;
+        if (!GpuDepthBlur.TryApply(pixels, stride, w, h, dm, _depthFocus, _depthStrength, radius))
+            return composite;
 
-        return buf with { Pixels = pixels };
+        var result = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+        result.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+        result.Freeze();
+        return result;
+    }
+
+    /// <summary>デカールをアバターの「後ろ」に正しく見せるための復元合成。
+    /// <paramref name="target"/>(背景ぼかし+デカールまで重ねた絵)に対して、
+    /// <paramref name="avatarSource"/>(背景+アバターをぼかした絵)のアバター形状の画素を
+    /// オーバーレイのアルファで戻す。これで「アバターはボケる / デカールはボケない /
+    /// デカールはアバターの後ろ」を同時に満たす。CPU、アバター矩形内だけ。</summary>
+    private static WriteableBitmap RestoreAvatarOverDecals(
+        WriteableBitmap target, WriteableBitmap avatarSource,
+        byte[] overlayPixels, int overlayStride, int overlayW, int overlayH, double overlayLeftD, double overlayTopD)
+    {
+        int w = target.PixelWidth, h = target.PixelHeight, stride = w * 4;
+        if (avatarSource.PixelWidth != w || avatarSource.PixelHeight != h) return target;
+        int overlayLeft = (int)Math.Round(overlayLeftD);
+        int overlayTop = (int)Math.Round(overlayTopD);
+
+        var dst = new byte[stride * h];
+        var src = new byte[stride * h];
+        target.CopyPixels(dst, stride, 0);
+        avatarSource.CopyPixels(src, stride, 0);
+
+        for (int oy = 0; oy < overlayH; oy++)
+        {
+            int ty = overlayTop + oy;
+            if (ty < 0 || ty >= h) continue;
+            for (int ox = 0; ox < overlayW; ox++)
+            {
+                int tx = overlayLeft + ox;
+                if (tx < 0 || tx >= w) continue;
+                int a = overlayPixels[oy * overlayStride + ox * 4 + 3];
+                if (a == 0) continue;
+                int di = ty * stride + tx * 4;
+                if (a == 255)
+                {
+                    dst[di] = src[di]; dst[di + 1] = src[di + 1]; dst[di + 2] = src[di + 2];
+                }
+                else
+                {
+                    int inv = 255 - a;
+                    dst[di] = (byte)((dst[di] * inv + src[di] * a) / 255);
+                    dst[di + 1] = (byte)((dst[di + 1] * inv + src[di + 1] * a) / 255);
+                    dst[di + 2] = (byte)((dst[di + 2] * inv + src[di + 2] * a) / 255);
+                }
+            }
+        }
+
+        var result = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+        result.WritePixels(new Int32Rect(0, 0, w, h), dst, stride, 0);
+        result.Freeze();
+        return result;
     }
 
     private static WriteableBitmap DepthMapVisualization(DepthMap dm, int w, int h)
