@@ -2525,6 +2525,11 @@ public partial class ControlPanelWindow : Window
     /// CanvasCropHandle_*、CanvasCropBoundary_* 参照。</summary>
     private bool _isCropModeActive;
 
+    /// <summary>3分割グリッド(CropGridToggle)の表示状態。切り抜き範囲そのものとは
+    /// 無関係な見た目だけの設定で、_isCropModeActive の間だけ実際に描画される
+    /// (UpdateCanvasCropBoundary)。</summary>
+    private bool _showCropGrid;
+
     /// <summary>切り抜きモード / アバター配置モード中は、まだ確定していない
     /// 切り抜きの外へも要素を置いて見えるよう、プレビューは未切り抜きの写真
     /// 全体を表示する。GetDisplayedCropRect と RenderCompositePreview の
@@ -3511,7 +3516,8 @@ public partial class ControlPanelWindow : Window
             0.8 => 2,
             0.5625 => 3,
             1.7778 => 4,
-            _ => 5, // カスタム -- 5プリセットのどれにも一致しない比
+            1.3333 => 5,
+            _ => 6, // カスタム -- プリセットのどれにも一致しない比
         };
         CanvasAspectCombo.SelectedIndex = index;
         // カスタム のときだけ表示/設定する。RefreshCanvasAspectUI はこの2ボックスと
@@ -3519,8 +3525,8 @@ public partial class ControlPanelWindow : Window
         // ユーザーが打った値("3"/"4" など)を毎回 "0.75"/"1" に上書きしてはいけない。
         // 現在のテキストが同じ比に還元されなくなったとき(undo/redo、プリセット選択、
         // カスタム比の新規読み込み)だけ書き換える。
-        CanvasAspectCustomRow.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
-        if (index == 5 && _canvasAspectRatio is { } customRatio)
+        CanvasAspectCustomRow.Visibility = index == 6 ? Visibility.Visible : Visibility.Collapsed;
+        if (index == 6 && _canvasAspectRatio is { } customRatio)
         {
             bool displayedMatches = TryParse(CanvasAspectCustomWidthBox.Text, out var dw) && dw > 0
                 && TryParse(CanvasAspectCustomHeightBox.Text, out var dh) && dh > 0
@@ -3601,6 +3607,14 @@ public partial class ControlPanelWindow : Window
         // グループごと無効化する。
         CompositePlacementControlsPanel.IsEnabled = !_isCropModeActive;
         RefreshSliderLockState();
+    }
+
+    /// <summary>見た目だけのオン/オフ。実際の描画は UpdateCanvasCropBoundary が
+    /// _isCropModeActive と合わせて判断する。</summary>
+    private void CropGridToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _showCropGrid = CropGridToggle.IsChecked == true;
+        UpdateCanvasCropBoundary();
     }
 
     /// <summary>合成モードの配置パネルに X/Y/幅/回転(度) スライダーはもう無い ──
@@ -4678,6 +4692,7 @@ public partial class ControlPanelWindow : Window
             CanvasCropHandleTopRight.Visibility = Visibility.Collapsed;
             CanvasCropHandleBottomLeft.Visibility = Visibility.Collapsed;
             CanvasCropHandleBottomRight.Visibility = Visibility.Collapsed;
+            CropGridLayer.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -4696,6 +4711,21 @@ public partial class ControlPanelWindow : Window
         CanvasCropBoundaryOutline.Height = height;
         CanvasCropBoundaryOutline.Margin = new Thickness(left, top, 0, 0);
         CanvasCropBoundaryOutline.Visibility = Visibility.Visible;
+
+        if (_showCropGrid)
+        {
+            double vx1 = left + width / 3.0, vx2 = left + width * 2.0 / 3.0;
+            double hy1 = top + height / 3.0, hy2 = top + height * 2.0 / 3.0;
+            CropGridV1.X1 = vx1; CropGridV1.Y1 = top; CropGridV1.X2 = vx1; CropGridV1.Y2 = top + height;
+            CropGridV2.X1 = vx2; CropGridV2.Y1 = top; CropGridV2.X2 = vx2; CropGridV2.Y2 = top + height;
+            CropGridH1.X1 = left; CropGridH1.Y1 = hy1; CropGridH1.X2 = left + width; CropGridH1.Y2 = hy1;
+            CropGridH2.X1 = left; CropGridH2.Y1 = hy2; CropGridH2.X2 = left + width; CropGridH2.Y2 = hy2;
+            CropGridLayer.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            CropGridLayer.Visibility = Visibility.Collapsed;
+        }
 
         // 隅ハンドルは常時の切り抜きモードでのみ意味を持つ。表示だけの違いなので、
         // 4つとも同じフラグでここでまとめてゲートする。

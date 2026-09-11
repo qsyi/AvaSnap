@@ -1909,6 +1909,15 @@
                                         MouseLeftButtonDown="CanvasCropBoundary_MouseLeftButtonDown"
                                         MouseMove="CanvasCropBoundary_MouseMove"
                                         MouseLeftButtonUp="CanvasCropBoundary_MouseLeftButtonUp" />
+                                <!-- 3分割グリッド(構図の目安): 切り抜き境界の内側に等間隔の
+                                     縦線2本・横線2本を引く(UpdateCanvasCropBoundary が座標を
+                                     設定)。CropGridToggle がオン、かつ切り抜きモード中だけ表示。 -->
+                                <Canvas x:Name="CropGridLayer" IsHitTestVisible="False" Visibility="Collapsed">
+                                    <Line x:Name="CropGridV1" Stroke="White" StrokeThickness="1" Opacity="0.75" />
+                                    <Line x:Name="CropGridV2" Stroke="White" StrokeThickness="1" Opacity="0.75" />
+                                    <Line x:Name="CropGridH1" Stroke="White" StrokeThickness="1" Opacity="0.75" />
+                                    <Line x:Name="CropGridH2" Stroke="White" StrokeThickness="1" Opacity="0.75" />
+                                </Canvas>
                                 <!-- 隅リサイズハンドル: CanvasCropBoundaryOutline と一緒に
                                      表示/配置される(UpdateCanvasCropBoundary)。各隅が
                                      どの隅かを Tag に持ち、共通ハンドラで使う。ドラッグすると
@@ -2123,6 +2132,7 @@
                                         <ComboBoxItem Content="4:5" Tag="0.8" />
                                         <ComboBoxItem Content="9:16" Tag="0.5625" />
                                         <ComboBoxItem Content="16:9" Tag="1.7778" />
+                                        <ComboBoxItem Content="VRCサムネ用" Tag="1.3333" ToolTip="VRChatのアバター/ワールドのサムネイル比 4:3 (1200×900)" />
                                         <ComboBoxItem Content="カスタム" Tag="custom" />
                                     </ComboBox>
                                 </Grid>
@@ -2197,6 +2207,21 @@
                                                   HorizontalAlignment="Left" Margin="8,0,0,0"
                                                   Checked="CropModeToggle_Changed" Unchecked="CropModeToggle_Changed"
                                                   ToolTip="プレビュー上で切り抜き範囲を直接ドラッグして調整します" />
+                                </Grid>
+                                <!-- 切り抜きモード中の構図の目安(CropGridLayer/UpdateCanvasCropBoundary)。
+                                     切り抜き範囲そのものではなく表示だけのオン/オフなので、
+                                     切り抜きモードのオン/オフとは独立に覚える。 -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="3分割グリッド" Style="{StaticResource SliderRowLabel}" Width="Auto"
+                                               VerticalAlignment="Center" ToolTip="切り抜きモード中、構図の目安になる3分割線を表示します" />
+                                    <ToggleButton Grid.Column="1" x:Name="CropGridToggle" Style="{StaticResource SwitchToggleButton}"
+                                                  HorizontalAlignment="Left" Margin="8,0,0,0"
+                                                  Checked="CropGridToggle_Changed" Unchecked="CropGridToggle_Changed"
+                                                  ToolTip="切り抜きモード中、構図の目安になる3分割線を表示します" />
                                 </Grid>
                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,0,0,10" />
 
