@@ -1909,9 +1909,9 @@
                                         MouseLeftButtonDown="CanvasCropBoundary_MouseLeftButtonDown"
                                         MouseMove="CanvasCropBoundary_MouseMove"
                                         MouseLeftButtonUp="CanvasCropBoundary_MouseLeftButtonUp" />
-                                <!-- 3分割グリッド(構図の目安): 切り抜き境界の内側に等間隔の
-                                     縦線2本・横線2本を引く(UpdateCanvasCropBoundary が座標を
-                                     設定)。CropGridToggle がオン、かつ切り抜きモード中だけ表示。 -->
+                                <!-- 3分割グリッド(構図の目安): 最終的な切り抜き範囲の内側に
+                                     等間隔の縦線2本・横線2本を引く(UpdateCropGridOverlay が
+                                     座標を設定)。CropGridToggle がオンの間はモードを問わず常時表示。 -->
                                 <Canvas x:Name="CropGridLayer" IsHitTestVisible="False" Visibility="Collapsed">
                                     <Line x:Name="CropGridV1" Stroke="White" StrokeThickness="1" Opacity="0.75" />
                                     <Line x:Name="CropGridV2" Stroke="White" StrokeThickness="1" Opacity="0.75" />
@@ -2217,11 +2217,11 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="3分割グリッド" Style="{StaticResource SliderRowLabel}" Width="Auto"
-                                               VerticalAlignment="Center" ToolTip="切り抜きモード中、構図の目安になる3分割線を表示します" />
+                                               VerticalAlignment="Center" ToolTip="構図の目安になる3分割線を常にプレビューへ重ねて表示します" />
                                     <ToggleButton Grid.Column="1" x:Name="CropGridToggle" Style="{StaticResource SwitchToggleButton}"
                                                   HorizontalAlignment="Left" Margin="8,0,0,0"
                                                   Checked="CropGridToggle_Changed" Unchecked="CropGridToggle_Changed"
-                                                  ToolTip="切り抜きモード中、構図の目安になる3分割線を表示します" />
+                                                  ToolTip="構図の目安になる3分割線を常にプレビューへ重ねて表示します" />
                                 </Grid>
                                 <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Margin="0,0,0,10" />
 

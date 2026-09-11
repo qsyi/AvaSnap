@@ -2525,9 +2525,8 @@ public partial class ControlPanelWindow : Window
     /// CanvasCropHandle_*、CanvasCropBoundary_* 参照。</summary>
     private bool _isCropModeActive;
 
-    /// <summary>3分割グリッド(CropGridToggle)の表示状態。切り抜き範囲そのものとは
-    /// 無関係な見た目だけの設定で、_isCropModeActive の間だけ実際に描画される
-    /// (UpdateCanvasCropBoundary)。</summary>
+    /// <summary>3分割グリッド(CropGridToggle)の表示状態。オンの間はモードを問わず
+    /// 常に表示する(UpdateCropGridOverlay)。</summary>
     private bool _showCropGrid;
 
     /// <summary>切り抜きモード / アバター配置モード中は、まだ確定していない
@@ -3598,6 +3597,7 @@ public partial class ControlPanelWindow : Window
         // デバウンスされたレンダーの UpdateCanvasCropBoundary を待たず即更新する ──
         // トグルは押した瞬間に境界+ハンドルを出し入れすべき。
         UpdateCanvasCropBoundary();
+        UpdateCropGridOverlay(); // PreviewShowsUncropped の基準が変わるので追従
 
         CropModeLabel.Foreground = _isCropModeActive
             ? (Brush)FindResource("PrimaryBrush")
@@ -3609,12 +3609,10 @@ public partial class ControlPanelWindow : Window
         RefreshSliderLockState();
     }
 
-    /// <summary>見た目だけのオン/オフ。実際の描画は UpdateCanvasCropBoundary が
-    /// _isCropModeActive と合わせて判断する。</summary>
     private void CropGridToggle_Changed(object sender, RoutedEventArgs e)
     {
         _showCropGrid = CropGridToggle.IsChecked == true;
-        UpdateCanvasCropBoundary();
+        UpdateCropGridOverlay();
     }
 
     /// <summary>合成モードの配置パネルに X/Y/幅/回転(度) スライダーはもう無い ──
@@ -3647,6 +3645,7 @@ public partial class ControlPanelWindow : Window
         // ハンドル/ハイライトを即座に再配置するので、トグルから1レンダー遅れない。
         ScheduleCompositeRender();
         UpdateAvatarPlacementHighlight();
+        UpdateCropGridOverlay(); // PreviewShowsUncropped の基準が変わるので追従
         RefreshSliderLockState();
     }
 
@@ -4067,6 +4066,7 @@ public partial class ControlPanelWindow : Window
             MatchAvatarToPhotoButton.IsEnabled = false;
             MatchPhotoToAvatarButton.IsEnabled = false;
             SizePreviewToImage();
+            UpdateCropGridOverlay();
             return;
         }
 
@@ -4150,6 +4150,7 @@ public partial class ControlPanelWindow : Window
             MatchPhotoToAvatarButton.IsEnabled = false;
             SizePreviewToImage();
             UpdateCanvasCropBoundary();
+            UpdateCropGridOverlay();
             return;
         }
 
@@ -4311,6 +4312,7 @@ public partial class ControlPanelWindow : Window
         MatchPhotoToAvatarButton.IsEnabled = true;
         SizePreviewToImage();
         UpdateCanvasCropBoundary();
+        UpdateCropGridOverlay();
     }
 
     /// <summary>「ビフォー」比較合成を作る(_lastBeforeComposite 参照): 現在の
@@ -4692,7 +4694,6 @@ public partial class ControlPanelWindow : Window
             CanvasCropHandleTopRight.Visibility = Visibility.Collapsed;
             CanvasCropHandleBottomLeft.Visibility = Visibility.Collapsed;
             CanvasCropHandleBottomRight.Visibility = Visibility.Collapsed;
-            CropGridLayer.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -4712,21 +4713,6 @@ public partial class ControlPanelWindow : Window
         CanvasCropBoundaryOutline.Margin = new Thickness(left, top, 0, 0);
         CanvasCropBoundaryOutline.Visibility = Visibility.Visible;
 
-        if (_showCropGrid)
-        {
-            double vx1 = left + width / 3.0, vx2 = left + width * 2.0 / 3.0;
-            double hy1 = top + height / 3.0, hy2 = top + height * 2.0 / 3.0;
-            CropGridV1.X1 = vx1; CropGridV1.Y1 = top; CropGridV1.X2 = vx1; CropGridV1.Y2 = top + height;
-            CropGridV2.X1 = vx2; CropGridV2.Y1 = top; CropGridV2.X2 = vx2; CropGridV2.Y2 = top + height;
-            CropGridH1.X1 = left; CropGridH1.Y1 = hy1; CropGridH1.X2 = left + width; CropGridH1.Y2 = hy1;
-            CropGridH2.X1 = left; CropGridH2.Y1 = hy2; CropGridH2.X2 = left + width; CropGridH2.Y2 = hy2;
-            CropGridLayer.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            CropGridLayer.Visibility = Visibility.Collapsed;
-        }
-
         // 隅ハンドルは常時の切り抜きモードでのみ意味を持つ。表示だけの違いなので、
         // 4つとも同じフラグでここでまとめてゲートする。
         double handleSize = CanvasCropHandleTopLeft.Width;
@@ -4741,6 +4727,44 @@ public partial class ControlPanelWindow : Window
         CanvasCropHandleBottomRight.Visibility = handleVisibility;
 
         UpdateSplitGuides(); // 切り抜き枠の変更に分割線を追従させる
+    }
+
+    /// <summary>3分割グリッド(CropGridToggle)の表示/配置。切り抜きモード中だけの
+    /// UpdateCanvasCropBoundary と違い、_showCropGrid がオンならいつでも出す ──
+    /// PreviewShowsUncropped が true(切り抜き/アバター配置モード中)の間は
+    /// GetDisplayedCropRect が未切り抜きの写真全体を返すので、最終切り抜き
+    /// (GetCanvasCropRect)がその中のどこに来るかを逆算して線を引く。それ以外
+    /// (通常表示)は displayed == finalCrop になり、PreviewBorder いっぱいに
+    /// 3等分される。</summary>
+    private void UpdateCropGridOverlay()
+    {
+        if (!_showCropGrid || _photoPixelBuffer is not { } photo
+            || double.IsNaN(PreviewBorder.Width) || PreviewBorder.Width <= 0)
+        {
+            CropGridLayer.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var displayed = GetDisplayedCropRect(photo.Width, photo.Height);
+        if (displayed.Width <= 0 || displayed.Height <= 0)
+        {
+            CropGridLayer.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var finalCrop = GetCanvasCropRect(photo.Width, photo.Height);
+        double scale = PreviewBorder.Width / displayed.Width;
+        double left = (finalCrop.Left - displayed.Left) * scale;
+        double top = (finalCrop.Top - displayed.Top) * scale;
+        double width = finalCrop.Width * scale;
+        double height = finalCrop.Height * scale;
+
+        double vx1 = left + width / 3.0, vx2 = left + width * 2.0 / 3.0;
+        double hy1 = top + height / 3.0, hy2 = top + height * 2.0 / 3.0;
+        CropGridV1.X1 = vx1; CropGridV1.Y1 = top; CropGridV1.X2 = vx1; CropGridV1.Y2 = top + height;
+        CropGridV2.X1 = vx2; CropGridV2.Y1 = top; CropGridV2.X2 = vx2; CropGridV2.Y2 = top + height;
+        CropGridH1.X1 = left; CropGridH1.Y1 = hy1; CropGridH1.X2 = left + width; CropGridH1.Y2 = hy1;
+        CropGridH2.X1 = left; CropGridH2.Y1 = hy2; CropGridH2.X2 = left + width; CropGridH2.Y2 = hy2;
+        CropGridLayer.Visibility = Visibility.Visible;
     }
 
     /// <summary>プレビュー限定ではなくウィンドウ全体: Shift の状態は、カーソル位置に
@@ -4929,6 +4953,7 @@ public partial class ControlPanelWindow : Window
             CompareSlider.Width = double.NaN;
             UpdateCompareSplitLine();
             UpdateSplitGuides();
+            UpdateCropGridOverlay();
             return;
         }
 
@@ -4950,6 +4975,7 @@ public partial class ControlPanelWindow : Window
         CompareSlider.Width = PreviewBorder.Width + CompareThumbDiameter;
         UpdateCompareSplitLine();
         UpdateSplitGuides();
+        UpdateCropGridOverlay();
     }
 
     private const double CompareThumbDiameter = 16.0;
